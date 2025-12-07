@@ -47,6 +47,13 @@ public static class Endpoints
             .Produces<AdvisorRunResult>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .WithOpenApi();
+
+        group.MapPost("/advisor/predict", AdvisorPredictHandler)
+            .WithName("AdvisorPredict")
+            .WithDescription("Predicts query execution costs using execution plan analysis without running queries")
+            .Produces<QueryPlanPredictionResult>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .WithOpenApi();
     }
 
     private static IResult ConvertHandler(ConvertRequest req)
@@ -91,6 +98,22 @@ public static class Endpoints
         try
         {
             var result = await coordinator.RunAsync(req, cancellationToken);
+            return Results.Ok(result);
+        }
+        catch (Exception e)
+        {
+            return Results.BadRequest(e.Message);
+        }
+    }
+
+    private static async Task<IResult> AdvisorPredictHandler(
+        AdvisorRunRequest req,
+        IAdvisorRunCoordinator coordinator,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await coordinator.PredictCostsAsync(req, cancellationToken);
             return Results.Ok(result);
         }
         catch (Exception e)

@@ -14,6 +14,7 @@ namespace ORMConvertorAPI.Services;
 public class AdvisorRunCoordinator : IAdvisorRunCoordinator
 {
     private readonly IBenchmarkExecutor benchmarkExecutor;
+    private readonly IQueryPlanExecutor queryPlanExecutor;
     private readonly ILogger<AdvisorRunCoordinator> logger;
     private readonly string connectionString;
 
@@ -32,10 +33,12 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
 
     public AdvisorRunCoordinator(
         IBenchmarkExecutor benchmarkExecutor,
+        IQueryPlanExecutor queryPlanExecutor,
         IConfiguration configuration,
         ILogger<AdvisorRunCoordinator> logger)
     {
         this.benchmarkExecutor = benchmarkExecutor ?? throw new ArgumentNullException(nameof(benchmarkExecutor));
+        this.queryPlanExecutor = queryPlanExecutor ?? throw new ArgumentNullException(nameof(queryPlanExecutor));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         connectionString = configuration.GetConnectionString("AdvisorDatabase")
             ?? configuration["Advisor:ConnectionString"]
@@ -44,7 +47,7 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
 
     /// <summary>
     /// Validates the request, resolves target frameworks, and prepares translated artifacts.
-    /// Benchmark execution and optimisation will be plugged in subsequently.
+    /// Routes to prediction mode if UsePrediction is set.
     /// </summary>
     public Task<AdvisorRunResult> RunAsync(
         AdvisorRunRequest request,
@@ -57,6 +60,13 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
         if (request.Queries.Count == 0)
         {
             throw new ArgumentException("At least one query is required", nameof(request));
+        }
+
+        // Route to prediction mode if requested
+        if (request.UsePrediction)
+        {
+            logger.LogInformation("UsePrediction flag set, routing to prediction-based optimization.");
+            return RunWithPredictionAsync(request, cancellationToken);
         }
 
         logger.LogInformation("Advisor run received with {QueryCount} queries from source ORM {SourceOrm}.", request.Queries.Count, request.SourceOrm);
@@ -87,6 +97,250 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
             measurements);
 
         return Task.FromResult(result);
+    }
+
+    /// <summary>
+    /// Runs the advisor using predicted costs from execution plan analysis.
+    /// </summary>
+    public Task<AdvisorRunResult> RunWithPredictionAsync(
+        AdvisorRunRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Entities);
+        ArgumentNullException.ThrowIfNull(request.Queries);
+
+        if (request.Queries.Count == 0)
+        {
+            throw new ArgumentException("At least one query is required", nameof(request));
+        }
+
+        logger.LogInformation("Advisor prediction run received with {QueryCount} queries from source ORM {SourceOrm}.", request.Queries.Count, request.SourceOrm);
+
+        var targetFrameworks = ResolveTargetFrameworks(request);
+        if (targetFrameworks.Count == 0)
+        {
+            throw new InvalidOperationException("No supported target frameworks resolved for advisor run.");
+        }
+
+        var translations = BuildTranslations(request, targetFrameworks, cancellationToken);
+
+        // Run predictions instead of benchmarks
+        var predictions = RunPredictions(request, targetFrameworks, translations, cancellationToken);
+
+        var result = ExecuteAdvisorWithPredictions(request, targetFrameworks, predictions);
+
+        return Task.FromResult(result);
+    }
+
+    /// <summary>
+    /// Predicts query execution costs without running the optimizer.
+    /// </summary>
+    public Task<QueryPlanPredictionResult> PredictCostsAsync(
+        AdvisorRunRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Entities);
+        ArgumentNullException.ThrowIfNull(request.Queries);
+
+        if (request.Queries.Count == 0)
+        {
+            throw new ArgumentException("At least one query is required", nameof(request));
+        }
+
+        logger.LogInformation("Predicting costs for {QueryCount} queries from source ORM {SourceOrm}.", request.Queries.Count, request.SourceOrm);
+
+        var targetFrameworks = ResolveTargetFrameworks(request);
+        if (targetFrameworks.Count == 0)
+        {
+            throw new InvalidOperationException("No supported target frameworks resolved.");
+        }
+
+        var translations = BuildTranslations(request, targetFrameworks, cancellationToken);
+        var predictions = RunPredictions(request, targetFrameworks, translations, cancellationToken);
+
+        // Aggregate all predictions and find the best framework
+        var allPredictions = new List<QueryPlanPredictionDto>();
+        foreach (var (queryId, perFramework) in predictions)
+        {
+            foreach (var (framework, prediction) in perFramework)
+            {
+                allPredictions.Add(prediction);
+            }
+        }
+
+        var rankedPredictions = allPredictions
+            .Where(p => p.IsSuccess)
+            .OrderBy(p => p.EstimatedCost)
+            .ToList();
+
+        var recommendedFramework = rankedPredictions.FirstOrDefault()?.Framework;
+
+        var result = new QueryPlanPredictionResult(
+            rankedPredictions,
+            recommendedFramework,
+            predictions
+        );
+
+        return Task.FromResult(result);
+    }
+
+    private IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, QueryPlanPredictionDto>> RunPredictions(
+        AdvisorRunRequest request,
+        IReadOnlyList<ORMEnum> targetFrameworks,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, IReadOnlyList<ConversionSource>>> translations,
+        CancellationToken cancellationToken)
+    {
+        var results = new Dictionary<string, IReadOnlyDictionary<ORMEnum, QueryPlanPredictionDto>>(StringComparer.Ordinal);
+
+        foreach (var query in request.Queries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            logger.LogDebug("Running predictions for query {QueryId}.", query.Id);
+
+            if (!translations.TryGetValue(query.Id, out var frameworkSources))
+            {
+                throw new InvalidOperationException($"Missing translations for query '{query.Id}'.");
+            }
+
+            var perFramework = new Dictionary<ORMEnum, QueryPlanPredictionDto>();
+            foreach (var framework in targetFrameworks)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!frameworkSources.TryGetValue(framework, out var sources))
+                {
+                    throw new InvalidOperationException($"Missing translation for query '{query.Id}' and framework '{framework}'.");
+                }
+
+                var planResult = queryPlanExecutor.ExtractAndAnalyzePlan(framework, sources, connectionString);
+                
+                var prediction = new QueryPlanPredictionDto(
+                    planResult.Framework,
+                    planResult.SqlQuery,
+                    planResult.EstimatedCost,
+                    planResult.EstimatedRows,
+                    planResult.EstimatedCpuCost,
+                    planResult.EstimatedIoCost,
+                    planResult.IsSuccess,
+                    planResult.ErrorMessage
+                );
+
+                perFramework[framework] = prediction;
+                
+                if (planResult.IsSuccess)
+                {
+                    logger.LogInformation("Prediction {QueryId} on {Framework}: cost {Cost}, rows {Rows}.",
+                        query.Id, framework, planResult.EstimatedCost, planResult.EstimatedRows);
+                }
+                else
+                {
+                    logger.LogWarning("Prediction failed {QueryId} on {Framework}: {Error}.",
+                        query.Id, framework, planResult.ErrorMessage);
+                }
+            }
+
+            results[query.Id] = perFramework;
+        }
+
+        return results;
+    }
+
+    private AdvisorRunResult ExecuteAdvisorWithPredictions(
+        AdvisorRunRequest request,
+        IReadOnlyList<ORMEnum> targetFrameworks,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, QueryPlanPredictionDto>> predictions)
+    {
+        int queryCount = request.Queries.Count;
+        int frameworkCount = targetFrameworks.Count;
+
+        var cost = new double[queryCount * frameworkCount];
+        var mem = new long[queryCount * frameworkCount];
+        var weights = new int[queryCount];
+
+        // Build measurements from predictions (using estimated cost as the primary metric)
+        var dtoMeasurements = new Dictionary<string, IReadOnlyDictionary<ORMEnum, BenchmarkMeasurementDto>>(StringComparer.Ordinal);
+
+        for (int qi = 0; qi < queryCount; qi++)
+        {
+            var query = request.Queries[qi];
+            weights[qi] = Math.Max(1, query.Weight);
+            var queryPredictions = predictions[query.Id];
+
+            var measurementMap = new Dictionary<ORMEnum, BenchmarkMeasurementDto>();
+
+            for (int fi = 0; fi < frameworkCount; fi++)
+            {
+                var framework = targetFrameworks[fi];
+                var prediction = queryPredictions[framework];
+                int index = (qi * frameworkCount) + fi;
+
+                // Use estimated cost as the "runtime" metric for optimization
+                cost[index] = prediction.IsSuccess ? prediction.EstimatedCost : double.MaxValue;
+                mem[index] = 0; // Memory not estimated from execution plans
+
+                // Create measurement DTO with prediction data
+                measurementMap[framework] = new BenchmarkMeasurementDto(
+                    0, // No actual execution time
+                    0, // No actual memory
+                    prediction.EstimatedCost,
+                    prediction.EstimatedRows
+                );
+            }
+
+            dtoMeasurements[query.Id] = measurementMap;
+        }
+
+        int[] selected = new int[frameworkCount];
+        int[] assignment = new int[queryCount];
+
+        long maxMemory = request.MaxMemoryBytes > 0 ? request.MaxMemoryBytes : long.MaxValue;
+
+        int status = AdvisorNamespace.Solve(
+            mem,
+            cost,
+            weights,
+            maxMemory,
+            request.MaxFrameworksToSelect,
+            queryCount,
+            frameworkCount,
+            out int objective,
+            selected,
+            assignment);
+
+        if (status != 0)
+        {
+            throw new InvalidOperationException($"Advisor solver failed with status code {status}.");
+        }
+
+        var chosenFrameworks = new List<ORMEnum>();
+        for (int fi = 0; fi < frameworkCount; fi++)
+        {
+            if (selected[fi] > 0)
+            {
+                chosenFrameworks.Add(targetFrameworks[fi]);
+            }
+        }
+
+        var assignments = new Dictionary<string, ORMEnum>(StringComparer.Ordinal);
+        for (int qi = 0; qi < queryCount; qi++)
+        {
+            int frameworkIndex = assignment[qi];
+            if (frameworkIndex < 0 || frameworkIndex >= frameworkCount)
+            {
+                continue;
+            }
+            assignments[request.Queries[qi].Id] = targetFrameworks[frameworkIndex];
+        }
+
+        return new AdvisorRunResult(
+            chosenFrameworks,
+            assignments,
+            dtoMeasurements,
+            predictions,
+            UsedPrediction: true
+        );
     }
 
     /// <summary>

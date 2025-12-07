@@ -5,7 +5,8 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
-    "watch": "ng build --watch --configuration development"
+    "watch": "ng build --watch --configuration development",
+    "build:aspnetcore": "ng build --configuration \"production\" --base-href \"/orm/\" --deploy-url \"/orm/\" && rmdir /s /q \"..\\wwwroot\" && mkdir \"..\\wwwroot\" && xcopy /s /e /y \"dist\\browser\\*\" \"..\\wwwroot\\\""
   },
   "private": true,
   "dependencies": {

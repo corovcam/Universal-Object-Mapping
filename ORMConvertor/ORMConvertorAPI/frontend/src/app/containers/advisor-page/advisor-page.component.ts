@@ -18,7 +18,7 @@ import {
 import { ContentDisplayComponent } from "../../components/content-display/content-display.component";
 import { ContentType } from "../../model/content-type";
 import { SourceUnit } from "../../model/convert";
-import { AdvisorRunResult } from "../../model/advisor";
+import { AdvisorRunResult, BenchmarkMeasurementDto, QueryPlanPredictionDto } from "../../model/advisor";
 import { ORMType } from "../../model/orm-type";
 import {
   RequiredContentDefinition,
@@ -82,6 +82,9 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
   maxFrameworksToSelect = 2;
   targetOrms: ORMType[] = [];
 
+  /** When true, uses execution plan prediction instead of actual query execution */
+  usePrediction = false;
+
   error = "";
 
   requiredContent: RequiredContentDefinition[] = [];
@@ -98,6 +101,9 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
   advisorResult: AdvisorRunResult | null = null;
   assignmentEntries: QueryAssignmentView[] = [];
   convertedByFramework: FrameworkConversion[] = [];
+
+  /** Predictions data for display (when usePrediction is true) */
+  predictionsByQuery: Record<string, Record<ORMType, QueryPlanPredictionDto>> = {};
 
   constructor(
     private ormService: OrmService,
@@ -283,6 +289,7 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
     this.advisorResult = null;
     this.assignmentEntries = [];
     this.convertedByFramework = [];
+    this.predictionsByQuery = {};
 
     this.queryOrder = queries.map((query, index) => ({
       id: query.id,
@@ -299,6 +306,7 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
         this.targetOrms.length > 0
           ? Array.from(new Set(this.targetOrms))
           : undefined,
+      usePrediction: this.usePrediction,
     };
 
     this.ormService
@@ -307,6 +315,12 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
         takeUntilDestroyed(this.destroyRef),
         switchMap((result) => {
           this.advisorResult = result;
+          
+          // Store predictions if available
+          if (result.predictions) {
+            this.predictionsByQuery = result.predictions as Record<string, Record<ORMType, QueryPlanPredictionDto>>;
+          }
+
           const labelByQuery = new Map(
             this.queryOrder.map((entry) => [entry.id, entry.label])
           );
@@ -360,6 +374,7 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
           this.advisorResult = null;
           this.assignmentEntries = [];
           this.convertedByFramework = [];
+          this.predictionsByQuery = {};
         },
       });
   }
@@ -484,11 +499,26 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
     return total;
   }
 
+  get totalPredictedCost(): number {
+    if (!this.advisorResult?.usedPrediction || !this.advisorResult?.measurements) return 0;
+    let total = 0;
+    for (const a of this.assignmentEntries) {
+      const m = this.lookupMeasurement(a.queryId, a.framework);
+      if (m?.predictedCost) total += m.predictedCost;
+    }
+    return total;
+  }
+
+  /** Returns the loading message based on prediction mode */
+  get loadingMessage(): string {
+    return this.usePrediction ? 'Analyzing execution plans' : 'Optimizing';
+  }
+
   private lookupMeasurement(queryId: string, framework: ORMType):
-    | { meanDurationMilliseconds: number; allocatedBytes: number }
+    | BenchmarkMeasurementDto
     | null {
     const perFramework = (this.advisorResult?.measurements as any)?.[queryId] as
-      | Record<string, { meanDurationMilliseconds: number; allocatedBytes: number }>
+      | Record<string, BenchmarkMeasurementDto>
       | undefined;
     if (!perFramework) return null;
     // Try numeric key

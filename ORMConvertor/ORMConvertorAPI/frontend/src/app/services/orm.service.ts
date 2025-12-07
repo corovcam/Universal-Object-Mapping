@@ -3,7 +3,7 @@ import { HttpClient } from "@angular/common/http";
 import { Observable } from "rxjs";
 import { ConvertRequest, ConvertResponse } from "../model/convert";
 import { RequiredContentDefinition } from "../model/required-content";
-import { AdvisorRunRequest, AdvisorRunResult } from "../model/advisor";
+import { AdvisorRunRequest, AdvisorRunResult, QueryPlanPredictionResult } from "../model/advisor";
 
 @Injectable({ providedIn: "root" })
 export class OrmService {
@@ -33,5 +33,12 @@ export class OrmService {
 
   runAdvisor(req: AdvisorRunRequest): Observable<AdvisorRunResult> {
     return this.http.post<AdvisorRunResult>(`${this.base}/advisor/run`, req);
+  }
+
+  /**
+   * Predicts query execution costs using execution plan analysis without running queries.
+   */
+  predictCosts(req: AdvisorRunRequest): Observable<QueryPlanPredictionResult> {
+    return this.http.post<QueryPlanPredictionResult>(`${this.base}/advisor/predict`, req);
   }
 }

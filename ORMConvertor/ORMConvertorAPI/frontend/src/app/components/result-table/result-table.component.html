@@ -2,59 +2,118 @@
 
   @if (measurements && sortedQueryIds.length > 0 && uniqueFrameworks.length > 0) {
     <div class="tables">
-      <!-- Memory Table -->
-      <table class="assignments">
-        <thead>
-          <tr>
-            <th>Memory (kB)</th>
-            @for (f of uniqueFrameworks; track f) { <th>{{ frameworkName(f) }}</th> }
-          </tr>
-        </thead>
-        <tbody>
-          @for (row of memoryTableRows; track row.queryId) {
+      @if (usedPrediction) {
+        <!-- Predicted Cost Table (when using prediction mode) -->
+        <table class="assignments prediction-table">
+          <thead>
             <tr>
-              <td>Q{{ row.queryId }}</td>
-              @for (val of row.values; track $index) {
-                <td [class.best]="val !== null && val === row.min" [class.worst]="val !== null && val === row.max">{{ val?.toLocaleString() }}</td>
+              <th>
+                <span class="header-with-badge">
+                  Estimated Cost
+                  <span class="prediction-badge">Predicted</span>
+                </span>
+              </th>
+              @for (f of uniqueFrameworks; track f) { <th>{{ frameworkName(f) }}</th> }
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of predictedCostTableRows; track row.queryId) {
+              <tr>
+                <td>Q{{ row.queryId }}</td>
+                @for (val of row.values; track $index) {
+                  <td [class.best]="val !== null && val === row.min" [class.worst]="val !== null && val === row.max">{{ formatCost(val) }}</td>
+                }
+              </tr>
+            }
+            <tr class="sum">
+              <td>SUM</td>
+              @let cost = predictedCostTotalsVM;
+              @for (f of uniqueFrameworks; track f) {
+                <td [class.best]="cost.totals[f] === cost.min" [class.worst]="cost.totals[f] === cost.max">{{ formatCost(cost.totals[f]) }}</td>
               }
             </tr>
-          }
-          <tr class="sum">
-            <td>SUM</td>
-            @let mem = memoryTotalsVM;
-            @for (f of uniqueFrameworks; track f) {
-              <td [class.best]="mem.totals[f] === mem.min" [class.worst]="mem.totals[f] === mem.max">{{ mem.totals[f].toLocaleString() }}</td>
-            }
-          </tr>
-        </tbody>
-      </table>
+          </tbody>
+        </table>
 
-      <!-- Runtime Table -->
-      <table class="assignments">
-        <thead>
-          <tr>
-            <th>Runtime (ms)</th>
-            @for (f of uniqueFrameworks; track f) { <th>{{ frameworkName(f) }}</th> }
-          </tr>
-        </thead>
-        <tbody>
-          @for (row of runtimeTableRows; track row.queryId) {
+        <!-- Predicted Rows Table -->
+        <table class="assignments prediction-table">
+          <thead>
             <tr>
-              <td>Q{{ row.queryId }}</td>
-              @for (val of row.values; track $index) {
-                <td [class.best]="val !== null && val === row.min" [class.worst]="val !== null && val === row.max">{{ val?.toLocaleString() }}</td>
+              <th>
+                <span class="header-with-badge">
+                  Est. Rows
+                  <span class="prediction-badge">Predicted</span>
+                </span>
+              </th>
+              @for (f of uniqueFrameworks; track f) { <th>{{ frameworkName(f) }}</th> }
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of predictedRowsTableRows; track row.queryId) {
+              <tr>
+                <td>Q{{ row.queryId }}</td>
+                @for (val of row.values; track $index) {
+                  <td>{{ val?.toLocaleString() ?? '-' }}</td>
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      } @else {
+        <!-- Memory Table (when using actual execution) -->
+        <table class="assignments">
+          <thead>
+            <tr>
+              <th>Memory (kB)</th>
+              @for (f of uniqueFrameworks; track f) { <th>{{ frameworkName(f) }}</th> }
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of memoryTableRows; track row.queryId) {
+              <tr>
+                <td>Q{{ row.queryId }}</td>
+                @for (val of row.values; track $index) {
+                  <td [class.best]="val !== null && val === row.min" [class.worst]="val !== null && val === row.max">{{ val?.toLocaleString() }}</td>
+                }
+              </tr>
+            }
+            <tr class="sum">
+              <td>SUM</td>
+              @let mem = memoryTotalsVM;
+              @for (f of uniqueFrameworks; track f) {
+                <td [class.best]="mem.totals[f] === mem.min" [class.worst]="mem.totals[f] === mem.max">{{ mem.totals[f].toLocaleString() }}</td>
               }
             </tr>
-          }
-          <tr class="sum">
-            <td>SUM</td>
-            @let run = runtimeTotalsVM;
-            @for (f of uniqueFrameworks; track f) {
-              <td [class.best]="run.totals[f] === run.min" [class.worst]="run.totals[f] === run.max">{{ run.totals[f].toLocaleString() }}</td>
+          </tbody>
+        </table>
+
+        <!-- Runtime Table -->
+        <table class="assignments">
+          <thead>
+            <tr>
+              <th>Runtime (ms)</th>
+              @for (f of uniqueFrameworks; track f) { <th>{{ frameworkName(f) }}</th> }
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of runtimeTableRows; track row.queryId) {
+              <tr>
+                <td>Q{{ row.queryId }}</td>
+                @for (val of row.values; track $index) {
+                  <td [class.best]="val !== null && val === row.min" [class.worst]="val !== null && val === row.max">{{ val?.toLocaleString() }}</td>
+                }
+              </tr>
             }
-          </tr>
-        </tbody>
-      </table>
+            <tr class="sum">
+              <td>SUM</td>
+              @let run = runtimeTotalsVM;
+              @for (f of uniqueFrameworks; track f) {
+                <td [class.best]="run.totals[f] === run.min" [class.worst]="run.totals[f] === run.max">{{ run.totals[f].toLocaleString() }}</td>
+              }
+            </tr>
+          </tbody>
+        </table>
+      }
     </div>
   }
 

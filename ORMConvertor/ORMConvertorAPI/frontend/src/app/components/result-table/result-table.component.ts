@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, Input } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { ORMType } from "../../model/orm-type";
-import { AdvisorMeasurements, BenchmarkMeasurementDto } from "../../model/advisor";
+import { AdvisorMeasurements, AdvisorPredictions, BenchmarkMeasurementDto, QueryPlanPredictionDto } from "../../model/advisor";
 
 export interface QueryAssignmentView {
   queryId: string;
@@ -21,6 +21,8 @@ export class ResultTableComponent {
   @Input() assignments: QueryAssignmentView[] = [];
   @Input() selectedFrameworks: ORMType[] = [];
   @Input() measurements: AdvisorMeasurements | null = null;
+  @Input() predictions: AdvisorPredictions | null = null;
+  @Input() usedPrediction = false;
 
   private readonly frameworkOptions: { key: string; value: ORMType }[] =
     Object.keys(ORMType)
@@ -66,6 +68,22 @@ export class ResultTableComponent {
     });
   }
 
+  // Rows for Predicted Cost table (when usedPrediction is true)
+  get predictedCostTableRows(): { queryId: string; values: (number | null)[]; min: number | null; max: number | null }[] {
+    return this.sortedQueryIds.map((qid) => {
+      const values = this.uniqueFrameworks.map((f) => this.predictedCost(qid, f));
+      return { queryId: qid, values, min: this.rowMin(values), max: this.rowMax(values) };
+    });
+  }
+
+  // Rows for Predicted Rows table (when usedPrediction is true)
+  get predictedRowsTableRows(): { queryId: string; values: (number | null)[]; min: number | null; max: number | null }[] {
+    return this.sortedQueryIds.map((qid) => {
+      const values = this.uniqueFrameworks.map((f) => this.predictedRows(qid, f));
+      return { queryId: qid, values, min: this.rowMin(values), max: this.rowMax(values) };
+    });
+  }
+
   // Totals
   get memoryTotalsVM(): { totals: Record<ORMType, number>; min: number | null; max: number | null } {
     const totals = this.totalsMemory();
@@ -79,6 +97,12 @@ export class ResultTableComponent {
     return { totals, min: this.rowMin(orderedTotals), max: this.rowMax(orderedTotals) };
   }
 
+  get predictedCostTotalsVM(): { totals: Record<ORMType, number>; min: number | null; max: number | null } {
+    const totals = this.totalsPredictedCost();
+    const orderedTotals = this.uniqueFrameworks.map((f) => totals[f]);
+    return { totals, min: this.rowMin(orderedTotals), max: this.rowMax(orderedTotals) };
+  }
+
   memoryKb(queryId: string, framework: ORMType): number | null {
     const m = this.getMeasurement(queryId, framework);
     return m ? Math.round(m.allocatedBytes / 1024) : null;
@@ -87,6 +111,24 @@ export class ResultTableComponent {
   runtimeMs(queryId: string, framework: ORMType): number | null {
     const m = this.getMeasurement(queryId, framework);
     return m ? Math.round(m.meanDurationMilliseconds) : null;
+  }
+
+  predictedCost(queryId: string, framework: ORMType): number | null {
+    const m = this.getMeasurement(queryId, framework);
+    if (m?.predictedCost !== undefined && m?.predictedCost !== null) {
+      return m.predictedCost;
+    }
+    const p = this.getPrediction(queryId, framework);
+    return p?.estimatedCost ?? null;
+  }
+
+  predictedRows(queryId: string, framework: ORMType): number | null {
+    const m = this.getMeasurement(queryId, framework);
+    if (m?.predictedRows !== undefined && m?.predictedRows !== null) {
+      return Math.round(m.predictedRows);
+    }
+    const p = this.getPrediction(queryId, framework);
+    return p?.estimatedRows ? Math.round(p.estimatedRows) : null;
   }
 
   private getMeasurement(queryId: string, framework: ORMType): BenchmarkMeasurementDto | null {
@@ -103,6 +145,23 @@ export class ResultTableComponent {
     if (enumName) {
       const byName = (perFramework as any)[enumName] ?? (perFramework as any)[enumName.toUpperCase()] ?? (perFramework as any)[enumName.toLowerCase()];
       if (byName) return byName as BenchmarkMeasurementDto;
+    }
+    return null;
+  }
+
+  private getPrediction(queryId: string, framework: ORMType): QueryPlanPredictionDto | null {
+    const perFramework = this.predictions?.[queryId] as
+      | Record<string, QueryPlanPredictionDto>
+      | undefined;
+    if (!perFramework) return null;
+    const direct = (perFramework as any)[framework];
+    if (direct) return direct as QueryPlanPredictionDto;
+    const byString = (perFramework as any)[String(framework)];
+    if (byString) return byString as QueryPlanPredictionDto;
+    const enumName = this.frameworkOptions.find((o) => o.value === framework)?.key;
+    if (enumName) {
+      const byName = (perFramework as any)[enumName] ?? (perFramework as any)[enumName.toUpperCase()] ?? (perFramework as any)[enumName.toLowerCase()];
+      if (byName) return byName as QueryPlanPredictionDto;
     }
     return null;
   }
@@ -154,5 +213,22 @@ export class ResultTableComponent {
       }
     }
     return totals as Record<ORMType, number>;
+  }
+
+  totalsPredictedCost(): Record<ORMType, number> {
+    const totals: Record<number, number> = {};
+    for (const f of this.uniqueFrameworks) totals[f] = 0;
+    for (const q of this.sortedQueryIds) {
+      for (const f of this.uniqueFrameworks) {
+        const v = this.predictedCost(q, f);
+        if (v !== null) totals[f] += v;
+      }
+    }
+    return totals as Record<ORMType, number>;
+  }
+
+  /** Format predicted cost for display (4 decimal places) */
+  formatCost(value: number | null): string {
+    return value !== null ? value.toFixed(4) : '-';
   }
 }

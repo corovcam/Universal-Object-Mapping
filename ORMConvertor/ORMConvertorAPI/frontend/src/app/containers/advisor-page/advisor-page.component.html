@@ -105,12 +105,36 @@
       </div>
     </div>
 
+    <h3>Optimization Mode</h3>
+    <div class="optimization-mode">
+      <label class="mode-option">
+        <input type="radio" 
+               name="optimizationMode" 
+               [value]="false" 
+               [(ngModel)]="usePrediction" />
+        <span class="mode-label">
+          <strong>Execute Queries</strong>
+          <small>Run actual benchmarks for accurate measurements (slower)</small>
+        </span>
+      </label>
+      <label class="mode-option">
+        <input type="radio" 
+               name="optimizationMode" 
+               [value]="true" 
+               [(ngModel)]="usePrediction" />
+        <span class="mode-label">
+          <strong>Predict Costs</strong>
+          <small>Analyze execution plans without running queries (faster)</small>
+        </span>
+      </label>
+    </div>
+
     <button class="middle-button" type="button" (click)="convert()" [disabled]="isLoading">
-      Optimize
+      {{ usePrediction ? 'Predict & Optimize' : 'Optimize' }}
     </button>
     
     <h3 *ngIf="isLoading" class="optimizing-text">
-      Optimizing{{ loadingDots }}
+      {{ loadingMessage }}{{ loadingDots }}
     </h3>
 
     @if (showResults && advisorResult) {
@@ -118,22 +142,21 @@
         <app-result-table
           [assignments]="assignmentEntries"
           [selectedFrameworks]="advisorResult.selectedFrameworks"
-          [measurements]="advisorResult.measurements">
+          [measurements]="advisorResult.measurements"
+          [predictions]="advisorResult.predictions ?? null"
+          [usedPrediction]="advisorResult.usedPrediction ?? false">
         </app-result-table>
       </div>
       <div class="recommendation">
-        <!-- <h3>Recommended Frameworks</h3>
-        @if (advisorResult.selectedFrameworks.length === 0) {
-          <p>No frameworks selected by advisor.</p>
+        @if (advisorResult.usedPrediction) {
+          <p class="objective prediction-mode">
+            <span class="mode-badge">Predicted</span>
+            Total Estimated Cost: {{ totalPredictedCost.toFixed(4) }}
+          </p>
         } @else {
-          <ul>
-            @for (framework of advisorResult.selectedFrameworks; track framework) {
-              <li>{{ frameworkName(framework) }}</li>
-            }
-          </ul>
-        } -->
-        <p class="objective">Runtime: {{ totalAssignedRuntimeMs.toLocaleString() }} ms</p>
-        <p class="objective">Memory: {{ totalAssignedMemoryKb.toLocaleString() }} kB</p>
+          <p class="objective">Runtime: {{ totalAssignedRuntimeMs.toLocaleString() }} ms</p>
+          <p class="objective">Memory: {{ totalAssignedMemoryKb.toLocaleString() }} kB</p>
+        }
       </div>
       <hr>
       @if (convertedByFramework.length > 0) {

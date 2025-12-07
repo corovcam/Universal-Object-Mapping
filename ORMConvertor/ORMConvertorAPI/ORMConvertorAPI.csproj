@@ -4,6 +4,12 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Frontend build configuration -->
+    <FrontendDirectory>frontend</FrontendDirectory>
+    <FrontendOutputDirectory>$(FrontendDirectory)\dist\browser</FrontendOutputDirectory>
+    <WwwRootDirectory>wwwroot</WwwRootDirectory>
+    <!-- Skip frontend build when explicitly disabled -->
+    <BuildFrontend Condition="'$(BuildFrontend)' == ''">true</BuildFrontend>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,5 +32,35 @@
   <ItemGroup>
     <Folder Include="wwwroot\" />
   </ItemGroup>
+
+  <!-- Frontend Build Targets -->
+  <!-- Only run npm ci when node_modules doesn't exist -->
+  <Target Name="NpmInstall" 
+          BeforeTargets="BuildFrontend" 
+          Condition="'$(BuildFrontend)' == 'true'  AND Exists('$(FrontendDirectory)\package.json') AND !Exists('$(FrontendDirectory)\node_modules\.package-lock.json')">
+    <Message Importance="high" Text="Restoring npm packages..." />
+    <Exec Command="npm ci" WorkingDirectory="$(FrontendDirectory)" />
+  </Target>
+
+  <Target Name="BuildFrontend" BeforeTargets="BeforeBuild" Condition="'$(BuildFrontend)' == 'true' AND Exists('$(FrontendDirectory)\package.json')">
+    <Message Importance="high" Text="Building Angular frontend..." />
+    <Exec Command="npx ng build --configuration production --base-href /orm/ --deploy-url /orm/ --output-path=dist" WorkingDirectory="$(FrontendDirectory)" />
+  </Target>
+
+  <Target Name="CopyFrontendToWwwRoot" AfterTargets="BuildFrontend" Condition="'$(BuildFrontend)' == 'true' AND Exists('$(FrontendOutputDirectory)')">
+    <Message Importance="high" Text="Copying Angular build output to wwwroot..." />
+    <ItemGroup>
+      <FrontendFiles Include="$(FrontendOutputDirectory)\**\*" />
+    </ItemGroup>
+    <RemoveDir Directories="$(WwwRootDirectory)" Condition="Exists('$(WwwRootDirectory)')" />
+    <MakeDir Directories="$(WwwRootDirectory)" />
+    <Copy SourceFiles="@(FrontendFiles)" DestinationFolder="$(WwwRootDirectory)\%(RecursiveDir)" />
+  </Target>
+
+  <!-- Clean frontend output -->
+  <Target Name="CleanFrontend" AfterTargets="Clean">
+    <RemoveDir Directories="$(WwwRootDirectory)" Condition="Exists('$(WwwRootDirectory)')" />
+    <RemoveDir Directories="$(FrontendDirectory)\dist" Condition="Exists('$(FrontendDirectory)\dist')" />
+  </Target>
 
 </Project>

@@ -11,5 +11,10 @@ public record AdvisorRunRequest(
     IReadOnlyList<AdvisorRunQuery> Queries,
     long MaxMemoryBytes,
     int MaxFrameworksToSelect,
-    IReadOnlyList<ORMEnum>? TargetFrameworks = null
+    IReadOnlyList<ORMEnum>? TargetFrameworks = null,
+    /// <summary>
+    /// When true, uses query execution plan analysis to predict costs
+    /// instead of actually executing the queries. This is faster but less accurate.
+    /// </summary>
+    bool UsePrediction = false
 );
