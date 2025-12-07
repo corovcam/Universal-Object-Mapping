@@ -30,6 +30,7 @@ internal static class BenchmarkReferenceProvider
         AddAssembly(typeof(System.Diagnostics.Stopwatch).Assembly);
         AddAssembly(typeof(System.Data.Common.DbConnection).Assembly);
         AddAssembly(typeof(System.Linq.IQueryable).Assembly);
+        AddAssembly(typeof(System.Linq.Queryable).Assembly);
         AddAssembly(typeof(System.Linq.Expressions.Expression).Assembly);
         AddAssembly(typeof(System.ComponentModel.DataAnnotations.KeyAttribute).Assembly);
         AddAssembly(typeof(System.ComponentModel.Component).Assembly);

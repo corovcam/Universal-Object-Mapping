@@ -4,7 +4,10 @@ namespace Advisor;
 
 public unsafe partial class Advisor
 {
-    [LibraryImport("libadvisor.so", EntryPoint = "ilp_solve")]
+    // Use platform-agnostic library name - .NET resolves to .dll on Windows, .so on Linux
+    private const string LibraryName = "libadvisor";
+
+    [LibraryImport(LibraryName, EntryPoint = "ilp_solve")]
     private static partial int IlpSolve(
         long* mem,
         double* cost,

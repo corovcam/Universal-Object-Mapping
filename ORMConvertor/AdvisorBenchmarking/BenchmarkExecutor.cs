@@ -13,10 +13,43 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
     private readonly RoslynBenchmarkCompiler compiler = new();
     private readonly IReadOnlyList<Microsoft.CodeAnalysis.MetadataReference> references = BenchmarkReferenceProvider.GetStandardReferences();
     private readonly ILogger<BenchmarkExecutor>? logger;
+    private readonly QueryPlanExecutor queryPlanExecutor;
 
     public BenchmarkExecutor(ILogger<BenchmarkExecutor>? logger = null)
     {
         this.logger = logger;
+        this.queryPlanExecutor = new QueryPlanExecutor(logger != null ? 
+            Microsoft.Extensions.Logging.LoggerFactoryExtensions.CreateLogger<QueryPlanExecutor>(
+                new Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory()) : null);
+    }
+
+    /// <inheritdoc />
+    public QueryExecutionPlanResult PredictCost(
+        ORMEnum framework,
+        IReadOnlyList<ConversionSource> sources,
+        string connectionString)
+    {
+        logger?.LogInformation("Predicting cost for framework {Framework} without execution.", framework);
+        return queryPlanExecutor.ExtractAndAnalyzePlan(framework, sources, connectionString);
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<QueryExecutionPlanResult> PredictAndRankCosts(
+        IReadOnlyDictionary<ORMEnum, IReadOnlyList<ConversionSource>> frameworkSources,
+        string connectionString)
+    {
+        logger?.LogInformation("Predicting and ranking costs for {Count} frameworks.", frameworkSources.Count);
+
+        var results = queryPlanExecutor.AnalyzeAllFrameworks(frameworkSources, connectionString);
+        var ranked = queryPlanExecutor.RankByEstimatedCost(results);
+
+        if (ranked.Count > 0)
+        {
+            logger?.LogInformation("Best framework by predicted cost: {Framework} with cost {Cost}",
+                ranked[0].Framework, ranked[0].EstimatedCost);
+        }
+
+        return ranked;
     }
 
     public BenchmarkMeasurement Execute(

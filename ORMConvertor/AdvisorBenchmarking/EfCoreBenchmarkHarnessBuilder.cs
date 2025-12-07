@@ -1,12 +1,14 @@
+using Microsoft.EntityFrameworkCore;
+using Model;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
-using Model;
+using System.Text.RegularExpressions;
 using static AdvisorBenchmarking.HarnessGenerationUtilities;
 using EntityInfo = AdvisorBenchmarking.HarnessGenerationUtilities.EntityInfo;
 
@@ -14,6 +16,9 @@ namespace AdvisorBenchmarking;
 
 internal static class EfCoreBenchmarkHarnessBuilder
 {
+    /// <summary>
+    /// Builds a benchmark harness source for EF Core queries.
+    /// </summary>
     public static BenchmarkSource Build(
         IReadOnlyList<ConversionSource> sources,
         string connectionString)
@@ -339,6 +344,385 @@ internal static class EfCoreBenchmarkHarnessBuilder
         return new BenchmarkSource(ns, typeName, sb.ToString());
     }
 
+    /// <summary>
+    /// Builds a harness source that extracts SQL from the EF Core query without executing it.
+    /// </summary>
+    public static BenchmarkSource BuildForSqlExtraction(
+        IReadOnlyList<ConversionSource> sources,
+        string connectionString)
+    {
+        var entityInfos = ExtractEntityInfos(sources, connectionString);
+        if (entityInfos.Count == 0)
+        {
+            throw new InvalidOperationException("EF Core harness requires at least one entity definition.");
+        }
+
+        var rawQuerySources = ExtractQuerySources(sources);
+        if (rawQuerySources.Count == 0)
+        {
+            throw new InvalidOperationException("EF Core harness requires at least one query definition.");
+        }
+
+        var additionalUsings = new HashSet<string>(StringComparer.Ordinal);
+        var queryBodies = new List<string>();
+        foreach (var rawSource in rawQuerySources)
+        {
+            var lines = rawSource.Split('\n');
+            var bodyLines = new List<string>();
+            foreach (var line in lines)
+            {
+                var trimmed = line.Trim();
+                if (trimmed.StartsWith("using ", StringComparison.Ordinal))
+                {
+                    additionalUsings.Add(trimmed.TrimEnd(';'));
+                    continue;
+                }
+
+                bodyLines.Add(line);
+            }
+
+            var body = string.Join("\n", bodyLines).Trim();
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                queryBodies.Add(body);
+            }
+        }
+
+        var ns = "DynamicBenchmarks.SqlExtraction";
+        var typeName = $"EfCoreSqlExtractor_{Guid.NewGuid():N}";
+
+        var sb = new StringBuilder();
+        var usingSet = new HashSet<string>(StringComparer.Ordinal);
+        void AddUsing(string nsName)
+        {
+            var normalized = nsName.Trim().TrimEnd(';');
+            if (usingSet.Add(normalized))
+            {
+                sb.AppendLine($"using {normalized};");
+            }
+        }
+
+        AddUsing("System");
+        AddUsing("System.Collections");
+        AddUsing("System.Collections.Generic");
+        AddUsing("System.Linq");
+        AddUsing("System.Reflection");
+        AddUsing("System.Threading.Tasks");
+        AddUsing("Microsoft.EntityFrameworkCore");
+        AddUsing("Microsoft.EntityFrameworkCore.Metadata.Builders");
+        foreach (var entityUsing in entityInfos.SelectMany(e => e.Usings))
+        {
+            AddUsing(entityUsing.StartsWith("using ", StringComparison.Ordinal) ? entityUsing["using ".Length..] : entityUsing);
+        }
+        foreach (var distinctNs in entityInfos.Select(e => e.Namespace).Where(n => n != null).Distinct())
+        {
+            AddUsing(distinctNs!);
+        }
+        foreach (var usingDirective in additionalUsings.OrderBy(u => u, StringComparer.Ordinal))
+        {
+            var nsName = usingDirective.StartsWith("using ", StringComparison.Ordinal)
+                ? usingDirective["using ".Length..]
+                : usingDirective;
+            AddUsing(nsName);
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"namespace {ns}");
+        sb.AppendLine("{");
+        sb.AppendLine($"    public class {typeName}");
+        sb.AppendLine("    {");
+        sb.AppendLine($"        private const string ConnectionString = @\"{EscapeVerbatim(connectionString)}\";");
+        sb.AppendLine("        private SqlExtractionDbContext context = default!;");
+        sb.AppendLine("        private static readonly QueryBinding CachedQuery = ResolveQueryBinding();");
+        sb.AppendLine();
+        sb.AppendLine("        public void Setup()");
+        sb.AppendLine("        {");
+        sb.AppendLine("            var options = new DbContextOptionsBuilder<SqlExtractionDbContext>()");
+        sb.AppendLine("                .UseSqlServer(ConnectionString)");
+        sb.AppendLine("                .Options;");
+        sb.AppendLine("            context = new SqlExtractionDbContext(options);");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        public void Cleanup()");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (context is null) { return; }");
+        sb.AppendLine("            context.Dispose();");
+        sb.AppendLine("            context = null!;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        /// <summary>");
+        sb.AppendLine("        /// Extracts the SQL query string from the EF Core IQueryable without executing it.");
+        sb.AppendLine("        /// </summary>");
+        sb.AppendLine("        public string GetSqlQuery()");
+        sb.AppendLine("        {");
+        sb.AppendLine("            var result = CachedQuery.Method.Invoke(CachedQuery.Target, new object[] { context });");
+        sb.AppendLine("            return ExtractSqlFromQueryable(result);");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        private static string ExtractSqlFromQueryable(object? value)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (value is null)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                return string.Empty;");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            // Handle async wrappers");
+        sb.AppendLine("            if (value is Task task)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                task.GetAwaiter().GetResult();");
+        sb.AppendLine("                var taskType = task.GetType();");
+        sb.AppendLine("                if (taskType.IsGenericType)");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    var resultProperty = taskType.GetProperty(\"Result\");");
+        sb.AppendLine("                    var taskResult = resultProperty?.GetValue(task);");
+        sb.AppendLine("                    return ExtractSqlFromQueryable(taskResult);");
+        sb.AppendLine("                }");
+        sb.AppendLine("                return string.Empty;");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            // Use ToQueryString() for IQueryable to get the SQL");
+        sb.AppendLine("            if (value is IQueryable queryable)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                // Try to call ToQueryString via reflection (EF Core extension method)");
+        sb.AppendLine("                var toQueryStringMethod = typeof(Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions)");
+        sb.AppendLine("                    .GetMethod(\"ToQueryString\", BindingFlags.Public | BindingFlags.Static);");
+        sb.AppendLine("                if (toQueryStringMethod != null)");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    try");
+        sb.AppendLine("                    {");
+        sb.AppendLine("                        var sql = toQueryStringMethod.Invoke(null, new object[] { queryable }) as string;");
+        sb.AppendLine("                        return sql ?? string.Empty;");
+        sb.AppendLine("                    }");
+        sb.AppendLine("                    catch");
+        sb.AppendLine("                    {");
+        sb.AppendLine("                        return queryable.Expression.ToString();");
+        sb.AppendLine("                    }");
+        sb.AppendLine("                }");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            return value.ToString() ?? string.Empty;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        private static QueryBinding ResolveQueryBinding()");
+        sb.AppendLine("        {");
+        sb.AppendLine("            var assembly = typeof(SqlExtractionDbContext).Assembly;");
+        sb.AppendLine("            var benchmarkType = typeof(" + typeName + ");");
+        sb.AppendLine();
+        sb.AppendLine("            foreach (var type in assembly.GetTypes())");
+        sb.AppendLine("            {");
+        sb.AppendLine("                if (type == benchmarkType || type == typeof(SqlExtractionDbContext))");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    continue;");
+        sb.AppendLine("                }");
+        sb.AppendLine();
+        sb.AppendLine("                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance))");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    if (!IsSupportedReturnType(method.ReturnType))");
+        sb.AppendLine("                    {");
+        sb.AppendLine("                        continue;");
+        sb.AppendLine("                    }");
+        sb.AppendLine();
+        sb.AppendLine("                    var parameters = method.GetParameters();");
+        sb.AppendLine("                    if (parameters.Length != 1)");
+        sb.AppendLine("                    {");
+        sb.AppendLine("                        continue;");
+        sb.AppendLine("                    }");
+        sb.AppendLine();
+        sb.AppendLine("                    if (!typeof(DbContext).IsAssignableFrom(parameters[0].ParameterType))");
+        sb.AppendLine("                    {");
+        sb.AppendLine("                        continue;");
+        sb.AppendLine("                    }");
+        sb.AppendLine();
+        sb.AppendLine("                    object? target = null;");
+        sb.AppendLine("                    if (!method.IsStatic)");
+        sb.AppendLine("                    {");
+        sb.AppendLine("                        var ctor = type.GetConstructor(Type.EmptyTypes);");
+        sb.AppendLine("                        if (ctor is null)");
+        sb.AppendLine("                        {");
+        sb.AppendLine("                            continue;");
+        sb.AppendLine("                        }");
+        sb.AppendLine();
+        sb.AppendLine("                        target = ctor.Invoke(null);");
+        sb.AppendLine("                    }");
+        sb.AppendLine();
+        sb.AppendLine("                    return new QueryBinding(target, method);");
+        sb.AppendLine("                }");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            throw new InvalidOperationException(\"EF Core query method not found.\");");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        private static bool IsSupportedReturnType(Type type)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (typeof(IQueryable).IsAssignableFrom(type) || typeof(IEnumerable).IsAssignableFrom(type))");
+        sb.AppendLine("            {");
+        sb.AppendLine("                return true;");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            if (typeof(Task).IsAssignableFrom(type))");
+        sb.AppendLine("            {");
+        sb.AppendLine("                return true;");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            return type.IsValueType && type.FullName is string fullName && fullName.StartsWith(\"System.Threading.Tasks.ValueTask\", StringComparison.Ordinal);");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        private sealed class QueryBinding");
+        sb.AppendLine("        {");
+        sb.AppendLine("            public QueryBinding(object? target, MethodInfo method)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                Target = target;");
+        sb.AppendLine("                Method = method;");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            public object? Target { get; }");
+        sb.AppendLine("            public MethodInfo Method { get; }");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        private sealed class SqlExtractionDbContext : DbContext");
+        sb.AppendLine("        {");
+        sb.AppendLine("            public SqlExtractionDbContext(DbContextOptions<SqlExtractionDbContext> options) : base(options)");
+        sb.AppendLine("            {");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                if (!optionsBuilder.IsConfigured)");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    optionsBuilder.UseSqlServer(ConnectionString);");
+        sb.AppendLine("                }");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            protected override void OnModelCreating(ModelBuilder modelBuilder)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                base.OnModelCreating(modelBuilder);");
+        foreach (var entity in entityInfos)
+        {
+            var qualifiedType = GetQualifiedTypeName(entity);
+            var tableName = entity.TableName;
+            if (tableName.Contains('.', StringComparison.Ordinal))
+            {
+                var parts = tableName.Split('.', 2);
+                var schema = parts[0];
+                var name = parts[1];
+                sb.AppendLine($"                modelBuilder.Entity<{qualifiedType}>(builder => builder.ToTable(\"{EscapeVerbatim(name)}\", \"{EscapeVerbatim(schema)}\"));");
+            }
+            else
+            {
+                sb.AppendLine($"                modelBuilder.Entity<{qualifiedType}>(builder => builder.ToTable(\"{EscapeVerbatim(tableName)}\"));");
+            }
+        }
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        foreach (var entity in entityInfos)
+        {
+            var qualifiedType = GetQualifiedTypeName(entity);
+            var propertyName = GetDbSetPropertyName(entity);
+            sb.AppendLine($"            public DbSet<{qualifiedType}> {propertyName} => Set<{qualifiedType}>();");
+        }
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+        sb.AppendLine();
+
+        foreach (var body in queryBodies)
+        {
+            // Preprocess the query to convert it for SQL extraction
+            var normalized = PreprocessQueryForSqlExtraction(body.Trim());
+            
+            if (!ContainsTypeOrNamespace(normalized))
+            {
+                normalized = WrapLooseQueryBodyForSQLExtraction(normalized);
+            }
+
+            sb.AppendLine(normalized);
+            sb.AppendLine();
+        }
+
+        foreach (var entity in entityInfos)
+        {
+            sb.AppendLine(NormalizeEntitySource(entity.Source));
+            sb.AppendLine();
+        }
+
+        return new BenchmarkSource(ns, typeName, sb.ToString());
+    }
+
+    /// <summary>
+    /// Preprocesses an EF Core query source for SQL extraction by:
+    /// 1. Removing materialization calls (.ToList(), .ToArray(), .ToListAsync(), etc.)
+    /// 2. Changing the return type from List/Array to IQueryable
+    /// </summary>
+    private static string PreprocessQueryForSqlExtraction(string source)
+    {
+        var result = source;
+
+        // Remove materialization calls at the end of LINQ chains
+        result = Regex.Replace(
+            result,
+            @"\.ToList\s*\(\s*\)",
+            "",
+            RegexOptions.None);
+        result = Regex.Replace(
+            result,
+            @"\.ToArray\s*\(\s*\)",
+            "",
+            RegexOptions.None);
+        result = Regex.Replace(
+            result,
+            @"\.ToListAsync\s*\([^)]*\)",
+            "",
+            RegexOptions.None);
+        result = Regex.Replace(
+            result,
+            @"\.ToArrayAsync\s*\([^)]*\)",
+            "",
+            RegexOptions.None);
+        result = Regex.Replace(
+            result,
+            @"\.AsEnumerable\s*\(\s*\)",
+            "",
+            RegexOptions.None);
+
+        // Change return type from List<T> or T[] to IQueryable<T>
+        // Match patterns like: public static List<Customer> MethodName
+        result = Regex.Replace(
+            result,
+            @"(\bpublic\s+(?:static\s+)?)(List<([^>]+)>)(\s+\w+\s*\([^)]*DbContext)",
+            "$1IQueryable<$3>$4",
+            RegexOptions.None);
+
+        // Match patterns like: public static Customer[] MethodName
+        result = Regex.Replace(
+            result,
+            @"(\bpublic\s+(?:static\s+)?)((\w+)\[\])(\s+\w+\s*\([^)]*DbContext)",
+            "$1IQueryable<$3>$4",
+            RegexOptions.None);
+
+        // Match patterns like: public List<Customer> MethodName (non-static)
+        result = Regex.Replace(
+            result,
+            @"(\bpublic\s+)(List<([^>]+)>)(\s+\w+\s*\([^)]*DbContext)",
+            "$1IQueryable<$3>$4",
+            RegexOptions.None);
+
+        // Match patterns like: List<Customer> MethodName (no access modifier)
+        result = Regex.Replace(
+            result,
+            @"(^\s*)(List<([^>]+)>)(\s+\w+\s*\([^)]*DbContext)",
+            "$1IQueryable<$3>$4",
+            RegexOptions.Multiline);
+
+        // Also handle IEnumerable<T> -> IQueryable<T> and IOrderedEnumerable<T> -> IQueryable<T>
+        result = Regex.Replace(
+            result,
+            @"(\bpublic\s+(?:static\s+)?)(I(?:Ordered)?Enumerable<([^>]+)>)(\s+\w+\s*\([^)]*DbContext)",
+            "$1IQueryable<$3>$4",
+            RegexOptions.None);
+
+        return result;
+    }
+
     private static bool ContainsTypeOrNamespace(string source)
     {
         var s = source;
@@ -349,33 +733,33 @@ internal static class EfCoreBenchmarkHarnessBuilder
             || s.Contains(" record ", StringComparison.Ordinal);
     }
 
-    private static string WrapLooseQueryBody(string body)
+    // Attempt to extract the inner block of a method definition if present.
+    private static string ExtractInnerBlock(string text)
     {
-        // Attempt to extract the inner block of a method definition if present.
-        static string ExtractInnerBlock(string text)
+        int start = text.IndexOf('{');
+        if (start < 0)
         {
-            int start = text.IndexOf('{');
-            if (start < 0)
-            {
-                return text.Trim();
-            }
-            int depth = 0;
-            for (int i = start; i < text.Length; i++)
-            {
-                if (text[i] == '{') depth++;
-                else if (text[i] == '}')
-                {
-                    depth--;
-                    if (depth == 0)
-                    {
-                        var inner = text.Substring(start + 1, i - start - 1);
-                        return inner.Trim();
-                    }
-                }
-            }
             return text.Trim();
         }
+        int depth = 0;
+        for (int i = start; i < text.Length; i++)
+        {
+            if (text[i] == '{') depth++;
+            else if (text[i] == '}')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    var inner = text.Substring(start + 1, i - start - 1);
+                    return inner.Trim();
+                }
+            }
+        }
+        return text.Trim();
+    }
 
+    private static string WrapLooseQueryBody(string body)
+    {
         var content = ExtractInnerBlock(body);
         var indented = HarnessGenerationUtilities.Indent(content, "            ");
         // Non-generic IEnumerable is accepted by the materializer
@@ -384,6 +768,23 @@ internal static class EfCoreBenchmarkHarnessBuilder
     public static class QueryHelpers
     {
         public static System.Collections.IEnumerable Query(Microsoft.EntityFrameworkCore.DbContext ctx)
+        {
+" + indented + @"
+        }
+    }
+}";
+    }
+
+    private static string WrapLooseQueryBodyForSQLExtraction(string body)
+    {
+        var content = ExtractInnerBlock(body);
+        var indented = HarnessGenerationUtilities.Indent(content, "            ");
+        // Return IQueryable for SQL extraction - ToQueryString() requires IQueryable
+        return @"namespace TranslatedQueries
+{
+    public static class QueryHelpers
+    {
+        public static System.Linq.IQueryable Query(Microsoft.EntityFrameworkCore.DbContext ctx)
         {
 " + indented + @"
         }

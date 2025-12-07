@@ -136,4 +136,115 @@ internal static class DapperBenchmarkHarnessBuilder
     // Strip them so the query stays valid for SQL Server.
     private static string StripCSharpNumericSuffixes(string sqlBody) =>
         Regex.Replace(sqlBody, @"(?<=\b\d+(?:\.\d+)?)[mMdDfF]\b", string.Empty);
+
+    /// <summary>
+    /// Builds a harness source that extracts SQL from the Dapper query without executing it.
+    /// </summary>
+    public static BenchmarkSource BuildForSqlExtraction(
+        IReadOnlyList<ConversionSource> sources,
+        string connectionString)
+    {
+        var entityInfos = ExtractEntityInfos(sources, connectionString);
+        if (entityInfos.Count == 0)
+        {
+            throw new InvalidOperationException("Dapper harness requires at least one entity definition.");
+        }
+
+        var querySource = sources
+            .FirstOrDefault(s => s.ContentType == ConversionContentType.CSharpQuery)?.Content
+            ?? throw new InvalidOperationException("Dapper harness requires a query definition.");
+        querySource = NormalizeQuerySource(querySource);
+
+        var ns = "DynamicBenchmarks.SqlExtraction";
+        var typeName = $"DapperSqlExtractor_{Guid.NewGuid():N}";
+
+        // Extract SQL directly from the query source
+        var sqlQuery = ExtractSqlFromQuerySource(querySource, entityInfos);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("using System;");
+        sb.AppendLine();
+        sb.AppendLine($"namespace {ns}");
+        sb.AppendLine("{");
+        sb.AppendLine($"    public class {typeName}");
+        sb.AppendLine("    {");
+        sb.AppendLine("        public void Setup() { }");
+        sb.AppendLine("        public void Cleanup() { }");
+        sb.AppendLine();
+        sb.AppendLine("        /// <summary>");
+        sb.AppendLine("        /// Returns the SQL query string extracted from the Dapper query.");
+        sb.AppendLine("        /// </summary>");
+        sb.AppendLine("        public string GetSqlQuery()");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            return @\"{EscapeVerbatim(sqlQuery)}\";");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+
+        return new BenchmarkSource(ns, typeName, sb.ToString());
+    }
+
+    /// <summary>
+    /// Extracts the SQL query string directly from the Dapper query source code.
+    /// This is used for execution plan analysis without compilation.
+    /// </summary>
+    public static string ExtractSqlFromQuerySource(string querySource, IReadOnlyList<EntityInfo> entityInfos)
+    {
+        string normalized = querySource.ReplaceLineEndings("\n");
+
+        // Look for raw string literals first (triple-quoted)
+        var rawStringMatch = Regex.Match(normalized, "\"\"\"(?<sql>.*?)\"\"\"", RegexOptions.Singleline);
+        if (rawStringMatch.Success)
+        {
+            var sql = rawStringMatch.Groups["sql"].Value.Trim('\r', '\n');
+            return ProcessExtractedSql(sql, entityInfos);
+        }
+
+        // Look for verbatim string literals
+        var verbatimMatch = Regex.Match(normalized, "@\"(?<sql>(?:[^\"]|\"\")*)\"", RegexOptions.Singleline);
+        if (verbatimMatch.Success)
+        {
+            var sql = verbatimMatch.Groups["sql"].Value.Replace("\"\"", "\"").Trim();
+            if (LooksLikeSql(sql))
+            {
+                return ProcessExtractedSql(sql, entityInfos);
+            }
+        }
+
+        // Look for regular string literals in Query<T> or Execute patterns
+        var queryMatch = Regex.Match(normalized, @"\.Query(?:<[^>]+>)?\s*\(\s*""([^""]+)""", RegexOptions.Singleline);
+        if (queryMatch.Success)
+        {
+            return ProcessExtractedSql(queryMatch.Groups[1].Value, entityInfos);
+        }
+
+        // Look for any string that looks like SQL
+        var anyStringMatch = Regex.Match(normalized, "\"([^\"]+)\"", RegexOptions.Singleline);
+        if (anyStringMatch.Success)
+        {
+            var possibleSql = anyStringMatch.Groups[1].Value;
+            if (LooksLikeSql(possibleSql))
+            {
+                return ProcessExtractedSql(possibleSql, entityInfos);
+            }
+        }
+
+        throw new InvalidOperationException("Could not extract SQL query from Dapper source.");
+    }
+
+    private static string ProcessExtractedSql(string sql, IReadOnlyList<EntityInfo> entityInfos)
+    {
+        var primaryTable = entityInfos.FirstOrDefault()?.TableName ?? "UnknownTable";
+        sql = ReplaceSetPlaceholder(sql, primaryTable);
+        sql = StripCSharpNumericSuffixes(sql);
+        return sql.Trim();
+    }
+
+    private static bool LooksLikeSql(string text)
+    {
+        var upper = text.ToUpperInvariant();
+        return upper.Contains("SELECT") || upper.Contains("INSERT") ||
+               upper.Contains("UPDATE") || upper.Contains("DELETE") ||
+               upper.Contains("FROM");
+    }
 }

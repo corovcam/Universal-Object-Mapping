@@ -5,6 +5,31 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Set to true to allow build without GLPK installed (Advisor features won't work) -->
+    <SkipNativeLibraryIfMissing>false</SkipNativeLibraryIfMissing>
   </PropertyGroup>
+
+  <!-- Pre-build: compile native library on Windows -->
+  <Target Name="BuildNativeLibrary" BeforeTargets="Build" Condition="'$(OS)' == 'Windows_NT'">
+    <PropertyGroup>
+      <SkipFlag Condition="'$(SkipNativeLibraryIfMissing)' == 'true'">-SkipIfMissing</SkipFlag>
+      <SkipFlag Condition="'$(SkipNativeLibraryIfMissing)' != 'true'"></SkipFlag>
+    </PropertyGroup>
+    <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;$(ProjectDir)build_native.ps1&quot; $(SkipFlag)" />
+  </Target>
+
+   <!--Include native library in output-->
+
+  <ItemGroup Condition="'$(OS)' != 'Windows_NT'">
+    <None Include="libadvisor.so" Condition="Exists('libadvisor.so')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+	  <None Include="libadvisor.dll" Condition="Exists('libadvisor.dll')">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </None>
+  </ItemGroup>
 
 </Project>
