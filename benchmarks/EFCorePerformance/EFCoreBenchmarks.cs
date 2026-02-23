@@ -1,5 +1,6 @@
 ﻿using BenchmarkDotNet.Attributes;
 using Common;
+using Common.mock;
 using EFCoreEntities;
 using EFCoreEntities.Models;
 using Microsoft.EntityFrameworkCore;
@@ -13,23 +14,46 @@ namespace EFCorePerformance
     public class EFCoreBenchmarks
     {
         private PooledDbContextFactory<WWIContext> contextFactory = null!;
+        private readonly BenchmarkCommandExecutor commandExecutor = new();
+        private decimal counter = 0m;
 
         [GlobalSetup]
         public void GlobalSetup()
         {
-            var options = new DbContextOptionsBuilder<WWIContext>()
-           .UseSqlServer(DatabaseConfig.MSSQLConnectionString)
-           // We only test read queries, tracking is not needed and might slow down the tests
-           .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
-           .ConfigureWarnings(warnings =>
-           {
-               warnings.Ignore(CoreEventId.SensitiveDataLoggingEnabledWarning);
-               // we only read the values, so we don't need to worry about precision when saving
-               warnings.Ignore(SqlServerEventId.DecimalTypeDefaultWarning);
-           })
-           .Options;
+           // var options = new DbContextOptionsBuilder<WWIContext>()
+           //.UseSqlServer(DatabaseConfig.MSSQLConnectionString)
+           //// We only test read queries, tracking is not needed and might slow down the tests
+           //.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
+           //.ConfigureWarnings(warnings =>
+           //{
+           //    warnings.Ignore(CoreEventId.SensitiveDataLoggingEnabledWarning);
+           //    // we only read the values, so we don't need to worry about precision when saving
+           //    warnings.Ignore(SqlServerEventId.DecimalTypeDefaultWarning);
+           //})
+           //.Options;
 
-            contextFactory = new(options);
+           //contextFactory = new(options);
+
+           var fakeConnection = new FakeDbConnection(DatabaseConfig.MSSQLConnectionString, commandExecutor);
+           fakeConnection.Open();
+
+           var benchmarkOptions = new DbContextOptionsBuilder<WWIContext>()
+                .UseSqlServer(fakeConnection)
+                // We only test read queries, tracking is not needed and might slow down the tests
+                .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
+                .ConfigureWarnings(warnings =>
+                {
+                    warnings.Ignore(CoreEventId.SensitiveDataLoggingEnabledWarning);
+                    // we only read the values, so we don't need to worry about precision when saving
+                    warnings.Ignore(SqlServerEventId.DecimalTypeDefaultWarning);
+                })
+                //.LogTo(Console.WriteLine, new[] { RelationalEventId.CommandExecuted })
+                .Options;
+
+            contextFactory = new(benchmarkOptions);
+
+            using var context = contextFactory.CreateDbContext();
+            commandExecutor.ConfigureTypeMappingSource(context.Model.GetModelDependencies().TypeMappingSource);
         }
 
         [GlobalCleanup]
@@ -215,7 +239,7 @@ namespace EFCorePerformance
                 .GroupBy(ol => ol.TaxRate)
                 .Select(g => new { TaxRate = g.Key, Count = g.Count() })
                 .OrderByDescending(x => x.Count)
-                .ToDictionary(x => x.TaxRate, x => x.Count);
+                .ToDictionary(x => x.TaxRate + ++counter, x => x.Count);
 
             return taxRates;
         }

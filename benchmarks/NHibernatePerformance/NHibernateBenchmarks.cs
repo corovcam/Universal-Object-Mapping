@@ -1,5 +1,9 @@
-﻿using BenchmarkDotNet.Attributes;
+﻿using System.Data.Common;
+using BenchmarkDotNet.Attributes;
 using Common;
+using Common.mock;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore.Internal;
 using NHibernate;
 using NHibernate.Cfg;
 using NHibernate.Dialect;
@@ -20,11 +24,12 @@ namespace NHibernatePerformance
         [GlobalSetup]
         public void GlobalSetup()
         {
+            NHibernateFakeDriver.DriverClass = typeof(SqlClientDriver);
             var configuration = new Configuration()
                 .DataBaseIntegration(db =>
                 {
                     db.ConnectionString = DatabaseConfig.MSSQLConnectionString;
-                    db.Driver<SqlClientDriver>();
+                    db.Driver<NHibernateFakeDriver>();
                     db.Dialect<MsSql2012Dialect>();
                 })
                 .AddAssembly(typeof(PurchaseOrder).Assembly);
