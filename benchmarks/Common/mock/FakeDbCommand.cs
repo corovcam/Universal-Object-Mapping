@@ -4,7 +4,7 @@ using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Common.mock;
+namespace Common.Mock;
 
 public partial class FakeDbCommand : DbCommand
 {
@@ -48,7 +48,7 @@ public partial class FakeDbCommand : DbCommand
 	public override object ExecuteScalar()
 		=> _commandExecutor.ExecuteScalar(this);
 
-	protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+    protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
 		=> _commandExecutor.ExecuteReader(this, behavior);
 
 	public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)

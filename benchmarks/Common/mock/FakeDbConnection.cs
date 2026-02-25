@@ -5,7 +5,7 @@ using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Common.mock;
+namespace Common.Mock;
 
 /// <summary>
 /// A fake DbConnection that uses BenchmarkCommandExecutor to return mock data.

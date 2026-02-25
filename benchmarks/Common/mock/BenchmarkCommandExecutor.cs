@@ -7,7 +7,7 @@ using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Common.mock;
+namespace Common.Mock;
 
 /// <summary>
 /// A command executor that returns mock DataTableReader instances populated with
@@ -17,21 +17,15 @@ namespace Common.mock;
 public class BenchmarkCommandExecutor
 {
 	private int _estimatedRows = 1;
-	private List<QueryPlanHelper.ColumnInfo> _outputColumns = [];
-	private ITypeMappingSource _typeMapper;
+	private List<QueryOutputInfoHelper.ColumnInfo> _outputColumns = [];
 
 	/// <summary>
 	/// Configures the executor with query plan metadata for the next benchmark iteration.
 	/// </summary>
-	public void Configure(QueryPlanHelper.QueryPlanInfo planInfo)
+	public void Configure(QueryOutputInfoHelper.QueryInfo queryInfo)
 	{
-		_estimatedRows = planInfo.EstimatedRows;
-		_outputColumns = planInfo.OutputColumns;
-	}
-
-	public void ConfigureTypeMappingSource(ITypeMappingSource typeMapper)
-	{
-		_typeMapper = typeMapper;
+		_estimatedRows = queryInfo.EstimatedRows;
+		_outputColumns = queryInfo.OutputColumns;
 	}
 
 	public virtual int ExecuteNonQuery(DbCommand command)
@@ -41,7 +35,7 @@ public class BenchmarkCommandExecutor
 		=> 1.00m;
 
 	public virtual DbDataReader ExecuteReader(DbCommand command, CommandBehavior behavior)
-		=> BuildMockReader(command);
+		=> BuildMockReader();
 
 	public virtual Task<int> ExecuteNonQueryAsync(DbCommand command, CancellationToken cancellationToken)
 		=> Task.FromResult(-1);
@@ -50,11 +44,10 @@ public class BenchmarkCommandExecutor
 		=> Task.FromResult<object>(1.00m);
 
 	public virtual Task<DbDataReader> ExecuteReaderAsync(DbCommand command, CommandBehavior behavior, CancellationToken cancellationToken)
-		=> Task.FromResult<DbDataReader>(BuildMockReader(command));
+		=> Task.FromResult<DbDataReader>(BuildMockReader());
 
-	private DataTableReader BuildMockReader(DbCommand command)
+	private DataTableReader BuildMockReader()
 	{
-		ConfigureExecutor(command);
 		if (_outputColumns.Count > 0)
 		{
 			return CreateReader(_outputColumns, _estimatedRows);
@@ -64,15 +57,10 @@ public class BenchmarkCommandExecutor
 		return CreateScalarReader(1.00m);
 	}
 
-	private void ConfigureExecutor(DbCommand command)
+	public void ConfigureExecutor(DbCommand command)
     {
         var sqlQuery = command.CommandText;
-        if (sqlQuery == "")
-        {
-            var queryStringFactory = new SqlServerQueryStringFactory((IRelationalTypeMappingSource)_typeMapper);
-            sqlQuery = queryStringFactory.Create(command);
-        }
-        var queryInfo = QueryPlanHelper.AnalyzeSqlQuery(sqlQuery, command.Connection?.ConnectionString);
+        var queryInfo = QueryOutputInfoHelper.AnalyzeSqlQuery(sqlQuery, command.Connection?.ConnectionString);
 		Configure(queryInfo);
 	}
 
@@ -80,13 +68,13 @@ public class BenchmarkCommandExecutor
 	/// Builds a DataTable with the specified columns and row count, populated
 	/// with default values, then returns its CreateDataReader().
 	/// </summary>
-	public static DataTableReader CreateReader(IReadOnlyList<QueryPlanHelper.ColumnInfo> columns, int rowCount)
+	public static DataTableReader CreateReader(IReadOnlyList<QueryOutputInfoHelper.ColumnInfo> columns, int rowCount)
 	{
 		var table = new DataTable();
 		foreach (var col in columns)
 		{
 			var clrType = col.ClrType == typeof(object) ? typeof(string) : col.ClrType;
-			table.Columns.Add(col.Name, clrType);
+			table.Columns.Add(col.Ordinal + "__" + col.Name, clrType);
 		}
 
 		for (int i = 0; i < rowCount; i++)
@@ -94,7 +82,7 @@ public class BenchmarkCommandExecutor
 			var row = table.NewRow();
 			for (int c = 0; c < columns.Count; c++)
 			{
-				row[c] = QueryPlanHelper.GetDefaultValue(columns[c].ClrType);
+				row[c] = QueryOutputInfoHelper.GetDefaultValue(columns[c].ClrType);
 			}
 			table.Rows.Add(row);
 		}

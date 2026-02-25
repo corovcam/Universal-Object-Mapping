@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Data.Common;
 
-namespace Common.mock;
+namespace Common.Mock;
 
 public partial class FakeDbCommand
 {

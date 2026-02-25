@@ -8,16 +8,16 @@ using System.Globalization;
 using System.Linq;
 using System.Xml.Linq;
 
-namespace Common.mock;
+namespace Common.Mock;
 
-public static class QueryPlanHelper
+public static class QueryOutputInfoHelper
 {
 	private static readonly XNamespace ShowPlanNs = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
 
 	/// <summary>
 	/// Holds the query plan analysis result.
 	/// </summary>
-	public sealed class QueryPlanInfo
+	public sealed class QueryInfo
 	{
 		public string Sql { get; init; } = "";
 		public int EstimatedRows { get; init; }
@@ -27,17 +27,18 @@ public static class QueryPlanHelper
 	public sealed class ColumnInfo
 	{
 		public string Name { get; init; } = "";
-		public Type ClrType { get; init; } = typeof(object);
+        public int Ordinal { get; init; }
+        public Type ClrType { get; init; } = typeof(object);
 	}
 
-	public static QueryPlanInfo GetQueryOutputInfo(IQueryable query, string connectionString)
+	public static QueryInfo GetQueryOutputInfo(IQueryable query, string connectionString)
 	{
 		var sql = query.ToQueryString();
 		return AnalyzeSqlQuery(sql, connectionString);
 	}
 
 	
-	public static QueryPlanInfo AnalyzeSqlQuery(string sql, string? connectionString = null, SqlConnection? sqlConnection = null)
+	public static QueryInfo AnalyzeSqlQuery(string sql, string? connectionString = null, SqlConnection? sqlConnection = null)
 	{
 		var connection = sqlConnection ?? new SqlConnection(connectionString);
 		if (connection.State != ConnectionState.Open)
@@ -47,7 +48,7 @@ public static class QueryPlanHelper
 		int estimatedRows = ParsePlan(planXml);
 		List<ColumnInfo> outputColumns = GetOutputColumnsInfo(sql, connection);
 
-		return new QueryPlanInfo
+		return new QueryInfo
 		{
 			Sql = sql,
 			EstimatedRows = estimatedRows,
@@ -120,7 +121,8 @@ public static class QueryPlanHelper
 				foreach (DataRow row in schemaTable.Rows)
 				{
 					string columnName = row["ColumnName"] as string ?? "";
-					Type clrType = row["DataType"] as Type ?? typeof(object);
+                    int columnOrdinal = (int)row["ColumnOrdinal"];
+                    Type clrType = row["DataType"] as Type ?? typeof(object);
 					//if (clrType == typeof(DateTime))
 					//{
 					//	// Map DateTime to DateOnly for better compatibility with EF Core's type mapping
@@ -129,7 +131,8 @@ public static class QueryPlanHelper
 					columns.Add(new ColumnInfo
 					{
 						Name = columnName,
-						ClrType = clrType
+                        Ordinal = columnOrdinal,
+                        ClrType = clrType
 					});
 				}
 			}

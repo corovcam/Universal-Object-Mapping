@@ -1,7 +1,7 @@
 using System.Data;
 using System.Data.Common;
 
-namespace Common.mock;
+namespace Common.Mock;
 
 public partial class FakeDbCommand
 {
