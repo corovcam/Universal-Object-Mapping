@@ -27,28 +27,7 @@ namespace EFCorePerformance
         public void GlobalSetup()
         {
             var options = new DbContextOptionsBuilder<WWIContext>()
-               .UseSqlServer(DatabaseConfig.MSSQLConnectionString)
-               // We only test read queries, tracking is not needed and might slow down the tests
-               .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
-               .ConfigureWarnings(warnings =>
-               {
-                   warnings.Ignore(CoreEventId.SensitiveDataLoggingEnabledWarning);
-                   // we only read the values, so we don't need to worry about precision when saving
-                   warnings.Ignore(SqlServerEventId.DecimalTypeDefaultWarning);
-               })
-               .AddInterceptors(RecordCommandsInterceptor.Instance)
-               .LogTo(Console.WriteLine, new[] { RelationalEventId.CommandExecuted })
-               .Options;
-
-            contextFactory = new(options);
-
-            ExtractQueryInfo();
-
-            var fakeConnection = new FakeDbConnection(DatabaseConfig.MSSQLConnectionString, commandExecutor); 
-            fakeConnection.Open();
-
-            var benchmarkOptions = new DbContextOptionsBuilder<WWIContext>()
-                .UseSqlServer(fakeConnection)
+                .UseSqlServer(DatabaseConfig.MSSQLConnectionString)
                 // We only test read queries, tracking is not needed and might slow down the tests
                 .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
                 .ConfigureWarnings(warnings =>
@@ -57,45 +36,63 @@ namespace EFCorePerformance
                     // we only read the values, so we don't need to worry about precision when saving
                     warnings.Ignore(SqlServerEventId.DecimalTypeDefaultWarning);
                 })
+                .AddInterceptors(RecordCommandsInterceptor.Instance)
+                .LogTo(Console.WriteLine, new[] { RelationalEventId.CommandExecuted })
+                .Options;
+
+            contextFactory = new(options);
+
+            ExtractQueryInfo();
+
+            var benchmarkOptions = new DbContextOptionsBuilder<WWIContext>()
+                .UseSqlServer(DatabaseConfig.MSSQLConnectionString)
+                // We only test read queries, tracking is not needed and might slow down the tests
+                .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
+                .ConfigureWarnings(warnings =>
+                {
+                    warnings.Ignore(CoreEventId.SensitiveDataLoggingEnabledWarning);
+                    // we only read the values, so we don't need to worry about precision when saving
+                    warnings.Ignore(SqlServerEventId.DecimalTypeDefaultWarning);
+                })
+                .AddInterceptors(new BenchmarkCommandInterceptor(commandExecutor))
                 //.LogTo(Console.WriteLine, new[] { RelationalEventId.CommandExecuted })
                 .Options;
 
             contextFactory = new(benchmarkOptions);
+            commandExecutor.UseUniqueColumnNames(true);
         }
 
         private void ExtractQueryInfo()
         {
             using var context = contextFactory.CreateDbContext();
 
-            queryInfoCache.Add("A1_EntityIdenticalToTable", 
-                context.RecordQueryInfos(
-                    ctx => ctx.PurchaseOrders.Find(25)
+            queryInfoCache.Add("A1_EntityIdenticalToTable",
+                context.RecordQueryInfos(ctx => ctx.PurchaseOrders.Find(25)
                 ).First());
 
-            queryInfoCache.Add("A2_LimitedEntity", 
-                context.RecordQueryInfos(
-                    ctx => ctx.Suppliers
-                        .Where(s => s.SupplierID == 10)
-                        .Select(s => new SupplierContactInfo
-                        {
-                            SupplierID = s.SupplierID,
-                            SupplierName = s.SupplierName,
-                            PhoneNumber = s.PhoneNumber,
-                            FaxNumber = s.FaxNumber,
-                            WebsiteURL = s.WebsiteURL,
-                            ValidFrom = s.ValidFrom,
-                            ValidTo = s.ValidTo
-                        })
-                        .SingleOrDefault()
+            queryInfoCache.Add("A2_LimitedEntity",
+                context.RecordQueryInfos(ctx => ctx.Suppliers
+                    .Where(s => s.SupplierID == 10)
+                    .Select(s => new SupplierContactInfo
+                    {
+                        SupplierID = s.SupplierID,
+                        SupplierName = s.SupplierName,
+                        PhoneNumber = s.PhoneNumber,
+                        FaxNumber = s.FaxNumber,
+                        WebsiteURL = s.WebsiteURL,
+                        ValidFrom = s.ValidFrom,
+                        ValidTo = s.ValidTo
+                    })
+                    .SingleOrDefault()
                 ).First());
 
-            queryInfoCache.Add("A3_MultipleEntitiesFromOneResult", 
-                context.RecordQueryInfos(
-                    ctx => ctx.Suppliers
-                        .Where(s => s.SupplierID == 10)
-                        .Select(s => new
-                        {
-                            ContactInfo = new SupplierContactInfo
+            queryInfoCache.Add("A3_MultipleEntitiesFromOneResult",
+                context.RecordQueryInfos(ctx => ctx.Suppliers
+                    .Where(s => s.SupplierID == 10)
+                    .Select(s => new
+                    {
+                        ContactInfo =
+                            new SupplierContactInfo
                             {
                                 SupplierID = s.SupplierID,
                                 SupplierName = s.SupplierName,
@@ -105,161 +102,144 @@ namespace EFCorePerformance
                                 ValidFrom = s.ValidFrom,
                                 ValidTo = s.ValidTo
                             },
-                            BankAccount = new SupplierBankAccount
-                            {
-                                SupplierID = s.SupplierID,
-                                BankAccountName = s.BankAccountName,
-                                BankAccountBranch = s.BankAccountBranch,
-                                BankAccountCode = s.BankAccountCode,
-                                BankAccountNumber = s.BankAccountNumber,
-                                BankInternationalCode = s.BankInternationalCode
-                            }
-                        })
-                        .Select(result => new { result.ContactInfo, result.BankAccount })
-                        .SingleOrDefault()
+                        BankAccount = new SupplierBankAccount
+                        {
+                            SupplierID = s.SupplierID,
+                            BankAccountName = s.BankAccountName,
+                            BankAccountBranch = s.BankAccountBranch,
+                            BankAccountCode = s.BankAccountCode,
+                            BankAccountNumber = s.BankAccountNumber,
+                            BankInternationalCode = s.BankInternationalCode
+                        }
+                    })
+                    .Select(result => new { result.ContactInfo, result.BankAccount })
+                    .SingleOrDefault()
                 ).First());
 
             var spFrom = new SqlParameter("@p0", new DateTime(2014, 1, 1));
             var spTo = new SqlParameter("@p1", new DateTime(2015, 1, 1));
-            queryInfoCache.Add("A4_StoredProcedureToEntity", 
-                context.RecordQueryInfos(
-                    ctx => ctx.Set<PurchaseOrderUpdate>()
-                        .FromSqlInterpolated($"EXEC WideWorldImporters.Integration.GetOrderUpdates @LastCutoff = {spFrom}, @NewCutoff = {spTo}")
-                        .ToList()
+            queryInfoCache.Add("A4_StoredProcedureToEntity",
+                context.RecordQueryInfos(ctx => ctx.Set<PurchaseOrderUpdate>()
+                    .FromSqlInterpolated(
+                        $"EXEC WideWorldImporters.Integration.GetOrderUpdates @LastCutoff = {spFrom}, @NewCutoff = {spTo}")
+                    .ToList()
                 ).First());
 
             int orderId = 26866;
-            queryInfoCache.Add("B1_SelectionOverIndexedColumn", 
-                context.RecordQueryInfos(
-                    ctx => ctx.OrderLines
-                        .Where(ol => ol.OrderID == orderId)
-                        .ToList()
+            queryInfoCache.Add("B1_SelectionOverIndexedColumn",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .Where(ol => ol.OrderID == orderId)
+                    .ToList()
                 ).First());
 
             decimal unitPrice = 25m;
-            queryInfoCache.Add("B2_SelectionOverNonIndexedColumn", 
-                context.RecordQueryInfos(
-                    ctx => ctx.OrderLines
-                        .Where(ol => ol.UnitPrice == unitPrice)
-                        .ToList()
+            queryInfoCache.Add("B2_SelectionOverNonIndexedColumn",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .Where(ol => ol.UnitPrice == unitPrice)
+                    .ToList()
                 ).First());
 
             var rangeFrom = new DateTime(2014, 12, 20);
             var rangeTo = new DateTime(2014, 12, 31);
-            queryInfoCache.Add("B3_RangeQuery", 
-                context.RecordQueryInfos(
-                    ctx => ctx.OrderLines
-                        .Where(ol => ol.PickingCompletedWhen >= rangeFrom && ol.PickingCompletedWhen <= rangeTo)
-                        .ToList()
+            queryInfoCache.Add("B3_RangeQuery",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .Where(ol => ol.PickingCompletedWhen >= rangeFrom && ol.PickingCompletedWhen <= rangeTo)
+                    .ToList()
                 ).First());
 
             var orderIds = new[] { 1, 10, 100, 1000, 10000 };
-            queryInfoCache.Add("B4_InQuery", 
-                context.RecordQueryInfos(
-                    ctx => ctx.OrderLines
-                        .Where(ol => orderIds.Contains(ol.OrderID))
-                        .ToList()
+            queryInfoCache.Add("B4_InQuery",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .Where(ol => orderIds.Contains(ol.OrderID))
+                    .ToList()
                 ).First());
 
             string text = "C++";
-            queryInfoCache.Add("B5_TextSearch", 
-                context.RecordQueryInfos(
-                    ctx => ctx.OrderLines
-                        .Where(ol => ol.Description.Contains(text))
-                        .ToList()
+            queryInfoCache.Add("B5_TextSearch",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .Where(ol => ol.Description.Contains(text))
+                    .ToList()
                 ).First());
 
             int skip = 1000;
             int take = 50;
-            queryInfoCache.Add("B6_PagingQuery", 
-                context.RecordQueryInfos(
-                    ctx => ctx.OrderLines
-                        .OrderBy(ol => ol.OrderLineID)
-                        .Skip(skip)
-                        .Take(take)
-                        .ToList()
+            queryInfoCache.Add("B6_PagingQuery",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .OrderBy(ol => ol.OrderLineID)
+                    .Skip(skip)
+                    .Take(take)
+                    .ToList()
                 ).First());
 
-            queryInfoCache.Add("C1_AggregationCount", 
-                context.RecordQueryInfos(
-                    ctx => ctx.OrderLines
-                        .GroupBy(ol => ol.TaxRate)
-                        .Select(g => new { TaxRate = g.Key, Count = g.Count() })
-                        .OrderByDescending(x => x.Count)
-                        .ToDictionary(x => x.TaxRate, x => x.Count)
+            queryInfoCache.Add("C1_AggregationCount",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .GroupBy(ol => ol.TaxRate)
+                    .Select(g => new { TaxRate = g.Key, Count = g.Count() })
+                    .OrderByDescending(x => x.Count)
+                    .ToDictionary(x => x.TaxRate, x => x.Count)
                 ).First());
 
-            queryInfoCache.Add("C2_AggregationMax", 
-                context.RecordQueryInfos(
-                    ctx => ctx.OrderLines.Max(ol => ol.UnitPrice)
+            queryInfoCache.Add("C2_AggregationMax",
+                context.RecordQueryInfos(ctx => ctx.OrderLines.Max(ol => ol.UnitPrice)
                 ).First());
 
-            queryInfoCache.Add("C3_AggregationSum", 
-                context.RecordQueryInfos(
-                    ctx => ctx.OrderLines.Sum(ol => ol.Quantity * ol.UnitPrice)
+            queryInfoCache.Add("C3_AggregationSum",
+                context.RecordQueryInfos(ctx => ctx.OrderLines.Sum(ol => ol.Quantity * ol.UnitPrice)
                 ).First());
 
-            queryInfoCache.Add("D1_OneToManyRelationship", 
-                context.RecordQueryInfos(
-                    ctx => ctx.Orders
-                        .Include(o => o.OrderLines)
-                        .SingleOrDefault(o => o.OrderID == 530)
+            queryInfoCache.Add("D1_OneToManyRelationship",
+                context.RecordQueryInfos(ctx => ctx.Orders
+                    .Include(o => o.OrderLines)
+                    .SingleOrDefault(o => o.OrderID == 530)
                 ).First());
 
-            queryInfoCache.Add("D2_StockItems", 
-                context.RecordQueryInfos(
-                    ctx => ctx.StockItems
-                        .Include(si => si.StockGroups)
-                        .OrderBy(si => si.StockItemID)
-                        .ToList()
+            queryInfoCache.Add("D2_StockItems",
+                context.RecordQueryInfos(ctx => ctx.StockItems
+                    .Include(si => si.StockGroups)
+                    .OrderBy(si => si.StockItemID)
+                    .ToList()
                 ).First());
 
-            queryInfoCache.Add("D2_StockGroups", 
-                context.RecordQueryInfos(
-                    ctx => ctx.StockGroups
-                        .Include(sg => sg.StockItems)
-                        .OrderBy(sg => sg.StockGroupID)
-                        .ToList()
+            queryInfoCache.Add("D2_StockGroups",
+                context.RecordQueryInfos(ctx => ctx.StockGroups
+                    .Include(sg => sg.StockItems)
+                    .OrderBy(sg => sg.StockGroupID)
+                    .ToList()
                 ).First());
 
-            queryInfoCache.Add("D3_OptionalRelationship", 
-                context.RecordQueryInfos(
-                    ctx => ctx.Customers
-                        .Include(c => c.Transactions)
-                        .OrderBy(c => c.CustomerID)
-                        .ToList()
+            queryInfoCache.Add("D3_OptionalRelationship",
+                context.RecordQueryInfos(ctx => ctx.Customers
+                    .Include(c => c.Transactions)
+                    .OrderBy(c => c.CustomerID)
+                    .ToList()
                 ).First());
 
-            queryInfoCache.Add("E1_ColumnSorting", 
-                context.RecordQueryInfos(
-                    ctx => ctx.PurchaseOrders
-                        .OrderBy(po => po.ExpectedDeliveryDate)
-                        .Take(1000)
-                        .ToList()
+            queryInfoCache.Add("E1_ColumnSorting",
+                context.RecordQueryInfos(ctx => ctx.PurchaseOrders
+                    .OrderBy(po => po.ExpectedDeliveryDate)
+                    .Take(1000)
+                    .ToList()
                 ).First());
 
-            queryInfoCache.Add("E2_Distinct", 
-                context.RecordQueryInfos(
-                    ctx => ctx.PurchaseOrders
-                        .Select(po => po.SupplierReference)
-                        .Distinct()
-                        .ToList()
+            queryInfoCache.Add("E2_Distinct",
+                context.RecordQueryInfos(ctx => ctx.PurchaseOrders
+                    .Select(po => po.SupplierReference)
+                    .Distinct()
+                    .ToList()
                 ).First());
 
-            queryInfoCache.Add("F1_JSONObjectQuery", 
-                context.RecordQueryInfos(
-                    ctx => ctx.People
-                        .Where(p => p.CustomFields!.Title == "Team Member")
-                        .OrderBy(p => p.PersonID)
-                        .ToList()
+            queryInfoCache.Add("F1_JSONObjectQuery",
+                context.RecordQueryInfos(ctx => ctx.People
+                    .Where(p => p.CustomFields!.Title == "Team Member")
+                    .OrderBy(p => p.PersonID)
+                    .ToList()
                 ).First());
 
-            queryInfoCache.Add("F2_JSONArrayQuery", 
-                context.RecordQueryInfos(
-                    ctx => ctx.People
-                        .Where(p => p.OtherLanguages!.Contains("Slovak"))
-                        .OrderBy(p => p.PersonID)
-                        .ToList()
+            queryInfoCache.Add("F2_JSONArrayQuery",
+                context.RecordQueryInfos(ctx => ctx.People
+                    .Where(p => p.OtherLanguages!.Contains("Slovak"))
+                    .OrderBy(p => p.PersonID)
+                    .ToList()
                 ).First());
 
             var g1SqlStrings = context.RecordQueryInfos(ctx =>
@@ -308,9 +288,8 @@ namespace EFCorePerformance
             queryInfoCache.Add("G2_Intersection_1", g2SqlStrings.ElementAt(0));
             queryInfoCache.Add("G2_Intersection_2", g2SqlStrings.ElementAt(1));
 
-            queryInfoCache.Add("H1_Metadata", 
-                context.RecordQueryInfos(
-                    ctx => ctx.Database.SqlQueryRaw<string>(
+            queryInfoCache.Add("H1_Metadata",
+                context.RecordQueryInfos(ctx => ctx.Database.SqlQueryRaw<string>(
                         """
                             SELECT DATA_TYPE AS Value FROM INFORMATION_SCHEMA.COLUMNS 
                                 WHERE TABLE_SCHEMA = 'Purchasing'
@@ -322,7 +301,7 @@ namespace EFCorePerformance
         }
 
         [GlobalCleanup]
-        public void GlobalCleanup() {}
+        public void GlobalCleanup() { }
 
         [Benchmark]
         public PurchaseOrder? A1_EntityIdenticalToTable()
@@ -342,18 +321,18 @@ namespace EFCorePerformance
             using var context = contextFactory.CreateDbContext();
 
             var contactInfo = context.Suppliers
-            .Where(s => s.SupplierID == 10)
-            .Select(s => new SupplierContactInfo
-            {
-                SupplierID = s.SupplierID,
-                SupplierName = s.SupplierName,
-                PhoneNumber = s.PhoneNumber,
-                FaxNumber = s.FaxNumber,
-                WebsiteURL = s.WebsiteURL,
-                ValidFrom = s.ValidFrom,
-                ValidTo = s.ValidTo
-            })
-            .Single();
+                .Where(s => s.SupplierID == 10)
+                .Select(s => new SupplierContactInfo
+                {
+                    SupplierID = s.SupplierID,
+                    SupplierName = s.SupplierName,
+                    PhoneNumber = s.PhoneNumber,
+                    FaxNumber = s.FaxNumber,
+                    WebsiteURL = s.WebsiteURL,
+                    ValidFrom = s.ValidFrom,
+                    ValidTo = s.ValidTo
+                })
+                .Single();
 
             return contactInfo;
         }
@@ -365,31 +344,32 @@ namespace EFCorePerformance
             using var context = contextFactory.CreateDbContext();
 
             var result = context.Suppliers
-            .Where(s => s.SupplierID == 10)
-            .Select(s => new
-            {
-                ContactInfo = new SupplierContactInfo
+                .Where(s => s.SupplierID == 10)
+                .Select(s => new
                 {
-                    SupplierID = s.SupplierID,
-                    SupplierName = s.SupplierName,
-                    PhoneNumber = s.PhoneNumber,
-                    FaxNumber = s.FaxNumber,
-                    WebsiteURL = s.WebsiteURL,
-                    ValidFrom = s.ValidFrom,
-                    ValidTo = s.ValidTo
-                },
-                BankAccount = new SupplierBankAccount
-                {
-                    SupplierID = s.SupplierID,
-                    BankAccountName = s.BankAccountName,
-                    BankAccountBranch = s.BankAccountBranch,
-                    BankAccountCode = s.BankAccountCode,
-                    BankAccountNumber = s.BankAccountNumber,
-                    BankInternationalCode = s.BankInternationalCode
-                }
-            })
-            .Select(result => new { result.ContactInfo, result.BankAccount })
-            .Single();
+                    ContactInfo =
+                        new SupplierContactInfo
+                        {
+                            SupplierID = s.SupplierID,
+                            SupplierName = s.SupplierName,
+                            PhoneNumber = s.PhoneNumber,
+                            FaxNumber = s.FaxNumber,
+                            WebsiteURL = s.WebsiteURL,
+                            ValidFrom = s.ValidFrom,
+                            ValidTo = s.ValidTo
+                        },
+                    BankAccount = new SupplierBankAccount
+                    {
+                        SupplierID = s.SupplierID,
+                        BankAccountName = s.BankAccountName,
+                        BankAccountBranch = s.BankAccountBranch,
+                        BankAccountCode = s.BankAccountCode,
+                        BankAccountNumber = s.BankAccountNumber,
+                        BankInternationalCode = s.BankInternationalCode
+                    }
+                })
+                .Select(result => new { result.ContactInfo, result.BankAccount })
+                .Single();
 
             return (result.ContactInfo, result.BankAccount);
         }
@@ -404,7 +384,8 @@ namespace EFCorePerformance
             var to = new DateTime(2015, 1, 1);
 
             var orders = context.Set<PurchaseOrderUpdate>()
-                .FromSqlInterpolated($"EXEC WideWorldImporters.Integration.GetOrderUpdates @LastCutoff = {from}, @NewCutoff = {to}")
+                .FromSqlInterpolated(
+                    $"EXEC WideWorldImporters.Integration.GetOrderUpdates @LastCutoff = {from}, @NewCutoff = {to}")
                 .ToList();
 
             return orders;
@@ -583,9 +564,9 @@ namespace EFCorePerformance
             using var context = contextFactory.CreateDbContext();
 
             var result = context.Customers
-            .Include(c => c.Transactions)
-            .OrderBy(c => c.CustomerID)
-            .ToList();
+                .Include(c => c.Transactions)
+                .OrderBy(c => c.CustomerID)
+                .ToList();
 
             return result;
         }

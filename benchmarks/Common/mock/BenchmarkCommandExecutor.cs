@@ -16,8 +16,9 @@ namespace Common.Mock;
 /// </summary>
 public class BenchmarkCommandExecutor
 {
-	private int _estimatedRows = 1;
-	private List<QueryOutputInfoHelper.ColumnInfo> _outputColumns = [];
+    private int _estimatedRows = 1;
+    private List<QueryOutputInfoHelper.ColumnInfo> _outputColumns = [];
+    private bool _useUniqueColumnNames = false;
 
     public static BenchmarkCommandExecutor Instance { get; } = new();
 
@@ -28,85 +29,63 @@ public class BenchmarkCommandExecutor
     /// <summary>
     /// Configures the executor with query plan metadata for the next benchmark iteration.
     /// </summary>
-    public void Configure(QueryOutputInfoHelper.QueryInfo queryInfo)
-	{
-		_estimatedRows = queryInfo.EstimatedRows;
-		_outputColumns = queryInfo.OutputColumns;
-	}
-
-	public virtual int ExecuteNonQuery(DbCommand command)
-		=> -1;
-
-	public virtual object ExecuteScalar(DbCommand command)
-		=> 1.00m;
-
-	public virtual DbDataReader ExecuteReader(DbCommand command, CommandBehavior behavior)
-		=> BuildMockReader();
-
-	public virtual Task<int> ExecuteNonQueryAsync(DbCommand command, CancellationToken cancellationToken)
-		=> Task.FromResult(-1);
-
-	public virtual Task<object> ExecuteScalarAsync(DbCommand command, CancellationToken cancellationToken)
-		=> Task.FromResult<object>(1.00m);
-
-	public virtual Task<DbDataReader> ExecuteReaderAsync(DbCommand command, CommandBehavior behavior, CancellationToken cancellationToken)
-		=> Task.FromResult<DbDataReader>(BuildMockReader());
-
-	private DataTableReader BuildMockReader()
-	{
-		if (_outputColumns.Count > 0)
-		{
-			return CreateReader(_outputColumns, _estimatedRows);
-		}
-
-		// Last resort: single column reader with a scalar value
-		return CreateScalarReader(1.00m);
-	}
-
-	public void ConfigureExecutor(DbCommand command)
+    public void Configure(QueryOutputInfoHelper.QueryInfo queryInfo, bool useUniqueColumnNames = false)
     {
-        var queryInfo = QueryOutputInfoHelper.AnalyzeSqlCommand(command);
-		Configure(queryInfo);
-	}
+        _estimatedRows = queryInfo.EstimatedRows;
+        _outputColumns = queryInfo.OutputColumns;
+        _useUniqueColumnNames = useUniqueColumnNames;
+    }
 
-	/// <summary>
-	/// Builds a DataTable with the specified columns and row count, populated
-	/// with default values, then returns its CreateDataReader().
-	/// </summary>
-	public static DataTableReader CreateReader(IReadOnlyList<QueryOutputInfoHelper.ColumnInfo> columns, int rowCount)
-	{
-		var table = new DataTable();
-		foreach (var col in columns)
-		{
-			var clrType = col.ClrType == typeof(object) ? typeof(string) : col.ClrType;
-            table.Columns.Add(col.Name, clrType);
-            //var colName = System.Text.RegularExpressions.Regex.Replace(col.Name, @"^[^_]+", "col");
-            //table.Columns.Add(colName);
-		}
+    public void UseUniqueColumnNames(bool useUniqueColumnNames)
+    {
+        _useUniqueColumnNames = useUniqueColumnNames;
+    }
 
-		for (int i = 0; i < rowCount; i++)
-		{
-			var row = table.NewRow();
-			for (int c = 0; c < columns.Count; c++)
-			{
-				row[c] = QueryOutputInfoHelper.GetDefaultValue(columns[c].ClrType);
-			}
-			table.Rows.Add(row);
-		}
+    public virtual int ExecuteNonQuery(DbCommand command)
+        => -1;
 
-		return table.CreateDataReader();
-	}
+    public virtual object ExecuteScalar(DbCommand command)
+        => 1.00m;
 
-	/// <summary>
-	/// Creates a DataTableReader returning a single scalar result.
-	/// </summary>
-	public static DataTableReader CreateScalarReader(object value)
-	{
-		var table = new DataTable();
-		table.Columns.Add("Value", value?.GetType() ?? typeof(object));
-		var row = table.NewRow();
-		row[0] = value ?? DBNull.Value;
-		table.Rows.Add(row);
-		return table.CreateDataReader();
-	}
+    public virtual DbDataReader ExecuteReader(DbCommand command, CommandBehavior behavior)
+        => BuildMockReader();
+
+    public virtual Task<int> ExecuteNonQueryAsync(DbCommand command, CancellationToken cancellationToken)
+        => Task.FromResult(-1);
+
+    public virtual Task<object> ExecuteScalarAsync(DbCommand command, CancellationToken cancellationToken)
+        => Task.FromResult<object>(1.00m);
+
+    public virtual Task<DbDataReader> ExecuteReaderAsync(DbCommand command, CommandBehavior behavior,
+        CancellationToken cancellationToken)
+        => Task.FromResult<DbDataReader>(BuildMockReader());
+
+    private DbDataReader BuildMockReader()
+    {
+        if (_outputColumns.Count > 0)
+        {
+            return CreateReader(_outputColumns, _estimatedRows, _useUniqueColumnNames);
+        }
+
+        // Last resort: single column reader with a scalar value
+        return CreateScalarReader(1.00m);
+    }
+
+    /// <summary>
+    /// Builds a BenchmarkDbDataReader populated with
+    /// default values.
+    /// </summary>
+    public static DbDataReader CreateReader(IReadOnlyList<QueryOutputInfoHelper.ColumnInfo> columns, int rowCount,
+        bool useUniqueColumnNames = false)
+    {
+        return new BenchmarkDbDataReader(columns, rowCount, useUniqueColumnNames);
+    }
+
+    /// <summary>
+    /// Creates a BenchmarkDbDataReader returning a single scalar result.
+    /// </summary>
+    public static DbDataReader CreateScalarReader(object value)
+    {
+        return BenchmarkDbDataReader.CreateScalar(value);
+    }
 }
