@@ -1,12 +1,14 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
 
 namespace Common.Mock;
 
 public static class DbContextExtensions
 {
-    public static IReadOnlyCollection<string> RecordSqlQueryStrings<TContext, TResult>(this TContext dbCtx, params Func<TContext, TResult>[] getResults) where TContext : DbContext
+    public static IReadOnlyCollection<QueryOutputInfoHelper.QueryInfo> RecordQueryInfos<TContext, TResult>(this TContext dbCtx, params Func<TContext, TResult>[] getResults) where TContext : DbContext
     {
-        using (RecordSqlQueryStringsScope.StartNew())
+        using (RecordQueryInfoScope.StartNew())
         {
             foreach (var getResult in getResults)
             {
@@ -20,7 +22,7 @@ public static class DbContextExtensions
                     Console.WriteLine(exception);
                 }
             }
-            return RecordSqlQueryStringsScope.Current.RecordedSqlQueries;
+            return RecordQueryInfoScope.Current?.RecordedQueryInfos ?? Array.Empty<QueryOutputInfoHelper.QueryInfo>();
         }
     }
 }

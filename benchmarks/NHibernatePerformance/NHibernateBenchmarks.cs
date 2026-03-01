@@ -63,12 +63,11 @@ namespace NHibernatePerformance
             //    Console.WriteLine(dbCommand.ToQueryString());
             //}
 
-            queryInfoCache.Add("A1_EntityIdenticalToTable", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Get<PurchaseOrder>(25)).First(),
-                sqlConnection: sqlConn));
+            queryInfoCache.Add("A1_EntityIdenticalToTable", 
+                session.RecordQueryInfos(s => s.Get<PurchaseOrder>(25)).First());
 
-            queryInfoCache.Add("A2_LimitedEntity", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<Supplier>()
+            queryInfoCache.Add("A2_LimitedEntity", 
+                session.RecordQueryInfos(s => s.Query<Supplier>()
                     .Where(sup => sup.SupplierID == 10)
                     .Select(sup => new SupplierContactInfo
                     {
@@ -80,11 +79,10 @@ namespace NHibernatePerformance
                         ValidFrom = sup.ValidFrom,
                         ValidTo = sup.ValidTo
                     })
-                    .SingleOrDefault()).First(),
-                sqlConnection: sqlConn));
+                    .SingleOrDefault()).First());
 
-            queryInfoCache.Add("A3_MultipleEntitiesFromOneResult", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<Supplier>()
+            queryInfoCache.Add("A3_MultipleEntitiesFromOneResult", 
+                session.RecordQueryInfos(s => s.Query<Supplier>()
                     .Where(sup => sup.SupplierID == 10)
                     .Select(sup => new
                     {
@@ -109,136 +107,118 @@ namespace NHibernatePerformance
                         }
                     })
                     .Select(result => new { result.ContactInfo, result.BankAccount })
-                    .SingleOrDefault()).First(),
-                sqlConnection: sqlConn));
+                    .SingleOrDefault()).First());
 
             var from = new DateTime(2014, 1, 1);
             var to = new DateTime(2015, 1, 1);
-            queryInfoCache.Add("A4_StoredProcedureToEntity", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.GetNamedQuery("GetOrderUpdates")
+            queryInfoCache.Add("A4_StoredProcedureToEntity", 
+                session.RecordQueryInfos(s => s.GetNamedQuery("GetOrderUpdates")
                     .SetDateTime("from", from)
                     .SetDateTime("to", to)
                     .SetResultTransformer(Transformers.AliasToEntityMap)
-                    .List<System.Collections.Hashtable>()).First(),
-                sqlConnection: sqlConn));
+                    .List<System.Collections.Hashtable>()).First());
 
             int orderId = 26866;
-            queryInfoCache.Add("B1_SelectionOverIndexedColumn", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<OrderLine>()
+            queryInfoCache.Add("B1_SelectionOverIndexedColumn", 
+                session.RecordQueryInfos(s => s.Query<OrderLine>()
                     .Where(ol => ol.OrderID == orderId)
-                    .ToList()).First(),
-                sqlConnection: sqlConn));
+                    .ToList()).First());
 
             decimal unitPrice = 25m;
-            queryInfoCache.Add("B2_SelectionOverNonIndexedColumn", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<OrderLine>()
+            queryInfoCache.Add("B2_SelectionOverNonIndexedColumn", 
+                session.RecordQueryInfos(s => s.Query<OrderLine>()
                     .Where(ol => ol.UnitPrice == unitPrice)
-                    .ToList()).First(),
-                sqlConnection: sqlConn));
+                    .ToList()).First());
 
             var rangeFrom = new DateTime(2014, 12, 20);
             var rangeTo = new DateTime(2014, 12, 31);
-            queryInfoCache.Add("B3_RangeQuery", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<OrderLine>()
+            queryInfoCache.Add("B3_RangeQuery", 
+                session.RecordQueryInfos(s => s.Query<OrderLine>()
                     .Where(ol => ol.PickingCompletedWhen >= rangeFrom && ol.PickingCompletedWhen <= rangeTo)
-                    .ToList()).First(),
-                sqlConnection: sqlConn));
+                    .ToList()).First());
 
             var orderIds = new[] { 1, 10, 100, 1000, 10000 };
-            queryInfoCache.Add("B4_InQuery", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<OrderLine>()
+            queryInfoCache.Add("B4_InQuery", 
+                session.RecordQueryInfos(s => s.Query<OrderLine>()
                     .Where(ol => orderIds.Contains(ol.OrderID))
-                    .ToList()).First(),
-                sqlConnection: sqlConn));
+                    .ToList()).First());
 
             string text = "C++";
-            queryInfoCache.Add("B5_TextSearch", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<OrderLine>()
+            queryInfoCache.Add("B5_TextSearch", 
+                session.RecordQueryInfos(s => s.Query<OrderLine>()
                     .Where(ol => ol.Description.Contains(text))
-                    .ToList()).First(),
-                sqlConnection: sqlConn));
+                    .ToList()).First());
 
             int skip = 1000;
             int take = 50;
-            queryInfoCache.Add("B6_PagingQuery", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<OrderLine>()
+            queryInfoCache.Add("B6_PagingQuery", 
+                session.RecordQueryInfos(s => s.Query<OrderLine>()
                     .OrderBy(ol => ol.OrderLineID)
                     .Skip(skip)
                     .Take(take)
-                    .ToList()).First(),
-                sqlConnection: sqlConn));
+                    .ToList()).First());
 
-            queryInfoCache.Add("C1_AggregationCount", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<OrderLine>()
+            queryInfoCache.Add("C1_AggregationCount", 
+                session.RecordQueryInfos(s => s.Query<OrderLine>()
                     .GroupBy(ol => ol.TaxRate)
                     .Select(g => new { TaxRate = g.Key, Count = g.Count() })
                     .OrderByDescending(x => x.Count)
-                    .ToList()).First(),
-                sqlConnection: sqlConn));
+                    .ToList()).First());
 
-            queryInfoCache.Add("C2_AggregationMax", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.CreateQuery("SELECT MAX(ol.UnitPrice) FROM OrderLine ol")
-                    .UniqueResult<decimal?>()).First(),
-                sqlConnection: sqlConn));
+            queryInfoCache.Add("C2_AggregationMax", 
+                session.RecordQueryInfos(s => s.CreateQuery("SELECT MAX(ol.UnitPrice) FROM OrderLine ol")
+                    .UniqueResult<decimal?>()).First());
 
-            queryInfoCache.Add("C3_AggregationSum", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s
+            queryInfoCache.Add("C3_AggregationSum", 
+                session.RecordQueryInfos(s => s
                     .CreateQuery("SELECT SUM(ol.Quantity * ol.UnitPrice) FROM OrderLine ol")
-                    .UniqueResult<decimal?>()).First(),
-                sqlConnection: sqlConn));
+                    .UniqueResult<decimal?>()).First());
 
-            queryInfoCache.Add("D1_OneToManyRelationship", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<Order>()
+            queryInfoCache.Add("D1_OneToManyRelationship", 
+                session.RecordQueryInfos(s => s.Query<Order>()
                     .Fetch(o => o.OrderLines)
-                    .SingleOrDefault(o => o.OrderID == 530)).First(),
-                sqlConnection: sqlConn));
+                    .SingleOrDefault(o => o.OrderID == 530)).First());
 
-            queryInfoCache.Add("D2_StockItems", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<StockItem>()
+            queryInfoCache.Add("D2_StockItems", 
+                session.RecordQueryInfos(s => s.Query<StockItem>()
                     .Fetch(si => si.StockGroups)
                     .OrderBy(si => si.StockItemID)
-                    .ToList()).First(),
-                sqlConnection: sqlConn));
+                    .ToList()).First());
 
-            queryInfoCache.Add("D2_StockGroups", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<StockGroup>()
+            queryInfoCache.Add("D2_StockGroups", 
+                session.RecordQueryInfos(s => s.Query<StockGroup>()
                     .Fetch(sg => sg.StockItems)
                     .OrderBy(sg => sg.StockGroupID)
-                    .ToList()).First(),
-                sqlConnection: sqlConn));
+                    .ToList()).First());
 
-            queryInfoCache.Add("D3_OptionalRelationship", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<Customer>()
+            queryInfoCache.Add("D3_OptionalRelationship", 
+                session.RecordQueryInfos(s => s.Query<Customer>()
                     .Fetch(c => c.Transactions)
                     .OrderBy(c => c.CustomerID)
-                    .ToList()).First(),
-                sqlConnection: sqlConn));
+                    .ToList()).First());
 
-            queryInfoCache.Add("E1_ColumnSorting", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<PurchaseOrder>()
+            queryInfoCache.Add("E1_ColumnSorting", 
+                session.RecordQueryInfos(s => s.Query<PurchaseOrder>()
                     .OrderBy(po => po.ExpectedDeliveryDate)
                     .Take(1000)
-                    .ToList()).First(),
-                sqlConnection: sqlConn));
+                    .ToList()).First());
 
-            queryInfoCache.Add("E2_Distinct", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.Query<PurchaseOrder>()
+            queryInfoCache.Add("E2_Distinct", 
+                session.RecordQueryInfos(s => s.Query<PurchaseOrder>()
                     .Select(po => po.SupplierReference)
                     .Distinct()
-                    .ToList()).First(),
-                sqlConnection: sqlConn));
+                    .ToList()).First());
 
             var f1Sql = """
                             SELECT PersonID, FullName, PreferredName, EmailAddress, CustomFields, OtherLanguages 
                             FROM WideWorldImporters.Application.People 
                             WHERE JSON_VALUE(CustomFields, '$.Title') = :title
                         """;
-            queryInfoCache.Add("F1_JSONObjectQuery", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.CreateSQLQuery(f1Sql)
+            queryInfoCache.Add("F1_JSONObjectQuery", 
+                session.RecordQueryInfos(s => s.CreateSQLQuery(f1Sql)
                     .SetParameter("title", "Team Member")
                     .SetResultTransformer(Transformers.AliasToBean<Person>())
-                    .List<Person>()).First(),
-                sqlConnection: sqlConn));
+                    .List<Person>()).First());
 
             var f2Sql = """
                             SELECT PersonID, FullName, PreferredName, EmailAddress, CustomFields, OtherLanguages 
@@ -248,14 +228,13 @@ namespace NHibernatePerformance
                                 WHERE value = :lang
                             )
                         """;
-            queryInfoCache.Add("F2_JSONArrayQuery", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.CreateSQLQuery(f2Sql)
+            queryInfoCache.Add("F2_JSONArrayQuery", 
+                session.RecordQueryInfos(s => s.CreateSQLQuery(f2Sql)
                     .SetParameter("lang", "Slovak")
                     .SetResultTransformer(Transformers.AliasToBean<Person>())
-                    .List<Person>()).First(),
-                sqlConnection: sqlConn));
+                    .List<Person>()).First());
 
-            var g1SqlStrings = session.RecordSqlQueryStrings(s =>
+            var g1SqlStrings = session.RecordQueryInfos(s =>
             {
                 var first = s.Query<Supplier>()
                     .Where(sup => sup.SupplierID < 5)
@@ -269,12 +248,10 @@ namespace NHibernatePerformance
 
                 return first.Union(last).OrderBy(sup => sup).ToList();
             });
-            queryInfoCache.Add("G1_Union_1",
-                QueryOutputInfoHelper.AnalyzeSqlQuery(g1SqlStrings.ElementAt(0), sqlConnection: sqlConn));
-            queryInfoCache.Add("G1_Union_2",
-                QueryOutputInfoHelper.AnalyzeSqlQuery(g1SqlStrings.ElementAt(1), sqlConnection: sqlConn));
+            queryInfoCache.Add("G1_Union_1", g1SqlStrings.ElementAt(0));
+            queryInfoCache.Add("G1_Union_2", g1SqlStrings.ElementAt(1));
 
-            var g2SqlStrings = session.RecordSqlQueryStrings(s =>
+            var g2SqlStrings = session.RecordQueryInfos(s =>
             {
                 var first = s.Query<Supplier>()
                     .Where(sup => sup.SupplierID < 10)
@@ -288,21 +265,18 @@ namespace NHibernatePerformance
 
                 return first.Intersect(last).OrderBy(sup => sup).ToList();
             });
-            queryInfoCache.Add("G2_Intersection_1",
-                QueryOutputInfoHelper.AnalyzeSqlQuery(g2SqlStrings.ElementAt(0), sqlConnection: sqlConn));
-            queryInfoCache.Add("G2_Intersection_2",
-                QueryOutputInfoHelper.AnalyzeSqlQuery(g2SqlStrings.ElementAt(1), sqlConnection: sqlConn));
+            queryInfoCache.Add("G2_Intersection_1", g2SqlStrings.ElementAt(0));
+            queryInfoCache.Add("G2_Intersection_2", g2SqlStrings.ElementAt(1));
 
-            queryInfoCache.Add("H1_Metadata", QueryOutputInfoHelper.AnalyzeSqlQuery(
-                session.RecordSqlQueryStrings(s => s.CreateSQLQuery(
+            queryInfoCache.Add("H1_Metadata", 
+                session.RecordQueryInfos(s => s.CreateSQLQuery(
                     """
                         SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
                             WHERE TABLE_SCHEMA = 'Purchasing'
                             AND TABLE_NAME = 'Suppliers'
                             AND COLUMN_NAME = 'SupplierReference'
                     """
-                ).UniqueResult<string>()).First(),
-                sqlConnection: sqlConn));
+                ).UniqueResult<string>()).First());
         }
 
         [GlobalCleanup]

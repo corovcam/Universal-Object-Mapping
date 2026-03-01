@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
@@ -101,9 +101,9 @@ public partial class NHibernateFakeDriver : IDriver
 
         protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
         {
-            if (RecordSqlQueryStringsScope.Current != null)
+            if (RecordQueryInfoScope.Current != null)
             {
-                RecordSqlQueryStringsScope.Current.Record(this.ToQueryString());
+                RecordQueryInfoScope.Current.Record(QueryOutputInfoHelper.AnalyzeSqlCommand(this._concreteCommand));
                 return new DataTable().CreateDataReader();
             }
             return _commandExecutor.ExecuteReader(this, behavior);
@@ -111,40 +111,27 @@ public partial class NHibernateFakeDriver : IDriver
 
         public override void Prepare()
         {
-            //var sqlCommand = (ISqlCommand)this;
-            //var sqlString = sqlCommand.Query;
-            //sqlCommand.ResetParametersIndexesForTheCommand(0);
-            //var command = si.Batcher.PrepareQueryCommand(System.Data.CommandType.Text, sqlString, sqlCommand.ParameterTypes);
-            //RowSelection selection = sqlCommand.QueryParameters.RowSelection;
-            //if (selection != null && selection.Timeout != RowSelection.NoValue)
-            //{
-            //    command.CommandTimeout = selection.Timeout;
-            //}
-
-            //sqlCommand.Bind(command, si);
-
-            //IDriver driver = si.Factory.ConnectionProvider.Driver;
-            //driver.RemoveUnusedCommandParameters(command, sqlString);
-            //driver.ExpandQueryParameters(command, sqlString, sqlCommand.ParameterTypes);
         }
 
         public override int ExecuteNonQuery()
         {
-            RecordSqlQueryStringsScope.Current?.Record(this.ToQueryString());
+            if (RecordQueryInfoScope.Current != null)
+                RecordQueryInfoScope.Current.Record(QueryOutputInfoHelper.AnalyzeSqlCommand(this._concreteCommand));
             return -1;
         }
 
         public override object ExecuteScalar()
         {
-            RecordSqlQueryStringsScope.Current?.Record(this.ToQueryString());
+            if (RecordQueryInfoScope.Current != null)
+                RecordQueryInfoScope.Current.Record(QueryOutputInfoHelper.AnalyzeSqlCommand(this._concreteCommand));
             return 1.00m;
         }
 
         protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
         {
-            if (RecordSqlQueryStringsScope.Current != null)
+            if (RecordQueryInfoScope.Current != null)
             {
-                RecordSqlQueryStringsScope.Current.Record(this.ToQueryString());
+                RecordQueryInfoScope.Current.Record(QueryOutputInfoHelper.AnalyzeSqlCommand(this._concreteCommand));
                 return Task.FromResult<DbDataReader>(new DataTable().CreateDataReader());
             }
             return _commandExecutor.ExecuteReaderAsync(this, behavior, cancellationToken);
@@ -152,13 +139,15 @@ public partial class NHibernateFakeDriver : IDriver
 
         public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
         {
-            RecordSqlQueryStringsScope.Current?.Record(this.ToQueryString());
-            return Task.FromResult(0);
+            if (RecordQueryInfoScope.Current != null)
+                RecordQueryInfoScope.Current.Record(QueryOutputInfoHelper.AnalyzeSqlCommand(this._concreteCommand));
+            return Task.FromResult(-1);
         }
 
         public override Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
         {
-            RecordSqlQueryStringsScope.Current?.Record(this.ToQueryString());
+            if (RecordQueryInfoScope.Current != null)
+                RecordQueryInfoScope.Current.Record(QueryOutputInfoHelper.AnalyzeSqlCommand(this._concreteCommand));
             return Task.FromResult<object?>(1.00m);
         }
 

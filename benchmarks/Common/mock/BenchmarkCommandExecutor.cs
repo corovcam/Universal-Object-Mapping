@@ -65,8 +65,7 @@ public class BenchmarkCommandExecutor
 
 	public void ConfigureExecutor(DbCommand command)
     {
-        var sqlQuery = command.CommandText;
-        var queryInfo = QueryOutputInfoHelper.AnalyzeSqlQuery(sqlQuery, command.Connection?.ConnectionString);
+        var queryInfo = QueryOutputInfoHelper.AnalyzeSqlCommand(command);
 		Configure(queryInfo);
 	}
 
@@ -80,9 +79,9 @@ public class BenchmarkCommandExecutor
 		foreach (var col in columns)
 		{
 			var clrType = col.ClrType == typeof(object) ? typeof(string) : col.ClrType;
-			//table.Columns.Add(col.Ordinal + "__" + col.Name, clrType);
-			var colName = System.Text.RegularExpressions.Regex.Replace(col.Name, @"^[^_]+", "col");
-			table.Columns.Add(colName);
+            table.Columns.Add(col.Name, clrType);
+            //var colName = System.Text.RegularExpressions.Regex.Replace(col.Name, @"^[^_]+", "col");
+            //table.Columns.Add(colName);
 		}
 
 		for (int i = 0; i < rowCount; i++)

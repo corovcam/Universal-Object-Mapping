@@ -31,22 +31,20 @@ public static class QueryOutputInfoHelper
         public Type ClrType { get; init; } = typeof(object);
 	}
 
-	public static QueryInfo GetQueryOutputInfo(IQueryable query, string connectionString)
+	public static QueryInfo AnalyzeSqlCommand(DbCommand command)
 	{
-		var sql = query.ToQueryString();
-		return AnalyzeSqlQuery(sql, connectionString);
-	}
+		var connection = command.Connection;
+        if (connection == null) return new QueryInfo { Sql = command.ToQueryString() };
 
-	
-	public static QueryInfo AnalyzeSqlQuery(string sql, string? connectionString = null, SqlConnection? sqlConnection = null)
-	{
-		var connection = sqlConnection ?? new SqlConnection(connectionString);
-		if (connection.State != ConnectionState.Open)
-			connection.Open();
+        bool wasClosed = connection.State == ConnectionState.Closed;
+		if (wasClosed) connection.Open();
 
-		string planXml = GetShowPlanXml(sql, connection);
+		string sql = command.ToQueryString();
+		string planXml = GetShowPlanXml(command);
 		int estimatedRows = ParsePlan(planXml);
-		List<ColumnInfo> outputColumns = GetOutputColumnsInfo(sql, connection);
+		List<ColumnInfo> outputColumns = GetOutputColumnsInfo(command);
+
+        if (wasClosed) connection.Close();
 
 		return new QueryInfo
 		{
@@ -57,28 +55,23 @@ public static class QueryOutputInfoHelper
 	}
 
 	/// <summary>
-	/// Given raw SQL, obtains the SHOWPLAN_XML from SQL Server.
+	/// Given a command, obtains the SHOWPLAN_XML from SQL Server.
 	/// </summary>
-	private static string GetShowPlanXml(string sql, DbConnection connection)
+	private static string GetShowPlanXml(DbCommand command)
 	{
-		// Enable SHOWPLAN_XML (this returns the plan without executing)
-		using (var enableCmd = connection.CreateCommand())
+		using (var enableCmd = command.Connection!.CreateCommand())
 		{
+            if (command.Transaction != null) enableCmd.Transaction = command.Transaction;
 			enableCmd.CommandText = "SET SHOWPLAN_XML ON";
 			enableCmd.ExecuteNonQuery();
 		}
 
-		string planXml;
-		using (var queryCmd = connection.CreateCommand())
-		{
-			queryCmd.CommandText = sql;
-			// SHOWPLAN_XML returns the plan as a single-row, single-column result
-			planXml = (string)queryCmd.ExecuteScalar();
-		}
+		string planXml = (string)(command.ExecuteScalar() ?? "");
 
 		// Disable SHOWPLAN_XML
-		using (var disableCmd = connection.CreateCommand())
+		using (var disableCmd = command.Connection.CreateCommand())
 		{
+            if (command.Transaction != null) disableCmd.Transaction = command.Transaction;
 			disableCmd.CommandText = "SET SHOWPLAN_XML OFF";
 			disableCmd.ExecuteNonQuery();
 		}
@@ -88,6 +81,8 @@ public static class QueryOutputInfoHelper
 
 	private static int ParsePlan(string planXml)
 	{
+        if (string.IsNullOrWhiteSpace(planXml)) return 1;
+
 		var doc = XDocument.Parse(planXml);
 
 		// Find the top-level StmtSimple (the actual SELECT statement)
@@ -108,35 +103,31 @@ public static class QueryOutputInfoHelper
 		return estimatedRows;
 	}
 
-	private static List<ColumnInfo> GetOutputColumnsInfo(string sql, DbConnection connection)
+	private static List<ColumnInfo> GetOutputColumnsInfo(DbCommand command)
 	{
 		var columns = new List<ColumnInfo>();
-		using (var cmd = connection.CreateCommand())
-		{
-			cmd.CommandText = sql;
-			using var reader = cmd.ExecuteReader(CommandBehavior.SchemaOnly);
-			var schemaTable = reader.GetSchemaTable();
-			if (schemaTable != null)
-			{
-				foreach (DataRow row in schemaTable.Rows)
-				{
-					string columnName = row["ColumnName"] as string ?? "";
-                    int columnOrdinal = (int)row["ColumnOrdinal"];
-                    Type clrType = row["DataType"] as Type ?? typeof(object);
-					//if (clrType == typeof(DateTime))
-					//{
-					//	// Map DateTime to DateOnly for better compatibility with EF Core's type mapping
-					//	clrType = typeof(DateOnly);
-					//}
-					columns.Add(new ColumnInfo
-					{
-						Name = columnName,
-                        Ordinal = columnOrdinal,
-                        ClrType = clrType
-					});
-				}
-			}
-		}
+        using var reader = command.ExecuteReader(CommandBehavior.SchemaOnly);
+        var schemaTable = reader.GetSchemaTable();
+        if (schemaTable != null)
+        {
+            foreach (DataRow row in schemaTable.Rows)
+            {
+                string columnName = row["ColumnName"] as string ?? "";
+                int columnOrdinal = (int)row["ColumnOrdinal"];
+                Type clrType = row["DataType"] as Type ?? typeof(object);
+				//if (clrType == typeof(DateTime))
+				//{
+				//	// Map DateTime to DateOnly for better compatibility with EF Core's type mapping
+				//	clrType = typeof(DateOnly);
+				//}
+                columns.Add(new ColumnInfo
+                {
+                    Name = columnName,
+                    Ordinal = columnOrdinal,
+                    ClrType = clrType
+                });
+            }
+        }
 		return columns;
 	}
 

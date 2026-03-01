@@ -6,9 +6,9 @@ namespace Common.Mock;
 
 public static class ISessionExtensions
 {
-    public static IReadOnlyCollection<string> RecordSqlQueryStrings<TResult>(this ISession session, params Func<ISession, TResult>[] getResults)
+    public static IReadOnlyCollection<QueryOutputInfoHelper.QueryInfo> RecordQueryInfos<TResult>(this ISession session, params Func<ISession, TResult>[] getResults)
     {
-        using (RecordSqlQueryStringsScope.StartNew())
+        using (RecordQueryInfoScope.StartNew())
         {
             foreach (var getResult in getResults)
             {
@@ -21,7 +21,7 @@ public static class ISessionExtensions
                     Console.WriteLine(exception);
                 }
             }
-            return RecordSqlQueryStringsScope.Current.RecordedSqlQueries;
+            return RecordQueryInfoScope.Current?.RecordedQueryInfos ?? Array.Empty<QueryOutputInfoHelper.QueryInfo>();
         }
     }
 }

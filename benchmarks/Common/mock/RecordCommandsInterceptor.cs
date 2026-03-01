@@ -15,7 +15,7 @@ public class RecordCommandsInterceptor : DbCommandInterceptor
 
     public override InterceptionResult<DbCommand> CommandCreating(CommandCorrelatedEventData eventData, InterceptionResult<DbCommand> result)
     {
-        if (RecordSqlQueryStringsScope.Current != null && eventData.IsAsync)
+        if (RecordQueryInfoScope.Current != null && eventData.IsAsync)
             throw new InvalidOperationException("Cannot use Async operation when recording a command");
 
         return base.CommandCreating(eventData, result);
@@ -36,12 +36,12 @@ public class RecordCommandsInterceptor : DbCommandInterceptor
 
     private InterceptionResult<T> Executing<T>(DbCommand cmd, CommandEventData eventData, InterceptionResult<T> result)
     {
-        if (RecordSqlQueryStringsScope.Current == null)
+        if (RecordQueryInfoScope.Current == null)
             return result;
 
-        var sqlQuery = cmd.ToQueryString();
+        var queryInfo = QueryOutputInfoHelper.AnalyzeSqlCommand(cmd);
 
-        RecordSqlQueryStringsScope.Current.Record(sqlQuery);
+        RecordQueryInfoScope.Current.Record(queryInfo);
         return InterceptionResult<T>.SuppressWithResult(default!);
     }
 }
