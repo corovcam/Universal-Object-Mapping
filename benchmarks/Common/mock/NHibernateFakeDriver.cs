@@ -88,7 +88,7 @@ public partial class NHibernateFakeDriver : IDriver
 
     #endregion
 
-    private partial class SubstituteDbCommand : DbCommand
+    private class SubstituteDbCommand : DbCommand
     {
         private readonly DbCommand _concreteCommand;
         private readonly BenchmarkCommandExecutor _commandExecutor;
@@ -101,21 +101,65 @@ public partial class NHibernateFakeDriver : IDriver
 
         protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
         {
+            if (RecordSqlQueryStringsScope.Current != null)
+            {
+                RecordSqlQueryStringsScope.Current.Record(this.ToQueryString());
+                return new DataTable().CreateDataReader();
+            }
             return _commandExecutor.ExecuteReader(this, behavior);
         }
 
         public override void Prepare()
         {
+            //var sqlCommand = (ISqlCommand)this;
+            //var sqlString = sqlCommand.Query;
+            //sqlCommand.ResetParametersIndexesForTheCommand(0);
+            //var command = si.Batcher.PrepareQueryCommand(System.Data.CommandType.Text, sqlString, sqlCommand.ParameterTypes);
+            //RowSelection selection = sqlCommand.QueryParameters.RowSelection;
+            //if (selection != null && selection.Timeout != RowSelection.NoValue)
+            //{
+            //    command.CommandTimeout = selection.Timeout;
+            //}
+
+            //sqlCommand.Bind(command, si);
+
+            //IDriver driver = si.Factory.ConnectionProvider.Driver;
+            //driver.RemoveUnusedCommandParameters(command, sqlString);
+            //driver.ExpandQueryParameters(command, sqlString, sqlCommand.ParameterTypes);
         }
 
         public override int ExecuteNonQuery()
         {
-            return 0;
+            RecordSqlQueryStringsScope.Current?.Record(this.ToQueryString());
+            return -1;
         }
 
         public override object ExecuteScalar()
         {
-            return null;
+            RecordSqlQueryStringsScope.Current?.Record(this.ToQueryString());
+            return 1.00m;
+        }
+
+        protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
+        {
+            if (RecordSqlQueryStringsScope.Current != null)
+            {
+                RecordSqlQueryStringsScope.Current.Record(this.ToQueryString());
+                return Task.FromResult<DbDataReader>(new DataTable().CreateDataReader());
+            }
+            return _commandExecutor.ExecuteReaderAsync(this, behavior, cancellationToken);
+        }
+
+        public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
+        {
+            RecordSqlQueryStringsScope.Current?.Record(this.ToQueryString());
+            return Task.FromResult(0);
+        }
+
+        public override Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
+        {
+            RecordSqlQueryStringsScope.Current?.Record(this.ToQueryString());
+            return Task.FromResult<object?>(1.00m);
         }
 
         protected override void Dispose(bool disposing)

@@ -62,7 +62,6 @@ public static class NHibernateExtensions
             driver.RemoveUnusedCommandParameters(command, sqlString);
             driver.ExpandQueryParameters(command, sqlString, sqlCommand.ParameterTypes);
 
-            //si.Factory.
             yield return command;
         }
     }

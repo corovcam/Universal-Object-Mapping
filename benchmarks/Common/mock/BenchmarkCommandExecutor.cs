@@ -80,7 +80,9 @@ public class BenchmarkCommandExecutor
 		foreach (var col in columns)
 		{
 			var clrType = col.ClrType == typeof(object) ? typeof(string) : col.ClrType;
-			table.Columns.Add(col.Ordinal + "__" + col.Name, clrType);
+			//table.Columns.Add(col.Ordinal + "__" + col.Name, clrType);
+			var colName = System.Text.RegularExpressions.Regex.Replace(col.Name, @"^[^_]+", "col");
+			table.Columns.Add(colName);
 		}
 
 		for (int i = 0; i < rowCount; i++)
