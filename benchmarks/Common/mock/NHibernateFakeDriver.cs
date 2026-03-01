@@ -7,14 +7,13 @@ using NHibernate.Engine;
 using NHibernate.SqlCommand;
 using NHibernate.SqlTypes;
 
-namespace Common.mock;
+namespace Common.Mock;
 
 public partial class NHibernateFakeDriver : IDriver
 {
     public static System.Type DriverClass { get; set; }
 
     private readonly IDriver _driverImplementation;
-    private bool _commandSubstituted;
 
     public NHibernateFakeDriver()
     {
@@ -24,15 +23,7 @@ public partial class NHibernateFakeDriver : IDriver
     DbCommand IDriver.GenerateCommand(CommandType type, SqlString sqlString, SqlType[] parameterTypes)
     {
         var cmd = _driverImplementation.GenerateCommand(type, sqlString, parameterTypes);
-        if (!_commandSubstituted)
-            return cmd;
         return new SubstituteDbCommand(cmd);
-    }
-
-    public IDisposable SubstituteCommand()
-    {
-        _commandSubstituted = true;
-        return new EndSubstitute(this);
     }
 
     #region Pure forwarding
@@ -97,21 +88,6 @@ public partial class NHibernateFakeDriver : IDriver
 
     #endregion
 
-    private class EndSubstitute : IDisposable
-    {
-        private readonly NHibernateFakeDriver _driver;
-
-        public EndSubstitute(NHibernateFakeDriver driver)
-        {
-            _driver = driver;
-        }
-
-        public void Dispose()
-        {
-            _driver._commandSubstituted = false;
-        }
-    }
-
     private partial class SubstituteDbCommand : DbCommand
     {
         private readonly DbCommand _concreteCommand;
@@ -120,7 +96,7 @@ public partial class NHibernateFakeDriver : IDriver
         public SubstituteDbCommand(DbCommand concreteCommand, BenchmarkCommandExecutor? executor = null) 
         {
             _concreteCommand = concreteCommand;
-            _commandExecutor = executor ?? new BenchmarkCommandExecutor();
+            _commandExecutor = executor ?? BenchmarkCommandExecutor.Instance;
         }
 
         protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)

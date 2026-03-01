@@ -19,7 +19,7 @@ namespace EFCorePerformance
     public class EFCoreBenchmarks
     {
         private PooledDbContextFactory<WWIContext> contextFactory = null!;
-        private readonly BenchmarkCommandExecutor commandExecutor = new();
+        private readonly BenchmarkCommandExecutor commandExecutor = BenchmarkCommandExecutor.Instance;
         private decimal counter = 0m;
         private Dictionary<string, QueryOutputInfoHelper.QueryInfo> queryInfoCache = new();
 

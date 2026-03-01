@@ -17,20 +17,12 @@ public class FakeDbConnection : DbConnection
 	private readonly BenchmarkCommandExecutor _commandExecutor;
 	private ConnectionState _state;
 
-	public SqlConnection SqlConnection { get; init; }
-
 	public FakeDbConnection(string connectionString, BenchmarkCommandExecutor? commandExecutor = null)
 	{
 		ConnectionString = connectionString;
-		SqlConnection = new SqlConnection(connectionString);
-		_commandExecutor = commandExecutor ?? new BenchmarkCommandExecutor();
+		_commandExecutor = commandExecutor ?? BenchmarkCommandExecutor.Instance;
 		_state = ConnectionState.Closed;
 	}
-
-	/// <summary>
-	/// Gets the command executor for configuring mock data before benchmark iterations.
-	/// </summary>
-	public BenchmarkCommandExecutor CommandExecutor => _commandExecutor;
 
 	public override ConnectionState State => _state;
 
@@ -45,19 +37,16 @@ public class FakeDbConnection : DbConnection
 	public override void ChangeDatabase(string databaseName) { }
 
 	public override void Open() {
-		SqlConnection.Open();
 		_state = ConnectionState.Open;
 	}
 
 	public override Task OpenAsync(CancellationToken cancellationToken)
 	{
-		var task = SqlConnection.OpenAsync(cancellationToken);
 		_state = ConnectionState.Open;
-		return task;
-	}
+        return Task.CompletedTask;
+    }
 
 	public override void Close() {
-		SqlConnection.Close();
 		_state = ConnectionState.Closed;
 	}
 
@@ -73,7 +62,6 @@ public class FakeDbConnection : DbConnection
 		{
 			_state = ConnectionState.Closed;
 		}
-		SqlConnection.Dispose();
 		base.Dispose(disposing);
 	}
 }

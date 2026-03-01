@@ -19,10 +19,16 @@ public class BenchmarkCommandExecutor
 	private int _estimatedRows = 1;
 	private List<QueryOutputInfoHelper.ColumnInfo> _outputColumns = [];
 
-	/// <summary>
-	/// Configures the executor with query plan metadata for the next benchmark iteration.
-	/// </summary>
-	public void Configure(QueryOutputInfoHelper.QueryInfo queryInfo)
+    public static BenchmarkCommandExecutor Instance { get; } = new();
+
+    private BenchmarkCommandExecutor()
+    {
+    }
+
+    /// <summary>
+    /// Configures the executor with query plan metadata for the next benchmark iteration.
+    /// </summary>
+    public void Configure(QueryOutputInfoHelper.QueryInfo queryInfo)
 	{
 		_estimatedRows = queryInfo.EstimatedRows;
 		_outputColumns = queryInfo.OutputColumns;
