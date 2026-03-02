@@ -1,9 +1,8 @@
-using System;
 using System.Data;
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
-namespace Common.Mock;
+namespace Common.Mock.EFCore;
 
 public class RecordCommandsInterceptor : DbCommandInterceptor
 {

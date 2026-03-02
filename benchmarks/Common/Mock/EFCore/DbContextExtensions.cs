@@ -1,8 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
 
-namespace Common.Mock;
+namespace Common.Mock.EFCore;
 
 public static class DbContextExtensions
 {

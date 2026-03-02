@@ -1,10 +1,8 @@
-using Microsoft.Data.SqlClient;
 using System.Data;
 using System.Data.Common;
-using System.Threading;
-using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
 
-namespace Common.Mock;
+namespace Common.Mock.Dapper;
 
 public partial class FakeDbCommand : DbCommand
 {

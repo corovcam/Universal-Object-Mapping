@@ -1,9 +1,7 @@
 using System.Data.Common;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
-namespace Common.Mock;
+namespace Common.Mock.EFCore;
 
 public class BenchmarkCommandInterceptor : DbCommandInterceptor
 {

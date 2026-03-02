@@ -2,6 +2,7 @@ using System.Data.Common;
 using BenchmarkDotNet.Attributes;
 using Common;
 using Common.Mock;
+using Common.Mock.NHibernate;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Internal;
 using NHibernate;

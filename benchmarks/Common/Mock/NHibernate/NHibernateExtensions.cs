@@ -1,13 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Data.Common;
+﻿using System.Data.Common;
 using NHibernate;
 using NHibernate.Driver;
 using NHibernate.Engine;
 using NHibernate.Multi;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
-namespace Common.Mock;
+namespace Common.Mock.NHibernate;
 
 public static class NHibernateExtensions
 {

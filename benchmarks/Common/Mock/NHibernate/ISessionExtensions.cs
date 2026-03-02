@@ -1,8 +1,6 @@
 using NHibernate;
-using System;
-using System.Collections.Generic;
 
-namespace Common.Mock;
+namespace Common.Mock.NHibernate;
 
 public static class ISessionExtensions
 {

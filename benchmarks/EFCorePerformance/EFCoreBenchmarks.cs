@@ -1,6 +1,7 @@
 using BenchmarkDotNet.Attributes;
 using Common;
 using Common.Mock;
+using Common.Mock.EFCore;
 using EFCoreEntities;
 using EFCoreEntities.Models;
 using Microsoft.Data.SqlClient;

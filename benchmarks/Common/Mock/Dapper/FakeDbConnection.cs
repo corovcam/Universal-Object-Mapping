@@ -1,11 +1,7 @@
-using Microsoft.Data.SqlClient;
-using System;
 using System.Data;
 using System.Data.Common;
-using System.Threading;
-using System.Threading.Tasks;
 
-namespace Common.Mock;
+namespace Common.Mock.Dapper;
 
 /// <summary>
 /// A fake DbConnection that uses BenchmarkCommandExecutor to return mock data.

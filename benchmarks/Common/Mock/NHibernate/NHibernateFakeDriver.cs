@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 using NHibernate.Driver;
@@ -7,7 +5,7 @@ using NHibernate.Engine;
 using NHibernate.SqlCommand;
 using NHibernate.SqlTypes;
 
-namespace Common.Mock;
+namespace Common.Mock.NHibernate;
 
 public partial class NHibernateFakeDriver : IDriver
 {
@@ -17,7 +15,7 @@ public partial class NHibernateFakeDriver : IDriver
 
     public NHibernateFakeDriver()
     {
-        _driverImplementation = (IDriver)NHibernate.Cfg.Environment.ObjectsFactory.CreateInstance(DriverClass);
+        _driverImplementation = (IDriver)global::NHibernate.Cfg.Environment.ObjectsFactory.CreateInstance(DriverClass);
     }
 
     DbCommand IDriver.GenerateCommand(CommandType type, SqlString sqlString, SqlType[] parameterTypes)
