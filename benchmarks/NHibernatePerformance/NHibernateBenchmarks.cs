@@ -47,23 +47,6 @@ namespace NHibernatePerformance
             using var sqlConn = new SqlConnection(DatabaseConfig.MSSQLConnectionString);
             sqlConn.Open();
 
-            //var cmds = session.Query<Supplier>()
-            //    .Where(sup => sup.SupplierID == 10)
-            //    .Select(sup => new SupplierContactInfo
-            //    {
-            //        SupplierID = sup.SupplierID,
-            //        SupplierName = sup.SupplierName,
-            //        PhoneNumber = sup.PhoneNumber,
-            //        FaxNumber = sup.FaxNumber,
-            //        WebsiteURL = sup.WebsiteURL,
-            //        ValidFrom = sup.ValidFrom,
-            //        ValidTo = sup.ValidTo
-            //    }).GetDbCommands(session);
-            //foreach (DbCommand dbCommand in cmds)
-            //{
-            //    Console.WriteLine(dbCommand.ToQueryString());
-            //}
-
             queryInfoCache.Add("A1_EntityIdenticalToTable", 
                 session.RecordQueryInfos(s => s.Get<PurchaseOrder>(25)).First());
 
