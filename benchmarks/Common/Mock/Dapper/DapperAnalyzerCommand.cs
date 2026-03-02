@@ -23,7 +23,7 @@ public class DapperAnalyzerCommand : DbCommand
         {
             var info = QueryOutputInfoHelper.AnalyzeSqlCommand(_realCommand);
             RecordQueryInfoScope.Current.Record(info);
-            return BenchmarkCommandExecutor.CreateReader(info.OutputColumns, 1);
+            return BenchmarkCommandExecutor.CreateReader(info, 1);
         }
 
         return _realCommand.ExecuteReader(behavior);
@@ -60,7 +60,7 @@ public class DapperAnalyzerCommand : DbCommand
         {
             var info = QueryOutputInfoHelper.AnalyzeSqlCommand(_realCommand);
             RecordQueryInfoScope.Current.Record(info);
-            return Task.FromResult(BenchmarkCommandExecutor.CreateReader(info.OutputColumns, 1));
+            return Task.FromResult(BenchmarkCommandExecutor.CreateReader(info, 1));
         }
 
         return _realCommand.ExecuteReaderAsync(behavior, cancellationToken);

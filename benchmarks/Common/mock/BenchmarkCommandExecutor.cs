@@ -17,7 +17,7 @@ namespace Common.Mock;
 public class BenchmarkCommandExecutor
 {
     private int _estimatedRows = 1;
-    private List<QueryOutputInfoHelper.ColumnInfo> _outputColumns = [];
+    private QueryOutputInfoHelper.QueryInfo _queryInfo = new();
     private bool _useUniqueColumnNames = false;
 
     public static BenchmarkCommandExecutor Instance { get; } = new();
@@ -32,7 +32,7 @@ public class BenchmarkCommandExecutor
     public void Configure(QueryOutputInfoHelper.QueryInfo queryInfo, bool useUniqueColumnNames = false)
     {
         _estimatedRows = queryInfo.EstimatedRows;
-        _outputColumns = queryInfo.OutputColumns;
+        _queryInfo = queryInfo;
         _useUniqueColumnNames = useUniqueColumnNames;
     }
 
@@ -62,9 +62,9 @@ public class BenchmarkCommandExecutor
 
     private DbDataReader BuildMockReader()
     {
-        if (_outputColumns.Count > 0)
+        if (_queryInfo.OutputColumns.Count > 0)
         {
-            return CreateReader(_outputColumns, _estimatedRows, _useUniqueColumnNames);
+            return CreateReader(_queryInfo, _estimatedRows, _useUniqueColumnNames);
         }
 
         // Last resort: single column reader with a scalar value
@@ -75,10 +75,10 @@ public class BenchmarkCommandExecutor
     /// Builds a BenchmarkDbDataReader populated with
     /// default values.
     /// </summary>
-    public static DbDataReader CreateReader(IReadOnlyList<QueryOutputInfoHelper.ColumnInfo> columns, int rowCount,
+    public static DbDataReader CreateReader(QueryOutputInfoHelper.QueryInfo queryInfo, int rowCount,
         bool useUniqueColumnNames = false)
     {
-        return new BenchmarkDbDataReader(columns, rowCount, useUniqueColumnNames);
+        return new BenchmarkDbDataReader(queryInfo, rowCount, useUniqueColumnNames);
     }
 
     /// <summary>

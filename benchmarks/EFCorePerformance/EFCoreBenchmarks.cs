@@ -21,7 +21,6 @@ namespace EFCorePerformance
     {
         private PooledDbContextFactory<WWIContext> contextFactory = null!;
         private readonly BenchmarkCommandExecutor commandExecutor = BenchmarkCommandExecutor.Instance;
-        private decimal counter = 0m;
         private Dictionary<string, QueryOutputInfoHelper.QueryInfo> queryInfoCache = new();
 
         [GlobalSetup]
@@ -497,7 +496,7 @@ namespace EFCorePerformance
                 .GroupBy(ol => ol.TaxRate)
                 .Select(g => new { TaxRate = g.Key, Count = g.Count() })
                 .OrderByDescending(x => x.Count)
-                .ToDictionary(x => x.TaxRate + ++counter, x => x.Count);
+                .ToDictionary(x => x.TaxRate, x => x.Count);
 
             return taxRates;
         }

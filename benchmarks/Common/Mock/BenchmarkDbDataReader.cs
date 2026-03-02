@@ -8,6 +8,7 @@ namespace Common.Mock;
 
 public class BenchmarkDbDataReader : DbDataReader
 {
+    private readonly QueryOutputInfoHelper.QueryInfo _queryInfo;
     private readonly IReadOnlyList<QueryOutputInfoHelper.ColumnInfo> _columns;
     private readonly int _rowCount;
     private readonly bool _useUniqueColumnNames;
@@ -15,9 +16,11 @@ public class BenchmarkDbDataReader : DbDataReader
     private readonly object[] _rowValues;
     private readonly string[] _columnNames;
 
-    public BenchmarkDbDataReader(IReadOnlyList<QueryOutputInfoHelper.ColumnInfo> columns, int rowCount, bool useUniqueColumnNames = false)
+    public BenchmarkDbDataReader(QueryOutputInfoHelper.QueryInfo queryInfo, int rowCount,
+        bool useUniqueColumnNames = false)
     {
-        _columns = columns;
+        _queryInfo = queryInfo;
+        _columns = queryInfo.OutputColumns;
         _rowCount = rowCount;
         _useUniqueColumnNames = useUniqueColumnNames;
 
@@ -27,7 +30,9 @@ public class BenchmarkDbDataReader : DbDataReader
         for (int i = 0; i < _columns.Count; i++)
         {
             var col = _columns[i];
+
             _rowValues[i] = QueryOutputInfoHelper.GetDefaultValue(col.ClrType) ?? DBNull.Value;
+
             _columnNames[i] = _useUniqueColumnNames ? $"{col.Ordinal}__{col.Name}" : col.Name;
         }
     }
@@ -38,7 +43,8 @@ public class BenchmarkDbDataReader : DbDataReader
         {
             new QueryOutputInfoHelper.ColumnInfo { Name = "Value", ClrType = value?.GetType() ?? typeof(object) }
         };
-        var reader = new BenchmarkDbDataReader(cols, 1);
+        var queryInfo = new QueryOutputInfoHelper.QueryInfo { OutputColumns = cols, IsGroupingQuery = false };
+        var reader = new BenchmarkDbDataReader(queryInfo, 1);
         reader._rowValues[0] = value ?? DBNull.Value;
         return reader;
     }
@@ -52,7 +58,7 @@ public class BenchmarkDbDataReader : DbDataReader
     public override bool NextResult() => false;
 
     public override bool HasRows => _rowCount > 0;
-    
+
     public override bool IsClosed => false;
 
     public override int Depth => 0;
@@ -104,21 +110,35 @@ public class BenchmarkDbDataReader : DbDataReader
             if (string.Equals(_columnNames[i], name, StringComparison.OrdinalIgnoreCase))
                 return i;
         }
+
         return -1;
     }
 
     public override string GetString(int ordinal) => (string)GetValue(ordinal);
 
-    public override object GetValue(int ordinal) => _rowValues[ordinal];
+    public override object GetValue(int ordinal)
+    {
+        if (_queryInfo.IsGroupingQuery)
+        {
+            return QueryOutputInfoHelper.GetDefaultValue(_columns[ordinal].ClrType, Math.Max(0, _currentRow), true) ??
+                   DBNull.Value;
+        }
+
+        return _rowValues[ordinal];
+    }
 
     public override int GetValues(object[] values)
     {
-        int count = Math.Min(values.Length, _rowValues.Length);
-        Array.Copy(_rowValues, values, count);
+        int count = Math.Min(values.Length, _columns.Count);
+        for (int i = 0; i < count; i++)
+        {
+            values[i] = GetValue(i);
+        }
+
         return count;
     }
 
-    public override bool IsDBNull(int ordinal) => _rowValues[ordinal] == DBNull.Value;
+    public override bool IsDBNull(int ordinal) => GetValue(ordinal) == DBNull.Value;
 
     public override IEnumerator GetEnumerator() => new DbEnumerator(this, false);
 }
