@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8' />
+<title>BenchmarkRun-joined-2026-03-08-15-21-56</title>
+
+<style type="text/css">
+	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
+	td, th { padding: 6px 13px; border: 1px solid #ddd; text-align: right; }
+	tr { background-color: #fff; border-top: 1px solid #ccc; }
+	tr:nth-child(even) { background: #f8f8f8; }
+</style>
+</head>
+<body>
+<pre><code>
+BenchmarkDotNet v0.15.8, Windows 11 (10.0.26100.7840/24H2/2024Update/HudsonValley)
+12th Gen Intel Core i7-1260P 2.10GHz, 1 CPU, 16 logical and 12 physical cores
+.NET SDK 10.0.103
+  [Host]     : .NET 8.0.24 (8.0.24, 8.0.2426.7010), X64 RyuJIT x86-64-v3
+  DefaultJob : .NET 8.0.24 (8.0.24, 8.0.2426.7010), X64 RyuJIT x86-64-v3
+</code></pre>
+<pre><code></code></pre>
+
+<table>
+<thead><tr><th>Namespace      </th><th>Type          </th><th>Method                    </th><th>Mean      </th><th>Error    </th><th>StdDev   </th><th>Median    </th><th>Exceptions</th><th>Gen0</th><th>Gen1</th><th>Gen2</th><th>Allocated</th>
+</tr>
+</thead><tbody><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>A1_EntityIdenticalToTable</td><td>690.0 ns</td><td>13.39 ns</td><td>13.15 ns</td><td>689.1 ns</td><td>-</td><td>0.1173</td><td>-</td><td>-</td><td>1104 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>A1_EntityIdenticalToTable</td><td>15,994.2 ns</td><td>305.62 ns</td><td>755.41 ns</td><td>15,828.8 ns</td><td>-</td><td>1.1597</td><td>-</td><td>-</td><td>10960 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>A1_EntityIdenticalToTable</td><td>8,168.6 ns</td><td>162.35 ns</td><td>398.24 ns</td><td>8,052.8 ns</td><td>-</td><td>3.2806</td><td>0.2594</td><td>-</td><td>30993 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>A2_LimitedEntity</td><td>566.4 ns</td><td>10.89 ns</td><td>12.54 ns</td><td>564.0 ns</td><td>-</td><td>0.0906</td><td>-</td><td>-</td><td>856 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>A2_LimitedEntity</td><td>20,624.5 ns</td><td>309.22 ns</td><td>258.21 ns</td><td>20,615.5 ns</td><td>-</td><td>1.5869</td><td>-</td><td>-</td><td>14968 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>A2_LimitedEntity</td><td>173,686.5 ns</td><td>3,471.71 ns</td><td>3,565.20 ns</td><td>173,074.1 ns</td><td>-</td><td>4.8828</td><td>1.4648</td><td>-</td><td>47528 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>A3_MultipleEntitiesFromOneResult</td><td>1,033.9 ns</td><td>20.70 ns</td><td>51.15 ns</td><td>1,041.5 ns</td><td>-</td><td>0.1602</td><td>0.0019</td><td>-</td><td>1512 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>A3_MultipleEntitiesFromOneResult</td><td>32,557.5 ns</td><td>634.87 ns</td><td>679.31 ns</td><td>32,485.3 ns</td><td>-</td><td>2.4414</td><td>-</td><td>-</td><td>23480 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>A3_MultipleEntitiesFromOneResult</td><td>206,833.7 ns</td><td>2,585.76 ns</td><td>2,418.72 ns</td><td>206,335.1 ns</td><td>-</td><td>8.3008</td><td>2.4414</td><td>-</td><td>79674 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>A4_StoredProcedureToEntity</td><td>36,876,941.3 ns</td><td>732,680.83 ns</td><td>1,118,881.09 ns</td><td>36,816,393.8 ns</td><td>-</td><td>3000.0000</td><td>2937.5000</td><td>1125.0000</td><td>23856574 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>A4_StoredProcedureToEntity</td><td>11,613.6 ns</td><td>231.19 ns</td><td>316.46 ns</td><td>11,603.7 ns</td><td>-</td><td>1.2054</td><td>-</td><td>-</td><td>11368 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>A4_StoredProcedureToEntity</td><td>12,916.7 ns</td><td>257.60 ns</td><td>483.84 ns</td><td>12,859.2 ns</td><td>-</td><td>3.9673</td><td>0.3052</td><td>-</td><td>37426 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>B1_SelectionOverIndexedColumn</td><td>880.6 ns</td><td>16.20 ns</td><td>15.16 ns</td><td>882.0 ns</td><td>-</td><td>0.1631</td><td>-</td><td>-</td><td>1536 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>B1_SelectionOverIndexedColumn</td><td>11,153.7 ns</td><td>198.69 ns</td><td>176.14 ns</td><td>11,139.6 ns</td><td>-</td><td>0.8545</td><td>-</td><td>-</td><td>8088 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>B1_SelectionOverIndexedColumn</td><td>15,552.5 ns</td><td>300.48 ns</td><td>430.94 ns</td><td>15,466.7 ns</td><td>-</td><td>4.0283</td><td>0.2441</td><td>-</td><td>39048 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>B2_SelectionOverNonIndexedColumn</td><td>860.4 ns</td><td>17.09 ns</td><td>23.39 ns</td><td>859.8 ns</td><td>-</td><td>0.1640</td><td>-</td><td>-</td><td>1552 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>B2_SelectionOverNonIndexedColumn</td><td>12,524.2 ns</td><td>181.41 ns</td><td>169.69 ns</td><td>12,502.7 ns</td><td>-</td><td>0.9155</td><td>-</td><td>-</td><td>9000 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>B2_SelectionOverNonIndexedColumn</td><td>17,285.6 ns</td><td>342.96 ns</td><td>433.74 ns</td><td>17,204.5 ns</td><td>-</td><td>4.1504</td><td>0.2441</td><td>-</td><td>40145 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>B3_RangeQuery</td><td>913.7 ns</td><td>17.56 ns</td><td>21.56 ns</td><td>915.2 ns</td><td>-</td><td>0.1831</td><td>-</td><td>-</td><td>1728 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>B3_RangeQuery</td><td>13,840.4 ns</td><td>275.53 ns</td><td>270.60 ns</td><td>13,811.2 ns</td><td>-</td><td>1.0376</td><td>-</td><td>-</td><td>9952 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>B3_RangeQuery</td><td>25,561.8 ns</td><td>1,449.49 ns</td><td>4,273.87 ns</td><td>23,895.2 ns</td><td>-</td><td>4.6387</td><td>0.2441</td><td>-</td><td>43820 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>B4_InQuery</td><td>2,096.9 ns</td><td>41.77 ns</td><td>89.92 ns</td><td>2,097.3 ns</td><td>-</td><td>0.3967</td><td>-</td><td>-</td><td>3768 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>B4_InQuery</td><td>11,367.8 ns</td><td>222.76 ns</td><td>228.76 ns</td><td>11,304.8 ns</td><td>-</td><td>1.0986</td><td>-</td><td>-</td><td>10393 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>B4_InQuery</td><td>25,450.0 ns</td><td>285.55 ns</td><td>238.45 ns</td><td>25,410.7 ns</td><td>-</td><td>6.3477</td><td>0.4883</td><td>-</td><td>61592 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>B5_TextSearch</td><td>854.5 ns</td><td>16.24 ns</td><td>15.19 ns</td><td>854.7 ns</td><td>-</td><td>0.1640</td><td>-</td><td>-</td><td>1544 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>B5_TextSearch</td><td>10,507.0 ns</td><td>188.50 ns</td><td>157.41 ns</td><td>10,429.8 ns</td><td>-</td><td>0.9155</td><td>-</td><td>-</td><td>9080 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>B5_TextSearch</td><td>16,354.9 ns</td><td>323.80 ns</td><td>532.01 ns</td><td>16,163.8 ns</td><td>-</td><td>4.1504</td><td>0.2441</td><td>-</td><td>39784 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>B6_PagingQuery</td><td>944.9 ns</td><td>18.90 ns</td><td>41.48 ns</td><td>932.7 ns</td><td>-</td><td>0.1812</td><td>-</td><td>-</td><td>1720 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>B6_PagingQuery</td><td>16,714.8 ns</td><td>221.83 ns</td><td>185.24 ns</td><td>16,727.9 ns</td><td>-</td><td>1.7090</td><td>-</td><td>-</td><td>16368 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>B6_PagingQuery</td><td>18,087.3 ns</td><td>267.26 ns</td><td>236.92 ns</td><td>18,024.5 ns</td><td>-</td><td>4.6387</td><td>0.2441</td><td>-</td><td>44379 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>C1_AggregationCount</td><td>593.3 ns</td><td>11.72 ns</td><td>19.90 ns</td><td>590.4 ns</td><td>-</td><td>0.1287</td><td>-</td><td>-</td><td>1216 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>C1_AggregationCount</td><td>13,880.1 ns</td><td>192.48 ns</td><td>170.63 ns</td><td>13,836.1 ns</td><td>-</td><td>1.2817</td><td>-</td><td>-</td><td>12408 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>C1_AggregationCount</td><td>19,808.9 ns</td><td>385.00 ns</td><td>427.93 ns</td><td>19,664.9 ns</td><td>-</td><td>4.2725</td><td>0.2441</td><td>-</td><td>40475 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>C2_AggregationMax</td><td>388.8 ns</td><td>7.64 ns</td><td>7.85 ns</td><td>389.0 ns</td><td>-</td><td>0.0744</td><td>-</td><td>-</td><td>704 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>C2_AggregationMax</td><td>8,393.7 ns</td><td>162.87 ns</td><td>174.27 ns</td><td>8,339.7 ns</td><td>-</td><td>0.6409</td><td>-</td><td>-</td><td>6080 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>C2_AggregationMax</td><td>11,143.7 ns</td><td>202.94 ns</td><td>189.83 ns</td><td>11,179.3 ns</td><td>-</td><td>2.3193</td><td>0.1831</td><td>-</td><td>21971 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>C3_AggregationSum</td><td>396.7 ns</td><td>7.87 ns</td><td>9.06 ns</td><td>394.8 ns</td><td>-</td><td>0.0744</td><td>-</td><td>-</td><td>704 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>C3_AggregationSum</td><td>10,319.7 ns</td><td>204.32 ns</td><td>272.76 ns</td><td>10,230.8 ns</td><td>-</td><td>0.7324</td><td>-</td><td>-</td><td>7104 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>C3_AggregationSum</td><td>13,364.5 ns</td><td>164.32 ns</td><td>153.70 ns</td><td>13,374.0 ns</td><td>-</td><td>2.2583</td><td>0.1831</td><td>-</td><td>21618 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>D1_OneToManyRelationship</td><td>1,687.7 ns</td><td>33.43 ns</td><td>55.85 ns</td><td>1,687.1 ns</td><td>-</td><td>0.3090</td><td>-</td><td>-</td><td>2912 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>D1_OneToManyRelationship</td><td>69,653.2 ns</td><td>1,368.04 ns</td><td>1,463.79 ns</td><td>69,519.9 ns</td><td>-</td><td>3.1738</td><td>-</td><td>-</td><td>30664 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>D1_OneToManyRelationship</td><td>197,359.7 ns</td><td>2,850.18 ns</td><td>2,380.03 ns</td><td>197,059.3 ns</td><td>-</td><td>7.3242</td><td>2.4414</td><td>-</td><td>71687 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>D2_ManyToManyRelationship</td><td>91,159.8 ns</td><td>1,799.91 ns</td><td>1,848.37 ns</td><td>91,399.6 ns</td><td>-</td><td>18.9209</td><td>18.7988</td><td>-</td><td>178848 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>D2_ManyToManyRelationship</td><td>5,637,493.5 ns</td><td>111,540.31 ns</td><td>198,262.81 ns</td><td>5,613,897.7 ns</td><td>-</td><td>273.4375</td><td>-</td><td>-</td><td>2602008 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>D2_ManyToManyRelationship</td><td>461,990.0 ns</td><td>4,203.51 ns</td><td>3,931.96 ns</td><td>462,961.1 ns</td><td>-</td><td>52.7344</td><td>26.3672</td><td>-</td><td>497620 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>D3_OptionalRelationship</td><td>24,510,956.9 ns</td><td>355,196.55 ns</td><td>332,251.08 ns</td><td>24,545,518.8 ns</td><td>-</td><td>2156.2500</td><td>1687.5000</td><td>1000.0000</td><td>19024935 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>D3_OptionalRelationship</td><td>436,872,500.0 ns</td><td>7,104,988.82 ns</td><td>6,298,387.53 ns</td><td>435,523,550.0 ns</td><td>-</td><td>17000.0000</td><td>-</td><td>-</td><td>163888112 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>D3_OptionalRelationship</td><td>66,386,640.4 ns</td><td>1,294,762.53 ns</td><td>1,329,625.79 ns</td><td>65,803,675.0 ns</td><td>-</td><td>5125.0000</td><td>1750.0000</td><td>500.0000</td><td>48718199 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>E1_ColumnSorting</td><td>59,734.8 ns</td><td>1,157.20 ns</td><td>1,082.45 ns</td><td>60,120.8 ns</td><td>-</td><td>12.8784</td><td>3.1738</td><td>-</td><td>121592 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>E1_ColumnSorting</td><td>10,443.5 ns</td><td>204.98 ns</td><td>300.46 ns</td><td>10,416.8 ns</td><td>-</td><td>0.9155</td><td>-</td><td>-</td><td>8800 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>E1_ColumnSorting</td><td>15,854.8 ns</td><td>180.88 ns</td><td>151.04 ns</td><td>15,795.1 ns</td><td>-</td><td>4.6387</td><td>0.3662</td><td>-</td><td>43790 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>E2_Distinct</td><td>842.9 ns</td><td>16.77 ns</td><td>25.10 ns</td><td>842.3 ns</td><td>-</td><td>0.1116</td><td>-</td><td>-</td><td>1056 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>E2_Distinct</td><td>10,296.7 ns</td><td>185.66 ns</td><td>173.67 ns</td><td>10,293.0 ns</td><td>-</td><td>0.9155</td><td>-</td><td>-</td><td>9184 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>E2_Distinct</td><td>12,123.4 ns</td><td>240.25 ns</td><td>200.62 ns</td><td>12,093.9 ns</td><td>-</td><td>2.3804</td><td>0.1831</td><td>-</td><td>22806 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>F1_JSONObjectQuery</td><td>822.6 ns</td><td>9.10 ns</td><td>8.07 ns</td><td>823.3 ns</td><td>-</td><td>0.1173</td><td>-</td><td>-</td><td>1104 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>F1_JSONObjectQuery</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>F1_JSONObjectQuery</td><td>21,881.1 ns</td><td>417.71 ns</td><td>908.06 ns</td><td>21,631.4 ns</td><td>-</td><td>6.9580</td><td>0.4578</td><td>-</td><td>65739 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>F2_JSONArrayQuery</td><td>821.9 ns</td><td>16.41 ns</td><td>23.54 ns</td><td>815.6 ns</td><td>-</td><td>0.1163</td><td>-</td><td>-</td><td>1104 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>F2_JSONArrayQuery</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>F2_JSONArrayQuery</td><td>23,187.6 ns</td><td>461.83 ns</td><td>1,248.59 ns</td><td>22,856.2 ns</td><td>-</td><td>7.3853</td><td>0.5188</td><td>-</td><td>69587 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>G1_Union</td><td>597.7 ns</td><td>5.77 ns</td><td>4.81 ns</td><td>599.6 ns</td><td>-</td><td>0.0925</td><td>-</td><td>-</td><td>872 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>G1_Union</td><td>23,474.6 ns</td><td>399.56 ns</td><td>354.20 ns</td><td>23,531.7 ns</td><td>-</td><td>2.0752</td><td>-</td><td>-</td><td>20616 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>G1_Union</td><td>30,517.2 ns</td><td>595.87 ns</td><td>1,119.19 ns</td><td>30,265.4 ns</td><td>-</td><td>5.8594</td><td>0.4883</td><td>-</td><td>55827 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>G2_Intersection</td><td>554.9 ns</td><td>10.79 ns</td><td>12.85 ns</td><td>555.7 ns</td><td>-</td><td>0.0811</td><td>-</td><td>-</td><td>768 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>G2_Intersection</td><td>23,585.1 ns</td><td>320.97 ns</td><td>284.53 ns</td><td>23,621.7 ns</td><td>-</td><td>2.1973</td><td>-</td><td>-</td><td>20816 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>G2_Intersection</td><td>30,870.4 ns</td><td>611.67 ns</td><td>1,055.11 ns</td><td>30,513.3 ns</td><td>-</td><td>5.8594</td><td>0.4883</td><td>-</td><td>56083 B</td>
+</tr><tr><td>DapperPerformance</td><td>DapperBenchmark</td><td>H1_Metadata</td><td>481.9 ns</td><td>4.85 ns</td><td>4.30 ns</td><td>483.2 ns</td><td>-</td><td>0.0668</td><td>-</td><td>-</td><td>632 B</td>
+</tr><tr><td>EFCorePerformance</td><td>EFCoreBenchmarks</td><td>H1_Metadata</td><td>10,348.6 ns</td><td>202.31 ns</td><td>198.69 ns</td><td>10,316.0 ns</td><td>-</td><td>1.1597</td><td>-</td><td>-</td><td>11408 B</td>
+</tr><tr><td>NHibernatePerformance</td><td>NHibernateBenchmarks</td><td>H1_Metadata</td><td>10,239.6 ns</td><td>198.85 ns</td><td>297.64 ns</td><td>10,248.0 ns</td><td>-</td><td>3.6926</td><td>0.2747</td><td>-</td><td>34858 B</td>
+</tr></tbody></table>
+</body>
+</html>

@@ -28,14 +28,6 @@ internal class Program
                     .WithWarmupCount(1)
                     .WithIterationCount(3)
                     .WithEvaluateOverhead(false)
-                    .WithToolchain(InProcessEmitToolchain.Instance)
-            );
-        }
-        else
-        {
-            config = config.AddJob(
-                Job.Default
-                    .WithToolchain(InProcessEmitToolchain.Instance)
             );
         }
 

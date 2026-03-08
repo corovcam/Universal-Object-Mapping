@@ -12,9 +12,6 @@ using Microsoft.VSDiagnostics;
 
 namespace EFCorePerformance
 {
-    [EventsDiagnoser]
-    [CPUUsageDiagnoser]
-    [DatabaseDiagnoser]
     [MemoryDiagnoser]
     [ExceptionDiagnoser]
     public class EFCoreBenchmarks
