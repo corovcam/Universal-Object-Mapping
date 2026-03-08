@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "BenchmarkMain": {
+      "commandName": "Project",
+      "commandLineArgs": "-- --testb"
+    }
+  }
+}

@@ -1,10 +1,14 @@
-﻿using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Attributes;
 using Common;
+using Common.Mock;
+using Common.Mock.EFCore;
 using EFCoreEntities;
 using EFCoreEntities.Models;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.VSDiagnostics;
 
 namespace EFCorePerformance
 {
@@ -13,31 +17,293 @@ namespace EFCorePerformance
     public class EFCoreBenchmarks
     {
         private PooledDbContextFactory<WWIContext> contextFactory = null!;
+        private readonly BenchmarkCommandExecutor commandExecutor = BenchmarkCommandExecutor.Instance;
+        private Dictionary<string, QueryOutputInfoHelper.QueryInfo> queryInfoCache = new();
 
         [GlobalSetup]
         public void GlobalSetup()
         {
             var options = new DbContextOptionsBuilder<WWIContext>()
-           .UseSqlServer(DatabaseConfig.MSSQLConnectionString)
-           // We only test read queries, tracking is not needed and might slow down the tests
-           .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
-           .ConfigureWarnings(warnings =>
-           {
-               warnings.Ignore(CoreEventId.SensitiveDataLoggingEnabledWarning);
-               // we only read the values, so we don't need to worry about precision when saving
-               warnings.Ignore(SqlServerEventId.DecimalTypeDefaultWarning);
-           })
-           .Options;
+                .UseSqlServer(DatabaseConfig.MSSQLConnectionString)
+                // We only test read queries, tracking is not needed and might slow down the tests
+                .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
+                .ConfigureWarnings(warnings =>
+                {
+                    warnings.Ignore(CoreEventId.SensitiveDataLoggingEnabledWarning);
+                    // we only read the values, so we don't need to worry about precision when saving
+                    warnings.Ignore(SqlServerEventId.DecimalTypeDefaultWarning);
+                })
+                .AddInterceptors(RecordCommandsInterceptor.Instance)
+                .LogTo(Console.WriteLine, new[] { RelationalEventId.CommandExecuted })
+                .Options;
 
             contextFactory = new(options);
+
+            ExtractQueryInfo();
+
+            var benchmarkOptions = new DbContextOptionsBuilder<WWIContext>()
+                .UseSqlServer(DatabaseConfig.MSSQLConnectionString)
+                // We only test read queries, tracking is not needed and might slow down the tests
+                .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
+                .ConfigureWarnings(warnings =>
+                {
+                    warnings.Ignore(CoreEventId.SensitiveDataLoggingEnabledWarning);
+                    // we only read the values, so we don't need to worry about precision when saving
+                    warnings.Ignore(SqlServerEventId.DecimalTypeDefaultWarning);
+                })
+                .AddInterceptors(new BenchmarkCommandInterceptor(commandExecutor))
+                //.LogTo(Console.WriteLine, new[] { RelationalEventId.CommandExecuted })
+                .Options;
+
+            contextFactory = new(benchmarkOptions);
+            commandExecutor.UseUniqueColumnNames(true);
+        }
+
+        private void ExtractQueryInfo()
+        {
+            using var context = contextFactory.CreateDbContext();
+
+            queryInfoCache.Add("A1_EntityIdenticalToTable",
+                context.RecordQueryInfos(ctx => ctx.PurchaseOrders.Find(25)
+                ).First());
+
+            queryInfoCache.Add("A2_LimitedEntity",
+                context.RecordQueryInfos(ctx => ctx.Suppliers
+                    .Where(s => s.SupplierID == 10)
+                    .Select(s => new SupplierContactInfo
+                    {
+                        SupplierID = s.SupplierID,
+                        SupplierName = s.SupplierName,
+                        PhoneNumber = s.PhoneNumber,
+                        FaxNumber = s.FaxNumber,
+                        WebsiteURL = s.WebsiteURL,
+                        ValidFrom = s.ValidFrom,
+                        ValidTo = s.ValidTo
+                    })
+                    .SingleOrDefault()
+                ).First());
+
+            queryInfoCache.Add("A3_MultipleEntitiesFromOneResult",
+                context.RecordQueryInfos(ctx => ctx.Suppliers
+                    .Where(s => s.SupplierID == 10)
+                    .Select(s => new
+                    {
+                        ContactInfo =
+                            new SupplierContactInfo
+                            {
+                                SupplierID = s.SupplierID,
+                                SupplierName = s.SupplierName,
+                                PhoneNumber = s.PhoneNumber,
+                                FaxNumber = s.FaxNumber,
+                                WebsiteURL = s.WebsiteURL,
+                                ValidFrom = s.ValidFrom,
+                                ValidTo = s.ValidTo
+                            },
+                        BankAccount = new SupplierBankAccount
+                        {
+                            SupplierID = s.SupplierID,
+                            BankAccountName = s.BankAccountName,
+                            BankAccountBranch = s.BankAccountBranch,
+                            BankAccountCode = s.BankAccountCode,
+                            BankAccountNumber = s.BankAccountNumber,
+                            BankInternationalCode = s.BankInternationalCode
+                        }
+                    })
+                    .Select(result => new { result.ContactInfo, result.BankAccount })
+                    .SingleOrDefault()
+                ).First());
+
+            var spFrom = new SqlParameter("@p0", new DateTime(2014, 1, 1));
+            var spTo = new SqlParameter("@p1", new DateTime(2015, 1, 1));
+            queryInfoCache.Add("A4_StoredProcedureToEntity",
+                context.RecordQueryInfos(ctx => ctx.Set<PurchaseOrderUpdate>()
+                    .FromSqlInterpolated(
+                        $"EXEC WideWorldImporters.Integration.GetOrderUpdates @LastCutoff = {spFrom}, @NewCutoff = {spTo}")
+                    .ToList()
+                ).First());
+
+            int orderId = 26866;
+            queryInfoCache.Add("B1_SelectionOverIndexedColumn",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .Where(ol => ol.OrderID == orderId)
+                    .ToList()
+                ).First());
+
+            decimal unitPrice = 25m;
+            queryInfoCache.Add("B2_SelectionOverNonIndexedColumn",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .Where(ol => ol.UnitPrice == unitPrice)
+                    .ToList()
+                ).First());
+
+            var rangeFrom = new DateTime(2014, 12, 20);
+            var rangeTo = new DateTime(2014, 12, 31);
+            queryInfoCache.Add("B3_RangeQuery",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .Where(ol => ol.PickingCompletedWhen >= rangeFrom && ol.PickingCompletedWhen <= rangeTo)
+                    .ToList()
+                ).First());
+
+            var orderIds = new[] { 1, 10, 100, 1000, 10000 };
+            queryInfoCache.Add("B4_InQuery",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .Where(ol => orderIds.Contains(ol.OrderID))
+                    .ToList()
+                ).First());
+
+            string text = "C++";
+            queryInfoCache.Add("B5_TextSearch",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .Where(ol => ol.Description.Contains(text))
+                    .ToList()
+                ).First());
+
+            int skip = 1000;
+            int take = 50;
+            queryInfoCache.Add("B6_PagingQuery",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .OrderBy(ol => ol.OrderLineID)
+                    .Skip(skip)
+                    .Take(take)
+                    .ToList()
+                ).First());
+
+            queryInfoCache.Add("C1_AggregationCount",
+                context.RecordQueryInfos(ctx => ctx.OrderLines
+                    .GroupBy(ol => ol.TaxRate)
+                    .Select(g => new { TaxRate = g.Key, Count = g.Count() })
+                    .OrderByDescending(x => x.Count)
+                    .ToDictionary(x => x.TaxRate, x => x.Count)
+                ).First());
+
+            queryInfoCache.Add("C2_AggregationMax",
+                context.RecordQueryInfos(ctx => ctx.OrderLines.Max(ol => ol.UnitPrice)
+                ).First());
+
+            queryInfoCache.Add("C3_AggregationSum",
+                context.RecordQueryInfos(ctx => ctx.OrderLines.Sum(ol => ol.Quantity * ol.UnitPrice)
+                ).First());
+
+            queryInfoCache.Add("D1_OneToManyRelationship",
+                context.RecordQueryInfos(ctx => ctx.Orders
+                    .Include(o => o.OrderLines)
+                    .SingleOrDefault(o => o.OrderID == 530)
+                ).First());
+
+            queryInfoCache.Add("D2_StockItems",
+                context.RecordQueryInfos(ctx => ctx.StockItems
+                    .Include(si => si.StockGroups)
+                    .OrderBy(si => si.StockItemID)
+                    .ToList()
+                ).First());
+
+            queryInfoCache.Add("D2_StockGroups",
+                context.RecordQueryInfos(ctx => ctx.StockGroups
+                    .Include(sg => sg.StockItems)
+                    .OrderBy(sg => sg.StockGroupID)
+                    .ToList()
+                ).First());
+
+            queryInfoCache.Add("D3_OptionalRelationship",
+                context.RecordQueryInfos(ctx => ctx.Customers
+                    .Include(c => c.Transactions)
+                    .OrderBy(c => c.CustomerID)
+                    .ToList()
+                ).First());
+
+            queryInfoCache.Add("E1_ColumnSorting",
+                context.RecordQueryInfos(ctx => ctx.PurchaseOrders
+                    .OrderBy(po => po.ExpectedDeliveryDate)
+                    .Take(1000)
+                    .ToList()
+                ).First());
+
+            queryInfoCache.Add("E2_Distinct",
+                context.RecordQueryInfos(ctx => ctx.PurchaseOrders
+                    .Select(po => po.SupplierReference)
+                    .Distinct()
+                    .ToList()
+                ).First());
+
+            queryInfoCache.Add("F1_JSONObjectQuery",
+                context.RecordQueryInfos(ctx => ctx.People
+                    .Where(p => p.CustomFields!.Title == "Team Member")
+                    .OrderBy(p => p.PersonID)
+                    .ToList()
+                ).First());
+
+            queryInfoCache.Add("F2_JSONArrayQuery",
+                context.RecordQueryInfos(ctx => ctx.People
+                    .Where(p => p.OtherLanguages!.Contains("Slovak"))
+                    .OrderBy(p => p.PersonID)
+                    .ToList()
+                ).First());
+
+            var g1SqlStrings = context.RecordQueryInfos(ctx =>
+                {
+                    var first = context.Suppliers
+                        .Where(s => s.SupplierID < 5)
+                        .Select(s => s.SupplierID)
+                        .ToList();
+
+                    var last = context.Suppliers
+                        .Where(s => s.SupplierID >= 5 && s.SupplierID <= 10)
+                        .Select(s => s.SupplierID)
+                        .ToList();
+
+                    var suppliers = first
+                        .Union(last)
+                        .OrderBy(s => s)
+                        .ToList();
+
+                    return suppliers;
+                }
+            );
+            queryInfoCache.Add("G1_Union_1", g1SqlStrings.ElementAt(0));
+            queryInfoCache.Add("G1_Union_2", g1SqlStrings.ElementAt(1));
+
+            var g2SqlStrings = context.RecordQueryInfos(ctx =>
+                {
+                    var first = context.Suppliers
+                        .Where(s => s.SupplierID < 10)
+                        .Select(s => s.SupplierID)
+                        .ToList();
+
+                    var last = context.Suppliers
+                        .Where(s => s.SupplierID >= 5 && s.SupplierID <= 15)
+                        .Select(s => s.SupplierID)
+                        .ToList();
+
+                    var suppliers = first
+                        .Intersect(last)
+                        .OrderBy(s => s)
+                        .ToList();
+
+                    return suppliers;
+                }
+            );
+            queryInfoCache.Add("G2_Intersection_1", g2SqlStrings.ElementAt(0));
+            queryInfoCache.Add("G2_Intersection_2", g2SqlStrings.ElementAt(1));
+
+            queryInfoCache.Add("H1_Metadata",
+                context.RecordQueryInfos(ctx => ctx.Database.SqlQueryRaw<string>(
+                        """
+                            SELECT DATA_TYPE AS Value FROM INFORMATION_SCHEMA.COLUMNS 
+                                WHERE TABLE_SCHEMA = 'Purchasing'
+                                AND TABLE_NAME = 'Suppliers'
+                                AND COLUMN_NAME = 'SupplierReference'
+                        """
+                    ).SingleOrDefault()
+                ).First());
         }
 
         [GlobalCleanup]
-        public void GlobalCleanup() {}
+        public void GlobalCleanup() { }
 
         [Benchmark]
         public PurchaseOrder? A1_EntityIdenticalToTable()
         {
+            commandExecutor.Configure(queryInfoCache["A1_EntityIdenticalToTable"]);
             using var context = contextFactory.CreateDbContext();
 
             var order = context.PurchaseOrders.Find(25);
@@ -48,35 +314,12 @@ namespace EFCorePerformance
         [Benchmark]
         public SupplierContactInfo A2_LimitedEntity()
         {
+            commandExecutor.Configure(queryInfoCache["A2_LimitedEntity"]);
             using var context = contextFactory.CreateDbContext();
 
             var contactInfo = context.Suppliers
-            .Where(s => s.SupplierID == 10)
-            .Select(s => new SupplierContactInfo
-            {
-                SupplierID = s.SupplierID,
-                SupplierName = s.SupplierName,
-                PhoneNumber = s.PhoneNumber,
-                FaxNumber = s.FaxNumber,
-                WebsiteURL = s.WebsiteURL,
-                ValidFrom = s.ValidFrom,
-                ValidTo = s.ValidTo
-            })
-            .Single();
-
-            return contactInfo;
-        }
-
-        [Benchmark]
-        public (SupplierContactInfo ContactInfo, SupplierBankAccount BankAccount) A3_MultipleEntitiesFromOneResult()
-        {
-            using var context = contextFactory.CreateDbContext();
-
-            var result = context.Suppliers
-            .Where(s => s.SupplierID == 10)
-            .Select(s => new
-            {
-                ContactInfo = new SupplierContactInfo
+                .Where(s => s.SupplierID == 10)
+                .Select(s => new SupplierContactInfo
                 {
                     SupplierID = s.SupplierID,
                     SupplierName = s.SupplierName,
@@ -85,19 +328,45 @@ namespace EFCorePerformance
                     WebsiteURL = s.WebsiteURL,
                     ValidFrom = s.ValidFrom,
                     ValidTo = s.ValidTo
-                },
-                BankAccount = new SupplierBankAccount
+                })
+                .Single();
+
+            return contactInfo;
+        }
+
+        [Benchmark]
+        public (SupplierContactInfo ContactInfo, SupplierBankAccount BankAccount) A3_MultipleEntitiesFromOneResult()
+        {
+            commandExecutor.Configure(queryInfoCache["A3_MultipleEntitiesFromOneResult"]);
+            using var context = contextFactory.CreateDbContext();
+
+            var result = context.Suppliers
+                .Where(s => s.SupplierID == 10)
+                .Select(s => new
                 {
-                    SupplierID = s.SupplierID,
-                    BankAccountName = s.BankAccountName,
-                    BankAccountBranch = s.BankAccountBranch,
-                    BankAccountCode = s.BankAccountCode,
-                    BankAccountNumber = s.BankAccountNumber,
-                    BankInternationalCode = s.BankInternationalCode
-                }
-            })
-            .Select(result => new { result.ContactInfo, result.BankAccount })
-            .Single();
+                    ContactInfo =
+                        new SupplierContactInfo
+                        {
+                            SupplierID = s.SupplierID,
+                            SupplierName = s.SupplierName,
+                            PhoneNumber = s.PhoneNumber,
+                            FaxNumber = s.FaxNumber,
+                            WebsiteURL = s.WebsiteURL,
+                            ValidFrom = s.ValidFrom,
+                            ValidTo = s.ValidTo
+                        },
+                    BankAccount = new SupplierBankAccount
+                    {
+                        SupplierID = s.SupplierID,
+                        BankAccountName = s.BankAccountName,
+                        BankAccountBranch = s.BankAccountBranch,
+                        BankAccountCode = s.BankAccountCode,
+                        BankAccountNumber = s.BankAccountNumber,
+                        BankInternationalCode = s.BankInternationalCode
+                    }
+                })
+                .Select(result => new { result.ContactInfo, result.BankAccount })
+                .Single();
 
             return (result.ContactInfo, result.BankAccount);
         }
@@ -105,13 +374,15 @@ namespace EFCorePerformance
         [Benchmark]
         public List<PurchaseOrderUpdate> A4_StoredProcedureToEntity()
         {
+            commandExecutor.Configure(queryInfoCache["A4_StoredProcedureToEntity"]);
             using var context = contextFactory.CreateDbContext();
 
             var from = new DateTime(2014, 1, 1);
             var to = new DateTime(2015, 1, 1);
 
             var orders = context.Set<PurchaseOrderUpdate>()
-                .FromSqlInterpolated($"EXEC WideWorldImporters.Integration.GetOrderUpdates @LastCutoff = {from}, @NewCutoff = {to}")
+                .FromSqlInterpolated(
+                    $"EXEC WideWorldImporters.Integration.GetOrderUpdates @LastCutoff = {from}, @NewCutoff = {to}")
                 .ToList();
 
             return orders;
@@ -120,6 +391,7 @@ namespace EFCorePerformance
         [Benchmark]
         public List<OrderLine> B1_SelectionOverIndexedColumn()
         {
+            commandExecutor.Configure(queryInfoCache["B1_SelectionOverIndexedColumn"]);
             using var context = contextFactory.CreateDbContext();
 
             int orderId = 26866;
@@ -134,6 +406,7 @@ namespace EFCorePerformance
         [Benchmark]
         public List<OrderLine> B2_SelectionOverNonIndexedColumn()
         {
+            commandExecutor.Configure(queryInfoCache["B2_SelectionOverNonIndexedColumn"]);
             using var context = contextFactory.CreateDbContext();
 
             decimal unitPrice = 25m;
@@ -148,6 +421,7 @@ namespace EFCorePerformance
         [Benchmark]
         public List<OrderLine> B3_RangeQuery()
         {
+            commandExecutor.Configure(queryInfoCache["B3_RangeQuery"]);
             using var context = contextFactory.CreateDbContext();
 
             var from = new DateTime(2014, 12, 20);
@@ -163,6 +437,7 @@ namespace EFCorePerformance
         [Benchmark]
         public List<OrderLine> B4_InQuery()
         {
+            commandExecutor.Configure(queryInfoCache["B4_InQuery"]);
             using var context = contextFactory.CreateDbContext();
 
             var orderIds = new[] { 1, 10, 100, 1000, 10000 };
@@ -177,6 +452,7 @@ namespace EFCorePerformance
         [Benchmark]
         public List<OrderLine> B5_TextSearch()
         {
+            commandExecutor.Configure(queryInfoCache["B5_TextSearch"]);
             using var context = contextFactory.CreateDbContext();
 
             string text = "C++";
@@ -192,6 +468,7 @@ namespace EFCorePerformance
         [Benchmark]
         public List<OrderLine> B6_PagingQuery()
         {
+            commandExecutor.Configure(queryInfoCache["B6_PagingQuery"]);
             using var context = contextFactory.CreateDbContext();
 
             int skip = 1000;
@@ -209,6 +486,7 @@ namespace EFCorePerformance
         [Benchmark]
         public Dictionary<decimal, int> C1_AggregationCount()
         {
+            commandExecutor.Configure(queryInfoCache["C1_AggregationCount"]);
             using var context = contextFactory.CreateDbContext();
 
             var taxRates = context.OrderLines
@@ -223,6 +501,7 @@ namespace EFCorePerformance
         [Benchmark]
         public decimal? C2_AggregationMax()
         {
+            commandExecutor.Configure(queryInfoCache["C2_AggregationMax"]);
             using var context = contextFactory.CreateDbContext();
 
             var maxUnitPrice = context.OrderLines.Max(ol => ol.UnitPrice);
@@ -233,6 +512,7 @@ namespace EFCorePerformance
         [Benchmark]
         public decimal? C3_AggregationSum()
         {
+            commandExecutor.Configure(queryInfoCache["C3_AggregationSum"]);
             using var context = contextFactory.CreateDbContext();
 
             var totalSales = context.OrderLines
@@ -244,6 +524,7 @@ namespace EFCorePerformance
         [Benchmark]
         public Order D1_OneToManyRelationship()
         {
+            commandExecutor.Configure(queryInfoCache["D1_OneToManyRelationship"]);
             using var context = contextFactory.CreateDbContext();
 
             var order = context.Orders
@@ -258,11 +539,13 @@ namespace EFCorePerformance
         {
             using var context = contextFactory.CreateDbContext();
 
+            commandExecutor.Configure(queryInfoCache["D2_StockItems"]);
             var stockItems = context.StockItems
                 .Include(si => si.StockGroups)
                 .OrderBy(si => si.StockItemID)
                 .ToList();
 
+            commandExecutor.Configure(queryInfoCache["D2_StockGroups"]);
             var stockGroups = context.StockGroups
                 .Include(sg => sg.StockItems)
                 .OrderBy(si => si.StockGroupID)
@@ -274,12 +557,13 @@ namespace EFCorePerformance
         [Benchmark]
         public List<Customer> D3_OptionalRelationship()
         {
+            commandExecutor.Configure(queryInfoCache["D3_OptionalRelationship"]);
             using var context = contextFactory.CreateDbContext();
 
             var result = context.Customers
-            .Include(c => c.Transactions)
-            .OrderBy(c => c.CustomerID)
-            .ToList();
+                .Include(c => c.Transactions)
+                .OrderBy(c => c.CustomerID)
+                .ToList();
 
             return result;
         }
@@ -287,6 +571,7 @@ namespace EFCorePerformance
         [Benchmark]
         public List<PurchaseOrder> E1_ColumnSorting()
         {
+            commandExecutor.Configure(queryInfoCache["E1_ColumnSorting"]);
             using var context = contextFactory.CreateDbContext();
 
             var orders = context.PurchaseOrders
@@ -300,6 +585,7 @@ namespace EFCorePerformance
         [Benchmark]
         public List<string?> E2_Distinct()
         {
+            commandExecutor.Configure(queryInfoCache["E2_Distinct"]);
             using var context = contextFactory.CreateDbContext();
 
             var supplierReferences = context.PurchaseOrders
@@ -313,6 +599,7 @@ namespace EFCorePerformance
         [Benchmark]
         public List<Person> F1_JSONObjectQuery()
         {
+            commandExecutor.Configure(queryInfoCache["F1_JSONObjectQuery"]);
             using var context = contextFactory.CreateDbContext();
 
             var people = context.People
@@ -326,6 +613,7 @@ namespace EFCorePerformance
         [Benchmark]
         public List<Person> F2_JSONArrayQuery()
         {
+            commandExecutor.Configure(queryInfoCache["F2_JSONArrayQuery"]);
             using var context = contextFactory.CreateDbContext();
 
             var people = context.People
@@ -341,11 +629,13 @@ namespace EFCorePerformance
         {
             using var context = contextFactory.CreateDbContext();
 
+            commandExecutor.Configure(queryInfoCache["G1_Union_1"]);
             var first = context.Suppliers
                 .Where(s => s.SupplierID < 5)
                 .Select(s => s.SupplierID)
                 .ToList();
 
+            commandExecutor.Configure(queryInfoCache["G1_Union_2"]);
             var last = context.Suppliers
                 .Where(s => s.SupplierID >= 5 && s.SupplierID <= 10)
                 .Select(s => s.SupplierID)
@@ -364,11 +654,13 @@ namespace EFCorePerformance
         {
             using var context = contextFactory.CreateDbContext();
 
+            commandExecutor.Configure(queryInfoCache["G2_Intersection_1"]);
             var first = context.Suppliers
                 .Where(s => s.SupplierID < 10)
                 .Select(s => s.SupplierID)
                 .ToList();
 
+            commandExecutor.Configure(queryInfoCache["G2_Intersection_2"]);
             var last = context.Suppliers
                 .Where(s => s.SupplierID >= 5 && s.SupplierID <= 15)
                 .Select(s => s.SupplierID)
@@ -385,6 +677,7 @@ namespace EFCorePerformance
         [Benchmark]
         public string H1_Metadata()
         {
+            commandExecutor.Configure(queryInfoCache["H1_Metadata"]);
             using var context = contextFactory.CreateDbContext();
 
             var datatype = context.Database.SqlQueryRaw<string>(
