@@ -1,3 +1,6 @@
 *.bkp
 .gemini/
 gha-creds-*.json
+.agents/
+GEMINI.md
+.vscode/
