@@ -1,0 +1,10 @@
+@dotnet_service_HostAddress = http://localhost:5073
+
+POST {{dotnet_service_HostAddress}}/api/compiler/compile
+Content-Type: application/json
+
+{
+  "sourceCode": "using System;\npublic class Test { public void Run() { Console.WriteLine(\"Hello\"); } }"
+}
+
+###
