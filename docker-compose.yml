@@ -5,20 +5,25 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    env_file:
+      - ./services/orchestrator/.env
     environment:
-      # Use host.docker.internal to reach local Ollama installation
-      - OLLAMA_HOST=http://host.docker.internal:11434
+      - XRG13_SSH_USERNAME=${XRG13_SSH_USERNAME}
+      # e.g. ~/.ssh/id_ed25519; key is expected to be passwordless
+      - XRG13_SSH_PRIVATE_KEY_PATH=${XRG13_SSH_PRIVATE_KEY_PATH}
+    volumes:
+      - ${XRG13_SSH_PRIVATE_KEY_PATH}:/root/.ssh/xrg13_key:ro
     restart: unless-stopped
-    depends_on:
-      - dotnet-service
-      - java-service
+    # depends_on:
+    # - dotnet-service
+    # - java-service
 
   dotnet-service:
     build:
       context: ./services/dotnet-service
       dockerfile: Dockerfile
     ports:
-      - "5073:8080"
+      - "5073:5073"
     restart: unless-stopped
     depends_on:
       - mssql_db
