@@ -1,22 +1,26 @@
+include:
+  - path:
+      - ./services/orchestrator/docker-compose.yml
+      - ./langgraph-override.compose.yml
 services:
-  orchestrator:
-    build:
-      context: ./services/orchestrator
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    env_file:
-      - ./services/orchestrator/.env
-    environment:
-      - XRG13_SSH_USERNAME=${XRG13_SSH_USERNAME}
-      # e.g. ~/.ssh/id_ed25519; key is expected to be passwordless
-      - XRG13_SSH_PRIVATE_KEY_PATH=${XRG13_SSH_PRIVATE_KEY_PATH}
-    volumes:
-      - ${XRG13_SSH_PRIVATE_KEY_PATH}:/root/.ssh/xrg13_key:ro
-    restart: unless-stopped
-    # depends_on:
-    # - dotnet-service
-    # - java-service
+  # orchestrator:
+  #   build:
+  #     context: ./services/orchestrator
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8000:8000"
+  #   env_file:
+  #     - ./services/orchestrator/.env
+  #   environment:
+  #     - XRG13_SSH_USERNAME=${XRG13_SSH_USERNAME}
+  #     # e.g. ~/.ssh/id_ed25519; key is expected to be passwordless
+  #     - XRG13_SSH_PRIVATE_KEY_PATH=${XRG13_SSH_PRIVATE_KEY_PATH}
+  #   volumes:
+  #     - ${XRG13_SSH_PRIVATE_KEY_PATH}:/root/.ssh/xrg13_key:ro
+  #   restart: unless-stopped
+  #   # depends_on:
+  #   # - dotnet-service
+  #   # - java-service
 
   dotnet-service:
     build:

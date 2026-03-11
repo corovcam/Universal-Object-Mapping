@@ -1,21 +1,23 @@
-FROM langchain/langgraph-api:3.11
-
-RUN apt add openssh-client autossh
-COPY setup_ssh_tunnel.sh /root/setup_ssh_tunnel.sh
-RUN chmod +x /root/setup_ssh_tunnel.sh
-RUN /root/setup_ssh_tunnel.sh
-
+FROM langchain/langgraph-api:3.11
+
+RUN apt-get update && apt-get install -y openssh-client autossh netcat-openbsd
+COPY setup_ssh_tunnel.sh /root/setup_ssh_tunnel.sh
+RUN chmod +x /root/setup_ssh_tunnel.sh
+
+COPY custom_entrypoint.sh /custom_entrypoint.sh
+RUN chmod +x /custom_entrypoint.sh
+
+ENTRYPOINT ["/custom_entrypoint.sh"]
+
 # -- Adding local package . --
 ADD . /deps/orchestrator
-# -- End of local package . --
-
-# -- Installing all local dependencies --
-RUN for dep in /deps/*; do             echo "Installing $dep";             if [ -d "$dep" ]; then                 echo "Installing $dep";                 (cd "$dep" && PYTHONDONTWRITEBYTECODE=1 uv pip install --system --no-cache-dir -c /api/constraints.txt -e .);             fi;         done
-# -- End of local dependencies install --
-ENV LANGSERVE_GRAPHS='{"agent": "/deps/orchestrator/src/react_agent/graph.py:graph"}'
-
-
-
+# -- End of local package . --
+
+# -- Installing all local dependencies --
+RUN for dep in /deps/*; do             echo "Installing $dep";             if [ -d "$dep" ]; then                 echo "Installing $dep";                 (cd "$dep" && PYTHONDONTWRITEBYTECODE=1 uv pip install --system --no-cache-dir -c /api/constraints.txt -e .);             fi;         done
+# -- End of local dependencies install --
+ENV LANGSERVE_GRAPHS='{"agent": "/deps/orchestrator/src/react_agent/graph.py:graph"}'
+
 # -- Ensure user deps didn't inadvertently overwrite langgraph-api
 RUN mkdir -p /api/langgraph_api /api/langgraph_runtime /api/langgraph_license && touch /api/langgraph_api/__init__.py /api/langgraph_runtime/__init__.py /api/langgraph_license/__init__.py
 RUN PYTHONDONTWRITEBYTECODE=1 uv pip install --system --no-cache-dir --no-deps -e /api
@@ -24,6 +26,6 @@ RUN PYTHONDONTWRITEBYTECODE=1 uv pip install --system --no-cache-dir --no-deps -
 RUN pip uninstall -y pip setuptools wheel
 RUN rm -rf /usr/local/lib/python*/site-packages/pip* /usr/local/lib/python*/site-packages/setuptools* /usr/local/lib/python*/site-packages/wheel* && find /usr/local/bin -name "pip*" -delete || true
 RUN rm -rf /usr/lib/python*/site-packages/pip* /usr/lib/python*/site-packages/setuptools* /usr/lib/python*/site-packages/wheel* && find /usr/bin -name "pip*" -delete || true
-RUN uv pip uninstall --system pip setuptools wheel && rm /usr/bin/uv /usr/bin/uvx
-
+RUN uv pip uninstall --system pip setuptools wheel && rm /usr/bin/uv /usr/bin/uvx
+
 WORKDIR /deps/orchestrator
