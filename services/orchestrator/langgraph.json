@@ -1,8 +1,16 @@
 {
   "$schema": "https://langgra.ph/schema.json",
-  "dependencies": ["."],
+  "dependencies": [
+    "."
+  ],
   "graphs": {
     "agent": "./src/react_agent/graph.py:graph"
   },
-  "env": ".env"
+  "env": ".env",
+  "dockerfile_lines": [
+    "RUN apt add openssh-client autossh",
+    "COPY setup_ssh_tunnel.sh /root/setup_ssh_tunnel.sh",
+    "RUN chmod +x /root/setup_ssh_tunnel.sh",
+    "RUN /root/setup_ssh_tunnel.sh"
+  ]
 }
