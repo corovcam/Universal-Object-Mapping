@@ -1,6 +1,0 @@
-services:
-  langgraph-api:
-    environment:
-      - XRG13_SSH_USERNAME=${XRG13_SSH_USERNAME}
-    volumes:
-      - ${XRG13_SSH_PRIVATE_KEY_PATH}:/root/.ssh/xrg13_key:ro

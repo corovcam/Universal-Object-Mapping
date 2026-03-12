@@ -1,7 +1,7 @@
 include:
   - path:
       - ./services/orchestrator/docker-compose.yml
-      - ./langgraph-override.compose.yml
+      # - ./langgraph-override.compose.yml
 services:
   # orchestrator:
   #   build:
@@ -21,6 +21,29 @@ services:
   #   # depends_on:
   #   # - dotnet-service
   #   # - java-service
+
+  ollama-autossh-tunnel:
+    image: jnovack/autossh:2.1.0
+    environment:
+      - SSH_REMOTE_USER=${XRG13_SSH_USERNAME}
+      - SSH_REMOTE_HOST=xrg13.ms.mff.cuni.cz
+      - SSH_REMOTE_PORT=1302
+      - SSH_TUNNEL_PORT=11434
+      - SSH_BIND_IP=0.0.0.0
+      - SSH_TARGET_HOST=localhost
+      - SSH_TARGET_PORT=11434
+      - SSH_MODE=-L
+      - SSH_STRICT_HOST_IP_CHECK=false
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    volumes:
+      - ${XRG13_SSH_PRIVATE_KEY_PATH}:/id_rsa
+    dns:
+      - 8.8.8.8
+      - 4.2.2.4
+    # networks:
+    #   - ollama
 
   dotnet-service:
     build:
@@ -86,3 +109,6 @@ volumes:
   mssql_data:
   mongodb_data:
   neo4j_data:
+
+# networks:
+#   ollama:
