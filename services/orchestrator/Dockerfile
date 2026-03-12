@@ -1,14 +1,5 @@
 FROM langchain/langgraph-api:3.11
 
-RUN apt-get update && apt-get install -y openssh-client autossh netcat-openbsd
-COPY setup_ssh_tunnel.sh /root/setup_ssh_tunnel.sh
-RUN chmod +x /root/setup_ssh_tunnel.sh
-
-COPY custom_entrypoint.sh /custom_entrypoint.sh
-RUN chmod +x /custom_entrypoint.sh
-
-ENTRYPOINT ["/custom_entrypoint.sh"]
-
 # -- Adding local package . --
 ADD . /deps/orchestrator
 # -- End of local package . --
