@@ -17,11 +17,22 @@ def get_message_text(msg: BaseMessage) -> str:
         return "".join(txts).strip()
 
 
-def load_chat_model(fully_specified_name: str) -> BaseChatModel:
+def load_chat_model(fully_specified_name: str, config: dict | None = None) -> BaseChatModel:
     """Load a chat model from a fully specified name.
 
     Args:
         fully_specified_name (str): String in the format 'provider/model'.
+        config (dict): Optional configuration passed from the context to initialize remote parameters like API keys.
     """
     provider, model = fully_specified_name.split("/", maxsplit=1)
+    
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+        config = config or {}
+        return ChatOpenAI(
+            model=model,  # type: ignore
+            base_url=config.get("openai_api_url"),  # type: ignore
+            api_key=config.get("openai_api_key")  # type: ignore
+        )
+
     return init_chat_model(model, model_provider=provider)
