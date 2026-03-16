@@ -5,3 +5,4 @@ gha-creds-*.json
 GEMINI.md
 .vscode/
 .env
+.github/**/*instructions.md

@@ -3,11 +3,17 @@
 ## Stack
 
 - Ollama self-hosted or robust reasoning LLM
+  - Available models: gpt-oss:latest, qwen3-coder:30b, mistral-small3.2:latest
+  - Embeddings: qwen3-embedding:latest
+- vLLM OpenAI-compatible API server:
+  - E-infra Chat AI service API: https://llm.ai.e-infra.cz/v1/
+  - Docs: https://docs.cerit.io/en/docs/ai-as-a-service/ai-api
 - Setup bash scripts setting up databases (MS SQL Server, MongoDB, Neo4J), setting up and calling ETL pipelines (see https://github.com/corovcam/Query-Languages-Analysis-Thesis)
 - docker compose microservices - kubernetes? helm chat?
-  - Python FastAPI - LLM orchestrator - rest api (or grpc) calling with translated source codes
-    - LangGraph (or LangChain) (LLM orchestrator/translator) - Iterative LLM workflow
-    - Calling .NET and Java services, sending there schema and query source codes in parallel - schema reverse-engineered from DB, or code-first→migrate
+  - LangGraph API Server - LLM orchestrator
+    - LangGraph (LLM orchestrator/translator) - Iterative LLM workflow
+    - Communicates with serena MCP server (or dotnet/java CLI tools as fallback) for compilation and semantic checks. Replaces dedicated microservices.
+    - Reference: See `orchestrator-architecture.md` for full graph and integration details.
       - code first→migrate:
         - LLM context: classes, mapping-files (relmig, neo4j-json), custom prompts, etc.
       - reverse-engineered:
@@ -17,8 +23,9 @@
       - queries are sent to respective services, compiled, and query plan, query output schema (data types, length,…) and possibly output rows/documents are streamed back to the orchestrator (all of them or subset?)
       - orchestrator agent iteratively modifies queries up to certain timeout, retries
     - Valid queries are benchmarked in respective services (like BenchmarkDotNet in .NET) → output to orchestrator
-  - ASP.NET - `dotnet init; dotnet build;` CLI schema compilation, dynamic Roslyn query compiling, benchmarking; possibly whole ORMorpher project
-  - Java Spring Boot, Spring Data Neo4j, Spring Data MongoDB
+  - .NET Compilation via Serena MCP (incorporating a C# language server) or fallback to `dotnet` CLI for compilation, benchmarking.
+  - Java Compilation via Serena MCP (incorporating a Java language server) or fallback to Java CLI.
+  - Database Toolbox MCP (googleapis/genai-toolbox) used via Context7 documentation for database communication (extracting schemas, executing queries).
   - MS SQL Server
   - MongoDB
   - MongoDB Relational Migrator
@@ -39,9 +46,9 @@
 5. Instead of ORMConvertor heuristic-based schema+query transformation, LLM-based iterative translation is used (described also in Stack section)
 6. Relational ORM schema (which ORMs?) and queries (+ extracted SQL query strings) are serialized and sent to LLM Translator/Orchestrator via REST API
 7. Translator also extracts relational DDL schema using database connector for context
-8. Prompt are engineered and sent to create Spring Data Neo4j and Spring Data MongoDB schemas
-9. Translator waits for response from ASP.NET and Java Spring services (object mapping has to be valid according to loaded data in ETL stage - 1st stage)
-10. If errors are encountered, fix them iteratively
+8. Prompt are engineered and sent to create Spring Data Neo4j and Spring Data MongoDB schemas. Uses E-infra models for diversity (Council of Models)
+9. Translator waits for response from the compilation tools (Serena MCP or CLI)
+10. If errors are encountered, fix them iteratively. If beyond max tries, trigger Human-in-the-Loop.
 11. Queries are processed similarly - iterative process, but with Query Plans, Output Schema, and possibly whole query execution (challenges with results data model differences and amount of data)
 12. Valid queries are benchmarked using similar approach as ORMConvertor
 13. Lastly, results are shown either in extended ORMorpher UI (or some CLI)
