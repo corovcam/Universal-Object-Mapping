@@ -18,11 +18,12 @@ dependencies = [
     "ollama>=0.6.1",
     "langchain-ollama>=0.1.0",
     "langchain-mcp-adapters>=0.2.1",
+    "langchain-openai>=0.1.0",
 ]
 
 
 [project.optional-dependencies]
-dev = ["mypy>=1.11.1", "ruff>=0.6.1"]
+dev = ["mypy>=1.11.1", "ty>=0.0.23", "ruff>=0.6.1"]
 
 [build-system]
 requires = ["setuptools>=73.0.0", "wheel"]
@@ -62,5 +63,18 @@ lint.ignore = [
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+collect_ignore_glob = ["old/*"]
+
 [dependency-groups]
-dev = ["anyio>=4.7.0", "langgraph-cli[inmem]>=0.4.15", "pytest>=8.3.5"]
+dev = [
+    "anyio>=4.7.0",
+    "debugpy>=1.8.20",
+    "langgraph-cli[inmem]>=0.4.15",
+    "pytest>=8.3.5",
+    "ty>=0.0.23",
+]
+
+[tool.ty.src]
+include = ["src", "tests"]
