@@ -3,12 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Sequence
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
 from langgraph.managed import IsLastStep
 from typing_extensions import Annotated
+
+
+class FrameworkType(str, Enum):
+    """Supported Object-Relational/Document Mapping targets."""
+
+    MS_SQL_NATIVE = "MS SQL Native"
+    EFCORE_LINQ = "C# EFCore LINQ"
+    DAPPER = "C# Dapper"
+    NHIBERNATE_HQL = "C# NHibernate HQL"
+    SPRING_DATA_JPA = "Java Spring Data JPA"
+    SPRING_DATA_MONGODB = "Java Spring Data MongoDB"
+    SPRING_DATA_NEO4J = "Java Spring Data Neo4j"
+    UNKNOWN = "Unknown"
 
 
 @dataclass
@@ -37,6 +51,11 @@ class InputState:
     updating by ID to maintain an "append-only" state unless a message with the same ID is provided.
     """
 
+    # The original source code snippet the user wants translated
+    source_code: str = field(default="")
+    source_target: FrameworkType = field(default=FrameworkType.UNKNOWN)
+    destination_target: FrameworkType = field(default=FrameworkType.UNKNOWN)
+
 
 @dataclass
 class State(InputState):
@@ -53,8 +72,19 @@ class State(InputState):
     It is set to 'True' when the step count reaches recursion_limit - 1.
     """
 
-    # Additional attributes can be added here as needed.
-    # Common examples include:
-    # retrieved_documents: List[Document] = field(default_factory=list)
-    # extracted_entities: Dict[str, Any] = field(default_factory=dict)
-    # api_connections: Dict[str, Any] = field(default_factory=dict)
+    # --- UOM Architecture State ---
+
+    # Core loop variables
+    schema_translated_code: str = field(default="")
+    query_translated_code: str = field(default="")
+    council_responses: list[dict] = field(default_factory=list)
+    error_feedback: str = field(default="")
+
+    # Validation Results
+    schema_validation_result: str = field(default="")
+    query_validation_result: str = field(default="")
+
+    # Loop lifecycle
+    error_count: int = field(default=0)
+    max_retries: int = field(default=3)
+    HIL_requested: bool = field(default=False)
