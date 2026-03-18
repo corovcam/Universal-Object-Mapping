@@ -69,14 +69,14 @@ class Context:
     )
 
     openai_api_url: str = field(
-        default="https://llm.ai.e-infra.cz/v1",
+        default=os.environ.get("OPENAI_API_URL", "https://llm.ai.e-infra.cz/v1"),
         metadata={
             "description": "Base URL for OpenAI-compatible providers (like EINFRA)."
         },
     )
 
     openai_api_key: str = field(
-        default="",
+        default=os.environ.get("OPENAI_API_KEY", ""),
         metadata={"description": "API Key for the OpenAI-compatible provider."},
     )
 
