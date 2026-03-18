@@ -7,7 +7,7 @@ from langgraph.runtime import Runtime
 
 from react_agent.context import AvailableModel, Context
 from react_agent.graph import ExtractionOutput, extract_input, graph
-from react_agent.state import ORMType, State
+from react_agent.state import FrameworkType, State
 
 pytestmark = pytest.mark.anyio
 
@@ -45,8 +45,8 @@ async def test_extract_input_skips_when_state_populated(
     state = State(
         messages=[HumanMessage(content="translate my code")],
         source_code="SELECT * FROM users",
-        source_target=ORMType.MS_SQL_NATIVE,
-        destination_target=ORMType.EFCORE_LINQ,
+        source_target=FrameworkType.MS_SQL_NATIVE,
+        destination_target=FrameworkType.EFCORE_LINQ,
     )
 
     context = Context(model=AvailableModel.EINFRA_MINI)
@@ -72,15 +72,15 @@ async def test_extract_input_invokes_llm_when_state_empty(
     mock_llm.with_structured_output.return_value = mock_structured
     mock_structured.ainvoke.return_value = ExtractionOutput(
         source_code="SELECT * FROM users",
-        source_target=ORMType.MS_SQL_NATIVE,
-        destination_target=ORMType.EFCORE_LINQ,
+        source_target=FrameworkType.MS_SQL_NATIVE,
+        destination_target=FrameworkType.EFCORE_LINQ,
     )
 
     state = State(
         messages=[HumanMessage(content="Convert this SQL to EFCore: SELECT * FROM users")],
         source_code="",
-        source_target=ORMType.UNKNOWN,
-        destination_target=ORMType.UNKNOWN,
+        source_target=FrameworkType.UNKNOWN,
+        destination_target=FrameworkType.UNKNOWN,
     )
 
     context = Context(model=AvailableModel.EINFRA_MINI)
@@ -91,7 +91,7 @@ async def test_extract_input_invokes_llm_when_state_empty(
     result = await extract_input(state, config, runtime)
 
     assert result["source_code"] == "SELECT * FROM users"
-    assert result["source_target"] == ORMType.MS_SQL_NATIVE
-    assert result["destination_target"] == ORMType.EFCORE_LINQ
+    assert result["source_target"] == FrameworkType.MS_SQL_NATIVE
+    assert result["destination_target"] == FrameworkType.EFCORE_LINQ
     mock_llm.with_structured_output.assert_called_once_with(ExtractionOutput)
     mock_structured.ainvoke.assert_awaited_once()
