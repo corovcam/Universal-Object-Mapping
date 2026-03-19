@@ -72,19 +72,7 @@ class State(InputState):
     It is set to 'True' when the step count reaches recursion_limit - 1.
     """
 
-    # --- UOM Architecture State ---
-
-    # Core loop variables
+    # Core variables
     schema_translated_code: str = field(default="")
     query_translated_code: str = field(default="")
     council_responses: list[dict] = field(default_factory=list)
-    error_feedback: str = field(default="")
-
-    # Validation Results
-    schema_validation_result: str = field(default="")
-    query_validation_result: str = field(default="")
-
-    # Loop lifecycle
-    error_count: int = field(default=0)
-    max_retries: int = field(default=3)
-    HIL_requested: bool = field(default=False)

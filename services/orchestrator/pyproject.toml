@@ -1,7 +1,7 @@
 [project]
 name = "uom-orchestrator"
 version = "0.0.1"
-description = "FastAPI LLM Orchestrator for Universal Object Mapping using LangGraph"
+description = "LLM Orchestrator for Universal Object Mapping using LangGraph"
 authors = [{ name = "Martin Čorovčák", email = "martincorovcak@gmail.com" }]
 readme = "README.md"
 license = { text = "MIT" }

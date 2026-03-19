@@ -19,12 +19,7 @@ async def test_uom_graph_compilation() -> None:
     for expected in [
         "extract_input",
         "council_of_models",
-        "schema_translation",
-        "query_translation",
-        "validation_stage",
-        "database_sync_stage",
-        "human_intervention",
-        "increment_error",
+        "translation_agent",
     ]:
         assert expected in nodes, f"Missing node: {expected}"
 

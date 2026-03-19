@@ -11,11 +11,6 @@ def test_state_initialization() -> None:
         council_responses=[],
         schema_translated_code="",
         query_translated_code="",
-        schema_validation_result="",
-        query_validation_result="",
-        error_feedback="",
-        error_count=0,
-        max_retries=3,
     )
 
     assert state.source_target == FrameworkType.UNKNOWN
@@ -52,4 +47,3 @@ def test_state_inherits_input_state_defaults() -> None:
     assert state.destination_target == FrameworkType.UNKNOWN
     assert state.schema_translated_code == ""
     assert state.query_translated_code == ""
-    assert state.error_count == 0

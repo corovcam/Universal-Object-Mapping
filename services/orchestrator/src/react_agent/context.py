@@ -63,7 +63,7 @@ class Context:
         field(
             default=AvailableModel.EINFRA_KIMI_K2_5,
             metadata={
-                "description": "The name of the language model to use for the agent's main interactions."
+                "description": "The name of the language model to use for the agent's main translation agent."
             },
         )
     )
