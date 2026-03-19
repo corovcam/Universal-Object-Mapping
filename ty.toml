@@ -1,0 +1,5 @@
+[environment]
+root = ["./services/orchestrator/src"]
+
+[src]
+include = ["services/orchestrator/src", "services/orchestrator/tests"]

@@ -1,4 +1,4 @@
-.PHONY: all format lint test tests test_watch integration_tests docker_tests help extended_tests
+.PHONY: all format lint type_check dev debug test tests test_watch integration_tests docker_tests help extended_tests
 
 # Default target executed when no arguments are given to make.
 all: help
@@ -60,6 +60,9 @@ lint lint_diff lint_package lint_tests:
 format format_diff:
 	ruff format $(PYTHON_FILES)
 	ruff check --select I --fix $(PYTHON_FILES)
+
+type_check:
+	ty check
 
 spell_check:
 	codespell --toml pyproject.toml
