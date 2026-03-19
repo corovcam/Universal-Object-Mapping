@@ -18,6 +18,7 @@ from react_agent.custom_tools.java_validator import validate_java_code
 # mcp_database tools need to be loaded asynchronously natively in the graph or node.
 # For simplicity, we just export the static tools here.
 
+
 async def search(query: str) -> Optional[dict[str, Any]]:
     """Search for general web results.
 
@@ -28,5 +29,14 @@ async def search(query: str) -> Optional[dict[str, Any]]:
     runtime = get_runtime(Context)
     wrapped = TavilySearch(max_results=runtime.context.max_search_results)
     return cast(dict[str, Any], await wrapped.ainvoke({"query": query}))  # type: ignore
+
+
+async def search_spring_docs(query: str) -> Optional[dict[str, Any]]:
+    pass
+
+
+async def search_microsoft_docs(query: str) -> Optional[dict[str, Any]]:
+    pass
+
 
 TOOLS: List[Any] = [search, validate_java_code, validate_dotnet_code]

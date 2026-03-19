@@ -3,6 +3,20 @@
 # Default target executed when no arguments are given to make.
 all: help
 
+######################
+# DEVELOPMENT
+######################
+
+dev:
+	langgraph dev
+
+debug:
+	langgraph dev --debug-port 5678 --allow-blocking
+
+######################
+# TESTS
+######################
+
 # Define a variable for the test file path.
 TEST_FILE ?= tests/unit_tests/
 
@@ -39,8 +53,8 @@ lint lint_diff lint_package lint_tests:
 	python -m ruff check .
 	[ "$(PYTHON_FILES)" = "" ] || python -m ruff format $(PYTHON_FILES) --diff
 	[ "$(PYTHON_FILES)" = "" ] || python -m ruff check --select I $(PYTHON_FILES)
-# 	[ "$(PYTHON_FILES)" = "" ] || python -m mypy --strict $(PYTHON_FILES)
 	[ "$(PYTHON_FILES)" = "" ] || python -m ty check
+# 	[ "$(PYTHON_FILES)" = "" ] || python -m mypy --strict $(PYTHON_FILES)
 # 	[ "$(PYTHON_FILES)" = "" ] || mkdir -p $(MYPY_CACHE) && python -m mypy --strict $(PYTHON_FILES) --cache-dir $(MYPY_CACHE)
 
 format format_diff:
