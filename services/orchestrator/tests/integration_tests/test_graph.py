@@ -72,7 +72,9 @@ async def test_extract_input_invokes_llm_when_state_empty(
     )
 
     state = State(
-        messages=[HumanMessage(content="Convert this SQL to EFCore: SELECT * FROM users")],
+        messages=[
+            HumanMessage(content="Convert this SQL to EFCore: SELECT * FROM users")
+        ],
         source_code="",
         source_target=FrameworkType.UNKNOWN,
         destination_target=FrameworkType.UNKNOWN,

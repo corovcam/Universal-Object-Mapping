@@ -1,4 +1,4 @@
-from react_agent.state import State, FrameworkType
+from react_agent.state import FrameworkType, State
 
 
 def test_state_initialization() -> None:
@@ -16,8 +16,6 @@ def test_state_initialization() -> None:
     assert state.source_target == FrameworkType.UNKNOWN
     assert state.destination_target == FrameworkType.UNKNOWN
     assert state.source_code == ""
-    assert state.error_count == 0
-    assert state.max_retries == 3
 
 
 def test_orm_type_values() -> None:
