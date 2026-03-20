@@ -5,8 +5,9 @@ services:
       - POSTGRES_URI=postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
       - NEO4J_DATABASE=neo4j
       - NEO4J_USERNAME=neo4j
-      - NEO4J_PASSWORD=Testingneo4j123
+      - NEO4J_PASSWORD=password
       - NEO4J_URI=bolt://neo4j:7687
+      - MONGODB_URI=mongodb://mongodb:27017/uom
       - MSSQL_HOST=mssql_db
       - MSSQL_PORT=1433
       - MSSQL_USER=sa

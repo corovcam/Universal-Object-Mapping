@@ -1,9 +1,11 @@
 # LangGraph Orchestrator Architecture
 
 ## Overview
+
 The Orchestrator Service is the core intelligence component of the Universal Object Mapping (UOM) project. It utilizes an iterative LangGraph workflow to translate and validate Database Schemas (DDL/Code-First mappings) and Queries across different languages and frameworks (.NET, Java, MS SQL, Neo4j, MongoDB).
 
 ## Core Architecture Stack
+
 - **LangGraph API Server**: Provides the execution environment, state management, and API endpoints for the orchestrator graph.
 - **LLM Providers**:
   - Local: Ollama (`gpt-oss`, `qwen3`, `mistral`)
@@ -16,32 +18,32 @@ The Orchestrator Service is the core intelligence component of the Universal Obj
 
 ## Graph Design
 
-The orchestrator operates over a [State](file:///c:/Users/marti/Documents/Uni/DP/Universal-Object-Mapping/services/orchestrator/src/react_agent/state.py#41-61) containing:
+The orchestrator operates over a [State](file:///c:/Users/marti/Documents/Uni/DP/Universal-Object-Mapping/services/orchestrator/src/react_agent/state.py) containing:
+
 - Initial inputs: `source_code` (e.g. C# EFCore), `source_target` (e.g., MS SQL), `destination_target` (e.g. Java Spring Data MongoDB)
-- Iteration metadata: `error_count`, `max_retries`, `council_responses`
-- Intermediate outputs: `translated_code`, `schema_validation_result`, `query_validation_result`
-- Flags: `HIL_requested` (Human-in-the-loop)
+- Iteration metadata: `council_responses`
+- Messages: Full conversation history, including tool calls and outputs.
 
 ### Node Workflow
 
-1. `council_of_models`:
-   - Triggers parallel LLM generation from diverse models (e.g. 1x Ollama, 2x E-infra).
-   - Compares the generated strategies and picks the best one for schema/query generation.
-2. `cot_translation`:
-   - Uses the selected strategy to perform Chain-of-Thought translation. Output is drafted in `translated_code`.
-3. `validation_stage`:
-   - Evaluates the syntactical and semantic validity of the draft. Also queries the MS SQL for relational schema DDL for additional context.
-   - For Java (Spring Data Neo4j/MongoDB, etc.), calls `java_validator` (Serena MCP / CLI).
-   - For .NET (EFCore, Dapper, NHibernate, etc.), calls `dotnet_validator` (Serena MCP / CLI).
-4. `database_sync_stage`:
-   - Uses Database Toolbox MCP to verify runtime DB constraints, fetch expected query result shapes, and validate cross-language query equivalency.
-5. `evaluate_end_condition`:
-   - Conditional router. If no errors (validation passes), transition to `__end__`.
-   - If errors found, increment `error_count`, transition back to `cot_translation` with error feedback.
-   - If `error_count >= max_retries`, transition to `human_intervention`.
-6. `human_intervention`:
-   - Triggers LangGraph standard `interrupt()`.
-   - Waits for human review. Once human provides an override/fix, state is updated and the graph resumes validation.
+The graph follows a linear sequence, but the intelligence is concentrated in a **ReAct Agent** that performs internal iteration.
+
+1. `extract_input`:
+   - Analyzes recent messages to extract `source_code`, `source_target`, and `destination_target` using structured LLM output (`ExtractionOutput`).
+2. `council_of_models`:
+   - Triggers parallel LLM generation from diverse models (e.g. 1x Ollama Qwen3-Coder, 1x E-infra GLM-4).
+   - Generates multiple translation strategies stored in `council_responses`.
+3. `translation_agent`:
+   - A **ReAct Agent** implemented using `create_agent`. It takes the brainstormed strategies as part of its prompt.
+   - It performs the translation and iteratively uses tools to validate and fix the code.
+   - **Tools available**:
+     - `validate_java_code`: Compiles/validates Java Spring Data code.
+     - `validate_dotnet_code`: Compiles/validates .NET (EF Core, Dapper, etc.) code.
+     - `search`: Web search (Tavily) for documentation and examples.
+   - The agent continues its tool-use loop until it produces a valid `TranslationOutput` or hits internal retry limits.
+4. `__end__`:
+   - The final state contains the full sequence of messages, including the validated translation.
 
 ## Modularity Considerations
+
 Both the logic handling tools (`java_validator`, `dotnet_validator`) and the LLM configurations are designed to be explicitly modular. Rather than hard-coding EFCore, the `.NET` tool detects or requests the ORM type from context and adjusts its validation commands (e.g., MSBuild flags, dependent package checks) accordingly.

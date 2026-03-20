@@ -51,6 +51,11 @@ services:
       dockerfile: Dockerfile
     ports:
       - "5073:5073"
+    environment:
+      - MSSQL_HOST=mssql_db
+      - MSSQL_PORT=1433
+      - MSSQL_USER=sa
+      - MSSQL_PASSWORD=Testingorms123
     restart: unless-stopped
     depends_on:
       - mssql_db
@@ -64,7 +69,7 @@ services:
     environment:
       - SPRING_NEO4J_URI=bolt://neo4j:7687
       - SPRING_NEO4J_AUTHENTICATION_USERNAME=neo4j
-      - SPRING_NEO4J_AUTHENTICATION_PASSWORD=Testingneo4j123
+      - SPRING_NEO4J_AUTHENTICATION_PASSWORD=password
       - SPRING_DATA_MONGODB_URI=mongodb://mongodb:27017/uom
     restart: unless-stopped
     depends_on:
@@ -86,30 +91,53 @@ services:
       - mssql_data:/var/opt/mssql
 
   mongodb:
-    image: mongo:latest
+    image: mongo:8.2.6
     ports:
       - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=root
+      - MONGO_INITDB_DATABASE=uom
     restart: unless-stopped
     volumes:
       - mongodb_data:/data/db
 
   neo4j:
-    image: neo4j:latest
+    image: neo4j:2026.02.2
     ports:
       - "7474:7474"
       - "7687:7687"
     environment:
-      - NEO4J_AUTH=neo4j/Testingneo4j123
-      # - NEO4J_DATABASE=uom
+      - NEO4J_AUTH=neo4j/password
       - NEO4J_PLUGINS=["apoc"]
     restart: unless-stopped
     volumes:
       - neo4j_data:/data
 
+  postgres:
+    image: postgres:18.3
+    ports:
+      - "5632:5432"
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=uom
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: pg_isready -U postgres
+      start_period: 10s
+      timeout: 1s
+      retries: 5
+      interval: 60s
+      start_interval: 1s
+
 volumes:
   mssql_data:
   mongodb_data:
   neo4j_data:
+  postgres_data:
 
 # networks:
 #   ollama:
