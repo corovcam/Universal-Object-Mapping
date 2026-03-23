@@ -1,0 +1,8 @@
+*dump
+*jdbc*
+*.tar.gz
+*.zip
+csv-output/
+neo4j-etl-cli-1.6.0/
+*.png
+logs/
