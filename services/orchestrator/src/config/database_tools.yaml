@@ -1,0 +1,93 @@
+kind: sources
+name: mongodb
+type: mongodb
+uri: "${MONGODB_URI}"
+---
+kind: tools
+name: mongodb-inspect-schema
+type: mongodb-aggregate
+source: mongodb
+description: >-
+  Sample up to 5 documents from any MongoDB collection to understand its
+  document structure, field names, and value types. Use this to inspect
+  a collection schema before translation.
+database: "${MONGODB_DATABASE:uom}"
+collection: _toolbox_meta
+readOnly: true
+pipelinePayload: |
+  [
+    {
+      "$unionWith": {
+        "coll": {{json .collection_name}},
+        "pipeline": [{ "$sample": { "size": 5 } }]
+      }
+    }
+  ]
+pipelineParams:
+  - name: collection_name
+    type: string
+    description: The name of the MongoDB collection to inspect.
+---
+kind: tools
+name: mongodb-find-by-field
+type: mongodb-aggregate
+source: mongodb
+description: >-
+  Find documents in a MongoDB collection where a given field matches
+  a given string value. Returns up to 20 matching documents.
+database: "${MONGODB_DATABASE:uom}"
+collection: _toolbox_meta
+readOnly: true
+pipelinePayload: |
+  [
+    {
+      "$unionWith": {
+        "coll": {{json .collection_name}},
+        "pipeline": [
+          { "$match": { {{json .field_name}}: {{json .field_value}} } },
+          { "$limit": 20 }
+        ]
+      }
+    }
+  ]
+pipelineParams:
+  - name: collection_name
+    type: string
+    description: The name of the MongoDB collection to search.
+  - name: field_name
+    type: string
+    description: The document field name to filter on.
+  - name: field_value
+    type: string
+    description: The value the field should match.
+---
+kind: tools
+name: mongodb-count-documents
+type: mongodb-aggregate
+source: mongodb
+description: >-
+  Count the total number of documents in a MongoDB collection.
+database: "${MONGODB_DATABASE:uom}"
+collection: _toolbox_meta
+readOnly: true
+pipelinePayload: |
+  [
+    {
+      "$unionWith": {
+        "coll": {{json .collection_name}},
+        "pipeline": []
+      }
+    },
+    { "$count": "total" }
+  ]
+pipelineParams:
+  - name: collection_name
+    type: string
+    description: The name of the MongoDB collection to count.
+---
+kind: toolsets
+name: mongodb_toolset
+tools:
+  - mongodb-inspect-schema
+  - mongodb-find-by-field
+  - mongodb-count-documents

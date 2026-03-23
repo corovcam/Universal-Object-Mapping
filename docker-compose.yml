@@ -4,25 +4,6 @@ include:
       - ./services/orchestrator/docker-compose.yml
       - ./langgraph-override.compose.yml
 services:
-  # orchestrator:
-  #   build:
-  #     context: ./services/orchestrator
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "8000:8000"
-  #   env_file:
-  #     - ./services/orchestrator/.env
-  #   environment:
-  #     - XRG13_SSH_USERNAME=${XRG13_SSH_USERNAME}
-  #     # e.g. ~/.ssh/id_ed25519; key is expected to be passwordless
-  #     - XRG13_SSH_PRIVATE_KEY_PATH=${XRG13_SSH_PRIVATE_KEY_PATH}
-  #   volumes:
-  #     - ${XRG13_SSH_PRIVATE_KEY_PATH}:/root/.ssh/xrg13_key:ro
-  #   restart: unless-stopped
-  #   # depends_on:
-  #   # - dotnet-service
-  #   # - java-service
-
   ollama-autossh-tunnel:
     image: jnovack/autossh:2.1.0
     environment:
@@ -105,6 +86,12 @@ services:
     volumes:
       - mongodb_data:/data/db
       - ./services/etl/mongodb/init-mongodb.sh:/docker-entrypoint-initdb.d/init-mongodb.sh
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   neo4j:
     image: neo4j:2026.02.2
@@ -118,30 +105,21 @@ services:
     volumes:
       - neo4j_data:/data
       - ./services/etl/neo4j:/neo4j-etl
-
-  postgres:
-    image: postgres:18.3
-    ports:
-      - "5632:5432"
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=uom
-    volumes:
-      - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: pg_isready -U postgres
+      test:
+        [
+          "CMD-SHELL",
+          "echo RETURN 1 | cypher-shell -a bolt://localhost:7687 -u ${NEO4J_USERNAME} -p ${NEO4J_PASSWORD} || exit 1",
+        ]
       start_period: 10s
-      timeout: 1s
+      interval: 10s
+      timeout: 5s
       retries: 5
-      interval: 60s
-      start_interval: 1s
 
   mongodb-relational-migrator:
     image: public.ecr.aws/v4d7k6c9/relational-migrator:1.15.3
     ports:
-      - "8090:8080"
+      - "${MONGODB_MIGRATOR_PORT}:8080"
     volumes:
       - mongodb_migrator_data:/root/Migrator
       # MIGRATOR_PATH_DRIVER - optional - Path to a local JDBC driver to mount
@@ -151,12 +129,42 @@ services:
       - mongodb
       - mssql_db
 
+  db-toolbox:
+    image: us-central1-docker.pkg.dev/database-toolbox/toolbox/toolbox:latest
+    platform: linux/amd64
+    ports:
+      - "${DB_TOOLBOX_PORT}:5000"
+    environment:
+      - MSSQL_HOST=mssql_db
+      - MSSQL_PORT=1433
+      - MSSQL_USER=${MSSQL_USER}
+      - MSSQL_PASSWORD=${MSSQL_PASSWORD}
+      - MSSQL_DATABASE=WideWorldImporters
+      - MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE}
+      - NEO4J_URI=neo4j://neo4j:7687
+      - NEO4J_USERNAME=${NEO4J_USERNAME}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - NEO4J_DATABASE=neo4j
+    volumes:
+      - ./services/orchestrator/src/config:/config
+    command:
+      [
+        "--tools-file",
+        "/config/database_tools.yaml",
+        "--prebuilt",
+        "mssql",
+        "--prebuilt",
+        "neo4j",
+        "--address",
+        "0.0.0.0",
+      ]
+    depends_on:
+      langgraph-api:
+        condition: service_healthy
+
 volumes:
   mssql_data:
   mongodb_data:
   neo4j_data:
   postgres_data:
   mongodb_migrator_data:
-
-# networks:
-#   ollama:
