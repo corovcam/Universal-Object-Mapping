@@ -1,3 +1,4 @@
+name: universal-object-mapping
 include:
   - path:
       - ./services/orchestrator/docker-compose.yml
@@ -113,6 +114,7 @@ services:
     restart: unless-stopped
     volumes:
       - neo4j_data:/data
+      - ./services/etl/neo4j:/neo4j-etl
 
   postgres:
     image: postgres:18.3
@@ -133,11 +135,25 @@ services:
       interval: 60s
       start_interval: 1s
 
+  mongodb-relational-migrator:
+    image: public.ecr.aws/v4d7k6c9/relational-migrator:1.15.3
+    ports:
+      - "8090:8080"
+    volumes:
+      - mongodb_migrator_data:/root/Migrator
+      # MIGRATOR_PATH_DRIVER - optional - Path to a local JDBC driver to mount
+      - ${MIGRATOR_PATH_DRIVER:-/dev/null}:/opt/mongodb-relational-migrator/lib/app/lib/driver.jar
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+      - mssql_db
+
 volumes:
   mssql_data:
   mongodb_data:
   neo4j_data:
   postgres_data:
+  mongodb_migrator_data:
 
 # networks:
 #   ollama:
