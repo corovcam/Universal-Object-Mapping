@@ -36,7 +36,7 @@ services:
       - SSH_MODE=-L
       - SSH_STRICT_HOST_IP_CHECK=false
     ports:
-      - "11434:11434"
+      - "${OLLAMA_PORT}:11434"
     restart: unless-stopped
     volumes:
       - ${XRG13_SSH_PRIVATE_KEY_PATH}:/id_rsa
@@ -51,12 +51,12 @@ services:
       context: ./services/dotnet-service
       dockerfile: Dockerfile
     ports:
-      - "5073:5073"
+      - "${DOTNET_SERVICE_PORT}:5073"
     environment:
       - MSSQL_HOST=mssql_db
       - MSSQL_PORT=1433
-      - MSSQL_USER=sa
-      - MSSQL_PASSWORD=Testingorms123
+      - MSSQL_USER=${MSSQL_USER}
+      - MSSQL_PASSWORD=${MSSQL_PASSWORD}
     restart: unless-stopped
     depends_on:
       - mssql_db
@@ -66,12 +66,12 @@ services:
       context: ./services/java-services
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "${JAVA_SERVICE_PORT}:8080"
     environment:
       - SPRING_NEO4J_URI=bolt://neo4j:7687
-      - SPRING_NEO4J_AUTHENTICATION_USERNAME=neo4j
-      - SPRING_NEO4J_AUTHENTICATION_PASSWORD=password
-      - SPRING_DATA_MONGODB_URI=mongodb://mongodb:27017/uom
+      - SPRING_NEO4J_AUTHENTICATION_USERNAME=${NEO4J_USERNAME}
+      - SPRING_NEO4J_AUTHENTICATION_PASSWORD=${NEO4J_PASSWORD}
+      - SPRING_DATA_MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE}
     restart: unless-stopped
     depends_on:
       - neo4j
@@ -82,10 +82,10 @@ services:
       context: ./ORMConvertor
       dockerfile: database.Dockerfile
     ports:
-      - "1444:1433"
+      - "${MSSQL_PORT}:1433"
     environment:
       - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=Testingorms123
+      - MSSQL_SA_PASSWORD=${MSSQL_PASSWORD}
       - MSSQL_PID=Developer
     restart: unless-stopped
     volumes:
@@ -94,22 +94,25 @@ services:
   mongodb:
     image: mongo:8.2.6
     ports:
-      - "27017:27017"
+      - "${MONGODB_PORT}:27017"
     environment:
       - MONGO_INITDB_ROOT_USERNAME=root
       - MONGO_INITDB_ROOT_PASSWORD=root
-      - MONGO_INITDB_DATABASE=uom
+      - MONGO_INITDB_DATABASE=${MONGODB_DATABASE}
+      - MONGO_INITDB_USERNAME=${MONGODB_USER}
+      - MONGO_INITDB_PASSWORD=${MONGODB_PASSWORD}
     restart: unless-stopped
     volumes:
       - mongodb_data:/data/db
+      - ./services/etl/mongodb/init-mongodb.sh:/docker-entrypoint-initdb.d/init-mongodb.sh
 
   neo4j:
     image: neo4j:2026.02.2
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "${NEO4J_BROWSER_PORT}:7474"
+      - "${NEO4J_PORT}:7687"
     environment:
-      - NEO4J_AUTH=neo4j/password
+      - NEO4J_AUTH=${NEO4J_USERNAME}/${NEO4J_PASSWORD}
       - NEO4J_PLUGINS=["apoc"]
     restart: unless-stopped
     volumes:
