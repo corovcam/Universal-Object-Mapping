@@ -45,6 +45,7 @@ class AvailableModel(str, Enum):
     EINFRA_QWEN3_5 = "openai/qwen3.5"
     EINFRA_QWEN3_CODER_NEXT = "openai/qwen3-coder-next"
     EINFRA_GLM_4_7 = "openai/glm-4.7"
+    EINFRA_GLM_5 = "openai/glm-5"
 
 
 @dataclass(kw_only=True)
@@ -85,6 +86,11 @@ class Context:
         metadata={
             "description": "The maximum number of search results to return for each search query."
         },
+    )
+
+    db_toolbox_uri: str = field(
+        default=os.environ.get("DB_TOOLBOX_URI", "http://localhost:5000"),
+        metadata={"description": "URI of the MCP Toolbox for Databases server."},
     )
 
     def __post_init__(self) -> None:

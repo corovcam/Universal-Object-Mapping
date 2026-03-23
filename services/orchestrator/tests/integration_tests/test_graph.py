@@ -18,6 +18,7 @@ async def test_uom_graph_compilation() -> None:
     nodes = list(graph.nodes.keys())
     for expected in [
         "extract_input",
+        "schema_inspection",
         "council_of_models",
         "translation_agent",
     ]:
@@ -26,10 +27,17 @@ async def test_uom_graph_compilation() -> None:
 
 async def test_uom_graph_has_correct_entry_point() -> None:
     """Graph starts at the extract_input node."""
-    # The first edge from __start__ should route to extract_input
     nodes = list(graph.nodes.keys())
     assert nodes[0] == "__start__"
     assert "extract_input" in nodes
+
+
+async def test_uom_graph_has_schema_inspection_before_council() -> None:
+    """Schema inspection runs before the council of models."""
+    nodes = list(graph.nodes.keys())
+    inspection_idx = nodes.index("schema_inspection")
+    council_idx = nodes.index("council_of_models")
+    assert inspection_idx < council_idx, "schema_inspection should come before council_of_models"
 
 
 @patch("react_agent.graph._get_model")

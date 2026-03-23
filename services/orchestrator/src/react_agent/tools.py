@@ -1,9 +1,8 @@
-"""This module provides example tools for web scraping and search functionality.
+"""This module provides the tools for the orchestrator agent.
 
-It includes a basic Tavily search function (as an example)
-
-These tools are intended as free examples to get started. For production use,
-consider implementing more robust and specialized tools tailored to your needs.
+It defines static tools (validators) and re-exports the async loaders
+for database and documentation tools which must be loaded at runtime
+in graph nodes.
 """
 
 from typing import Any, List, Optional, cast
@@ -12,11 +11,10 @@ from langchain_tavily import TavilySearch
 from langgraph.runtime import get_runtime
 
 from react_agent.context import Context
+from react_agent.custom_tools.docs_search import fetch_web_docs, load_docs_mcp_tools
 from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
 from react_agent.custom_tools.java_validator import validate_java_code
-
-# mcp_database tools need to be loaded asynchronously natively in the graph or node.
-# For simplicity, we just export the static tools here.
+from react_agent.custom_tools.mcp_database import load_database_toolbox_tools
 
 
 async def search(query: str) -> Optional[dict[str, Any]]:
@@ -31,12 +29,13 @@ async def search(query: str) -> Optional[dict[str, Any]]:
     return cast(dict[str, Any], await wrapped.ainvoke({"query": query}))  # type: ignore
 
 
-async def search_spring_docs(query: str) -> Optional[dict[str, Any]]:
-    pass
+# Static tools available without async initialization.
+# Database and documentation tools are loaded dynamically in graph nodes.
+TOOLS: List[Any] = [validate_java_code, validate_dotnet_code, fetch_web_docs]
 
-
-async def search_microsoft_docs(query: str) -> Optional[dict[str, Any]]:
-    pass
-
-
-TOOLS: List[Any] = [search, validate_java_code, validate_dotnet_code]
+__all__ = [
+    "TOOLS",
+    "load_database_toolbox_tools",
+    "load_docs_mcp_tools",
+    "search",
+]
