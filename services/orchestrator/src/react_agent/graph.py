@@ -1,6 +1,7 @@
 """Define the Universal Object Mapping orchestrator graph."""
 
 import asyncio
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -19,10 +20,18 @@ from langgraph.runtime import Runtime
 from pydantic import BaseModel, Field
 
 from react_agent.context import AvailableModel, Context
-from react_agent.prompts import SYSTEM_PROMPT_EXTRACTION, SYSTEM_PROMPT_TRANSLATOR
+from react_agent.custom_tools.docs_search import load_docs_mcp_tools
+from react_agent.custom_tools.mcp_database import load_database_toolbox_tools
+from react_agent.prompts import (
+    SYSTEM_PROMPT_EXTRACTION,
+    SYSTEM_PROMPT_SCHEMA_INSPECTOR,
+    SYSTEM_PROMPT_TRANSLATOR,
+)
 from react_agent.state import FrameworkType, InputState, State
 from react_agent.tools import TOOLS
 from react_agent.utils import load_chat_model
+
+logger = logging.getLogger(__name__)
 
 
 def _get_model(
@@ -108,6 +117,64 @@ async def extract_input(
     }
 
 
+async def schema_inspection(
+    state: State, config: RunnableConfig, runtime: Runtime[Context]
+) -> dict[str, Any]:
+    """Inspect source and target database schemas using database tools.
+
+    Runs a lightweight ReAct agent with only database tools to examine
+    the relevant database schemas before translation begins.
+    """
+    # Load database tools asynchronously
+    db_tools = await load_database_toolbox_tools()
+
+    if not db_tools:
+        logger.warning("No database tools available for schema inspection.")
+        return {
+            "schema_context": "No database tools available. Schema inspection skipped."
+        }
+
+    model = _get_model(config, runtime, AvailableModel.EINFRA_GLM_5)
+
+    system_prompt = SYSTEM_PROMPT_SCHEMA_INSPECTOR.format(
+        source_framework=state.source_target.value,
+        destination_framework=state.destination_target.value,
+        source_code=state.source_code,
+        system_time=datetime.now(tz=UTC).isoformat(),
+    )
+
+    agent = create_agent(
+        model,
+        tools=db_tools,
+        system_prompt=system_prompt,
+        middleware=[
+            ModelRetryMiddleware(),
+            ToolRetryMiddleware(),
+        ],
+        debug=True,
+    )
+
+    message = f"""Inspect the database schemas relevant to translating code from {state.source_target.value} to {state.destination_target.value}.
+
+Source code being translated:
+{state.source_code}
+
+Please provide a concise summary of the relevant source and target database structures."""
+
+    try:
+        response = await agent.ainvoke({"messages": [HumanMessage(content=message)]})
+        # Extract the final assistant response as schema context
+        schema_summary = (
+            response["messages"][-1].content if response["messages"] else ""
+        )
+        return {"schema_context": str(schema_summary)}
+    except Exception:
+        logger.warning("Schema inspection failed.", exc_info=True)
+        return {
+            "schema_context": "Schema inspection encountered an error. Proceeding without schema context."
+        }
+
+
 async def _generate_council_strategy(
     model_name: str,
     state: State,
@@ -115,23 +182,25 @@ async def _generate_council_strategy(
     runtime: Runtime[Context],
 ) -> dict:
     """Helper to generate a single strategy asynchronously."""
-    # We construct a temporary model based on name
     llm = _get_model(config, runtime, model_name_override=model_name)
 
-    prompt = f"Brainstorm a translation strategy for:\n{state.source_code}\nFrom {state.source_target.value} to {state.destination_target.value}."
-    response = await llm.ainvoke([HumanMessage(content=prompt)])
+    prompt = f"""Brainstorm a translation strategy for:
+{state.source_code}
+From {state.source_target.value} to {state.destination_target.value}.
 
+Database schema context:
+{state.schema_context}"""
+
+    response = await llm.ainvoke([HumanMessage(content=prompt)])
     return {"model": model_name, "strategy": str(response.content)}
 
 
 async def council_of_models(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ) -> dict[str, Any]:
-    """Generates advice from multiple LLMs leveraging asyncio for parallel execution."""
-    # configurable = config.get("configurable", {})
-    # model_name = configurable.get("model", runtime.context.model)
+    """Generate advice from multiple LLMs leveraging asyncio for parallel execution."""
     council_targets = [
-        AvailableModel.EINFRA_GLM_4_7,
+        AvailableModel.EINFRA_GLM_5,
         AvailableModel.OLLAMA_QWEN3_CODER_30B,
     ]
 
@@ -148,19 +217,36 @@ async def council_of_models(
 async def translation_agent(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ) -> dict[str, Any]:
-    """Uses a ReAct agent to perform translation and validation loops natively."""
+    """Use a ReAct agent to perform translation and validation loops natively.
+
+    Combines static tools (validators, fallback docs) with dynamically loaded
+    database and documentation MCP tools.
+    """
     model = _get_model(config, runtime)
+
+    # Load async tools and merge with static tools
+    all_tools = list(TOOLS)
+
+    db_tools = await load_database_toolbox_tools()
+    all_tools.extend(db_tools)
+
+    try:
+        doc_tools = await load_docs_mcp_tools()
+        all_tools.extend(doc_tools)
+    except Exception:
+        logger.warning("Failed to load documentation tools.", exc_info=True)
 
     system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
         origin_frameworks=[f.value for f in FrameworkType],
         destination_frameworks=[f.value for f in FrameworkType],
         system_time=datetime.now(tz=UTC).isoformat(),
+        schema_context=state.schema_context or "No schema context available.",
     )
 
     # Create the ReAct agent
     agent = create_agent(
         model,
-        tools=TOOLS,
+        tools=all_tools,
         response_format=TranslationOutput,
         system_prompt=system_prompt,
         middleware=[
@@ -185,29 +271,43 @@ async def translation_agent(
 Strategies to consider:
 {strategies}
 
+Database Schema Context:
+{state.schema_context or "No schema context available."}
+
 ---
 
 Source Code:
 {state.source_code}
 """
     # Invoke the agent. It manages its own messages and tool calls loops.
-    # We extract the output messages to append them to the global state.
     response = await agent.ainvoke({"messages": [HumanMessage(content=message)]})
 
-    # Extract only the messages generated by the sub-agent (avoiding duplicating history if needed,
-    # but here we just append the newly generated system message + tool calls + assistant responses)
-    return {"messages": response["messages"]}
+    # Extract structured output if available
+    updates: dict[str, Any] = {"messages": response["messages"]}
+
+    if hasattr(response, "structured_response") and isinstance(
+        response.structured_response, TranslationOutput
+    ):
+        output = response.structured_response
+        if output.translated_schema_code:
+            updates["schema_translated_code"] = output.translated_schema_code
+        if output.translated_query_code:
+            updates["query_translated_code"] = output.translated_query_code
+
+    return updates
 
 
 # Build the graph
 builder = StateGraph(State, input_schema=InputState, context_schema=Context)
 
 builder.add_node("extract_input", extract_input)  # type: ignore
+builder.add_node("schema_inspection", schema_inspection)  # type: ignore
 builder.add_node("council_of_models", council_of_models)  # type: ignore
 builder.add_node("translation_agent", translation_agent)  # type: ignore
 
 builder.add_edge("__start__", "extract_input")
-builder.add_edge("extract_input", "council_of_models")
+builder.add_edge("extract_input", "schema_inspection")
+builder.add_edge("schema_inspection", "council_of_models")
 builder.add_edge("council_of_models", "translation_agent")
 builder.add_edge("translation_agent", "__end__")
 

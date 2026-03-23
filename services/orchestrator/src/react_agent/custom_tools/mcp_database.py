@@ -1,56 +1,86 @@
-"""Database tool functions powered by the official googleapis/genai-toolbox MCP."""
+"""Database tool functions powered by the googleapis/genai-toolbox MCP.
 
+Loads tools from the running MCP Toolbox for Databases server, which provides
+prebuilt tools for MSSQL and Neo4j, plus custom MongoDB tools defined in
+database_tools.yaml.
+
+Also provides a native Python tool for listing MongoDB collections, since
+the genai-toolbox does not support $listCollections as an aggregate stage.
+"""
+
+import logging
 import os
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator, List
+from typing import Any
 
-from langchain_core.tools import BaseTool
-from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_core.tools import BaseTool, tool
+from langgraph.runtime import get_runtime
+from motor.motor_asyncio import AsyncIOMotorClient
+from toolbox_langchain import ToolboxClient
+
+from react_agent.context import Context
+
+logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def load_database_mcp_tools() -> AsyncGenerator[List[BaseTool], None]:
-    """Connects to the database MCP server and returns a list of wrapped LangChain tools.
+@tool("list_mongodb_collections")
+async def list_mongodb_collections() -> str:
+    """List all collection names in the MongoDB database.
 
-    This function expects the genai-toolbox to be installed locally (e.g. via npx)
-    and uses the environment variables (like MSSQL_HOST) to configure the prebuilt tools.
-    You could also define multiple servers dynamically based on the state.
+    Use this tool first to discover which collections exist before
+    inspecting their schemas or querying documents.
     """
-    # Define connection parameters for MS SQL, Mongo, and Neo4j depending on what we need.
-    # Note: For this example we define a generic fallback "config". In reality, the orchestrator
-    # could spawn different tools dynamically based on configuration.
+    uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+    db_name = os.getenv("MONGODB_DATABASE", "uom")
 
-    server_configs = {
-        # Assuming you're running the toolbox executable natively or via node
-        # User needs to provide PATH/TO/toolbox or npx command.
-        "neo4j": {
-            "command": "npx",
-            "args": ["-y", "@google/genai-toolbox", "--prebuilt", "neo4j", "--stdio"],
-            "env": {
-                "NEO4J_URI": os.getenv("NEO4J_URI", "bolt://neo4j:7687"),
-                "NEO4J_DATABASE": os.getenv("NEO4J_DATABASE", "neo4j"),
-                "NEO4J_USERNAME": os.getenv("NEO4J_USERNAME", "neo4j"),
-                "NEO4J_PASSWORD": os.getenv("NEO4J_PASSWORD", "Testingneo4j123"),
-                # Make sure to inherit system environment, especially PATH
-                **os.environ,
-            },
-        },
-        "mssql": {
-            "command": "npx",
-            "args": ["-y", "@google/genai-toolbox", "--prebuilt", "mssql", "--stdio"],
-            "env": {
-                "MSSQL_HOST": os.getenv("MSSQL_HOST", "mssql_db"),
-                "MSSQL_PORT": os.getenv("MSSQL_PORT", "1433"),
-                "MSSQL_DATABASE": os.getenv("MSSQL_DATABASE", "master"),
-                "MSSQL_USER": os.getenv("MSSQL_USER", "sa"),
-                "MSSQL_PASSWORD": os.getenv("MSSQL_PASSWORD", "Testingorms123"),
-                **os.environ,
-            },
-        },
-    }
+    try:
+        client: AsyncIOMotorClient = AsyncIOMotorClient(uri)
+        db = client[db_name]
+        collections = await db.list_collection_names()
+        await client.close()
 
-    # Initialize the client with standard context management
-    async with MultiServerMCPClient(server_configs) as client:  # type: ignore
-        # get_tools fetches the server's available capabilities
-        tools = client.get_tools()
-        yield tools
+        if not collections:
+            return f"No collections found in database '{db_name}'."
+
+        return f"Collections in '{db_name}':\n" + "\n".join(
+            f"  - {name}" for name in sorted(collections)
+        )
+    except Exception as e:
+        logger.warning("Failed to list MongoDB collections.", exc_info=True)
+        return f"Error listing collections: {e}"
+
+
+async def load_database_toolbox_tools() -> list[BaseTool]:
+    """Load all database tools from the MCP Toolbox for Databases server.
+
+    Connects to the toolbox server and loads every available tool
+    (prebuilt mssql/neo4j + custom mongodb tools from database_tools.yaml).
+    Also includes the native list_mongodb_collections tool.
+
+    Returns:
+        A list of LangChain-compatible tool objects.
+        Returns fallback tools if the toolbox server is unreachable.
+    """
+    runtime = get_runtime(Context)
+    toolbox_uri = runtime.context.db_toolbox_uri
+
+    # Always include native tools that don't depend on the toolbox
+    tools: list[BaseTool] = [list_mongodb_collections]
+
+    try:
+        async with ToolboxClient(toolbox_uri) as client:
+            toolbox_tools: list[Any] = await client.aload_toolset()
+            tools.extend(toolbox_tools)
+            logger.info(
+                "Loaded %d database tools from toolbox at %s",
+                len(toolbox_tools),
+                toolbox_uri,
+            )
+    except Exception:
+        logger.warning(
+            "Failed to connect to database toolbox at %s. "
+            "Only native database tools will be available.",
+            toolbox_uri,
+            exc_info=True,
+        )
+
+    return tools

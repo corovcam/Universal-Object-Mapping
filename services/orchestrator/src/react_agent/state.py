@@ -73,6 +73,7 @@ class State(InputState):
     """
 
     # Core variables
+    schema_context: str = field(default="")
     schema_translated_code: str = field(default="")
     query_translated_code: str = field(default="")
     council_responses: list[dict] = field(default_factory=list)

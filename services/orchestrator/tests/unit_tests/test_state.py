@@ -43,5 +43,6 @@ def test_state_inherits_input_state_defaults() -> None:
     assert state.source_code == ""
     assert state.source_target == FrameworkType.UNKNOWN
     assert state.destination_target == FrameworkType.UNKNOWN
+    assert state.schema_context == ""
     assert state.schema_translated_code == ""
     assert state.query_translated_code == ""
