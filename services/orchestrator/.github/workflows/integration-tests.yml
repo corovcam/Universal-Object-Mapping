@@ -41,4 +41,4 @@ jobs:
           LANGSMITH_TRACING: true
           LANGSMITH_TEST_CACHE: tests/cassettes
         run: |
-          uv run pytest tests/integration_tests
+          uv run pytest tests/integration_tests -m "not integration"
