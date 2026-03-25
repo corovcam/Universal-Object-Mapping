@@ -5,6 +5,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     LLMToolEmulator,
@@ -31,6 +32,7 @@ from react_agent.state import FrameworkType, InputState, State
 from react_agent.tools import TOOLS
 from react_agent.utils import load_chat_model
 
+load_dotenv()
 logger = logging.getLogger(__name__)
 
 
@@ -256,6 +258,7 @@ async def translation_agent(
             ),
             ToolRetryMiddleware(),
             LLMToolEmulator(
+                tools=["dotnet_validator", "java_validator"],
                 model=_get_model(
                     config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
                 ),

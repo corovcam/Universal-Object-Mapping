@@ -14,7 +14,7 @@ from typing import Any
 
 from langchain_core.tools import BaseTool, tool
 from langgraph.runtime import get_runtime
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 from toolbox_langchain import ToolboxClient
 
 from react_agent.context import Context
@@ -29,21 +29,20 @@ async def list_mongodb_collections() -> str:
     Use this tool first to discover which collections exist before
     inspecting their schemas or querying documents.
     """
-    uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-    db_name = os.getenv("MONGODB_DATABASE", "uom")
+    runtime = get_runtime(Context)
+    uri = runtime.context.mongodb_uri
+    db_name = runtime.context.mongodb_database
 
     try:
-        client: AsyncIOMotorClient = AsyncIOMotorClient(uri)
-        db = client[db_name]
-        collections = await db.list_collection_names()
-        await client.close()
+        async with AsyncMongoClient(uri) as client:
+            db = client[db_name]
+            collections = await db.list_collection_names()
+        logger.info("Collections in '%s': %s", db_name, collections)
 
         if not collections:
             return f"No collections found in database '{db_name}'."
 
-        return f"Collections in '{db_name}':\n" + "\n".join(
-            f"  - {name}" for name in sorted(collections)
-        )
+        return f"Collections in '{db_name}': {collections}"
     except Exception as e:
         logger.warning("Failed to list MongoDB collections.", exc_info=True)
         return f"Error listing collections: {e}"
@@ -71,9 +70,9 @@ async def load_database_toolbox_tools() -> list[BaseTool]:
             toolbox_tools: list[Any] = await client.aload_toolset()
             tools.extend(toolbox_tools)
             logger.info(
-                "Loaded %d database tools from toolbox at %s",
-                len(toolbox_tools),
+                "Loaded database tools from toolbox at %s: %s",
                 toolbox_uri,
+                [tool.name for tool in toolbox_tools],
             )
     except Exception:
         logger.warning(
