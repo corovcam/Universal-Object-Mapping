@@ -46,7 +46,9 @@ async def fetch_web_docs(query: str, framework_version: str = "") -> str:
             results = await search.ainvoke(search_query)
             return str(results)
         except Exception:
-            logger.warning("TavilySearch failed, falling back to HTTP fetch.", exc_info=True)
+            logger.warning(
+                "TavilySearch failed, falling back to HTTP fetch.", exc_info=True
+            )
 
     # Basic HTTP fallback: fetch from official docs sites
     urls = _build_fallback_urls(query, framework_version)
@@ -78,7 +80,19 @@ def _build_fallback_urls(query: str, framework_version: str) -> list[str]:
 
     if any(kw in q_lower for kw in ["spring", "jpa", "mongodb", "neo4j", "java"]):
         urls.append(f"https://docs.spring.io/spring-data/search?q={encoded_query}")
-    if any(kw in q_lower for kw in ["efcore", "ef core", "entity framework", "dapper", "nhibernate", "dotnet", ".net", "c#"]):
+    if any(
+        kw in q_lower
+        for kw in [
+            "efcore",
+            "ef core",
+            "entity framework",
+            "dapper",
+            "nhibernate",
+            "dotnet",
+            ".net",
+            "c#",
+        ]
+    ):
         urls.append(f"https://learn.microsoft.com/en-us/search/?terms={encoded_query}")
 
     # Always include a generic search as last resort
@@ -120,7 +134,9 @@ async def load_docs_mcp_tools() -> list[BaseTool]:
         async with MultiServerMCPClient(servers) as client:
             mcp_tools = await client.get_tools()
             tools.extend(mcp_tools)
-            logger.info("Loaded %d MCP documentation tools.", len(mcp_tools))
+            logger.info(
+                "Loaded MCP documentation tools: %s", [tool.name for tool in mcp_tools]
+            )
 
     except Exception:
         logger.warning(

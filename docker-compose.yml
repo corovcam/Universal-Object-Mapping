@@ -126,8 +126,10 @@ services:
       - ${MIGRATOR_PATH_DRIVER:-/dev/null}:/opt/mongodb-relational-migrator/lib/app/lib/driver.jar
     restart: unless-stopped
     depends_on:
-      - mongodb
-      - mssql_db
+      mongodb:
+        condition: service_healthy
+      mssql_db:
+        condition: service_healthy
 
   db-toolbox:
     image: us-central1-docker.pkg.dev/database-toolbox/toolbox/toolbox:latest
@@ -147,6 +149,7 @@ services:
       - NEO4J_DATABASE=neo4j
     volumes:
       - ./services/orchestrator/src/config:/config
+    restart: unless-stopped
     command:
       [
         "--tools-file",

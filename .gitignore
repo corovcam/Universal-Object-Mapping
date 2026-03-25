@@ -1,6 +1,6 @@
 *.bkp
 gha-creds-*.json
-.vscode/
 .env
 /.idea/
 *.dump
+.output/

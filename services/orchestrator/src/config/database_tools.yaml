@@ -18,7 +18,7 @@ pipelinePayload: |
   [
     {
       "$unionWith": {
-        "coll": {{json .collection_name}},
+        "coll": {{string .collection_name}},
         "pipeline": [{ "$sample": { "size": 5 } }]
       }
     }
@@ -42,9 +42,9 @@ pipelinePayload: |
   [
     {
       "$unionWith": {
-        "coll": {{json .collection_name}},
+        "coll": {{string .collection_name}},
         "pipeline": [
-          { "$match": { {{json .field_name}}: {{json .field_value}} } },
+          { "$match": { {{string .field_name}}: {{string .field_value}} } },
           { "$limit": 20 }
         ]
       }
@@ -74,7 +74,7 @@ pipelinePayload: |
   [
     {
       "$unionWith": {
-        "coll": {{json .collection_name}},
+        "coll": {{string .collection_name}},
         "pipeline": []
       }
     },

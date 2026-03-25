@@ -13,9 +13,9 @@ from . import prompts
 class AvailableModel(str, Enum):
     """Available models from Ollama and EINFRA for UI dropdown selection."""
 
-    # Local Models
-    LOCAL_OLLAMA_GEMMA3_4B = "ollama/gemma3:4b"
-    LOCAL_OLLAMA_SMOLLM2 = "ollama/smollm2"
+    # # Local Models
+    # LOCAL_OLLAMA_GEMMA3_4B = "ollama/gemma3:4b"
+    # LOCAL_OLLAMA_SMOLLM2 = "ollama/smollm2"
 
     # Ollama Models
     OLLAMA_GPT_OSS = "ollama/gpt-oss:latest"
@@ -91,6 +91,16 @@ class Context:
     db_toolbox_uri: str = field(
         default=os.environ.get("DB_TOOLBOX_URI", "http://localhost:5000"),
         metadata={"description": "URI of the MCP Toolbox for Databases server."},
+    )
+
+    mongodb_uri: str = field(
+        default=os.environ.get("MONGODB_URI", "mongodb://localhost:27017"),
+        metadata={"description": "Connection URI for MongoDB."},
+    )
+
+    mongodb_database: str = field(
+        default=os.environ.get("MONGODB_DATABASE", "uom"),
+        metadata={"description": "Name of the MongoDB database to use."},
     )
 
     def __post_init__(self) -> None:
