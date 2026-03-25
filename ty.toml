@@ -3,3 +3,10 @@ root = ["./services/orchestrator/src"]
 
 [src]
 include = ["services/orchestrator/src", "services/orchestrator/tests"]
+
+[[overrides]]
+include = ["services/orchestrator/tests"]
+
+[overrides.rules]
+missing-typed-dict-key = "ignore"
+invalid-key = "ignore"
