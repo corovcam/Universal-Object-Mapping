@@ -16,13 +16,16 @@ from langchain.agents.middleware import (
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.graph import StateGraph
-from langgraph.runtime import Runtime
+from langgraph.runtime import Runtime, get_runtime
 from pydantic import BaseModel, Field
+from toolbox_core import ToolboxClient
 
 from react_agent.context import AvailableModel, Context
 from react_agent.custom_tools.docs_search import load_docs_mcp_tools
-from react_agent.custom_tools.mcp_database import load_database_toolbox_tools
+from react_agent.custom_tools.mcp_database import load_database_tools
 from react_agent.prompts import (
     SYSTEM_PROMPT_EXTRACTION,
     SYSTEM_PROMPT_SCHEMA_INSPECTOR,
@@ -32,7 +35,7 @@ from react_agent.state import FrameworkType, InputState, State
 from react_agent.tools import TOOLS
 from react_agent.utils import load_chat_model
 
-load_dotenv()
+load_dotenv(".env.dev")
 logger = logging.getLogger(__name__)
 
 
@@ -121,60 +124,93 @@ async def extract_input(
 
 async def schema_inspection(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
-) -> dict[str, Any]:
+):
     """Inspect source and target database schemas using database tools.
 
     Runs a lightweight ReAct agent with only database tools to examine
     the relevant database schemas before translation begins.
     """
-    # Load database tools asynchronously
-    db_tools = await load_database_toolbox_tools()
-
-    if not db_tools:
-        logger.warning("No database tools available for schema inspection.")
-        return {
-            "schema_context": "No database tools available. Schema inspection skipped."
+    runtime = get_runtime(Context)
+    toolbox_uri = runtime.context.db_toolbox_uri
+    custom_db_mcp_servers: dict[str, Any] = {
+        "mongodb": {
+            "transport": "stdio",
+            "command": "npx",
+            "args": ["-y", "mongodb-mcp-server@latest", "--readOnly"],
+            "env": {
+                "MDB_MCP_CONNECTION_STRING": runtime.context.mongodb_uri,
+                "MDB_MCP_DISABLED_TOOLS": "create,update,delete",
+            },
         }
+    }
+    try:
+        db_mcp_client = MultiServerMCPClient(custom_db_mcp_servers)
+        async with ToolboxClient(toolbox_uri) as toolbox_client:
+            async with db_mcp_client.session("mongodb") as db_mcp_session:
+                toolbox_tools: list[Any] = await toolbox_client.load_toolset()
+                db_tools: list[Any] = await load_mcp_tools(db_mcp_session)
+                tools = toolbox_tools + db_tools
+                logger.info(
+                    "Loaded database tools from toolbox at %s: %s",
+                    toolbox_uri,
+                    [tool.name for tool in toolbox_tools],
+                )
+                logger.info(
+                    "Loaded database tools from mongodb mcp server: %s",
+                    [tool.name for tool in db_tools],
+                )
+                if not db_tools:
+                    logger.warning("No database tools available for schema inspection.")
+                    return {
+                        "schema_context": "No database tools available. Schema inspection skipped."
+                    }
 
-    model = _get_model(config, runtime, AvailableModel.EINFRA_GLM_5)
+                model = _get_model(config, runtime, AvailableModel.EINFRA_GLM_5)
 
-    system_prompt = SYSTEM_PROMPT_SCHEMA_INSPECTOR.format(
-        source_framework=state.source_target.value,
-        destination_framework=state.destination_target.value,
-        source_code=state.source_code,
-        system_time=datetime.now(tz=UTC).isoformat(),
-    )
+                system_prompt = SYSTEM_PROMPT_SCHEMA_INSPECTOR.format(
+                    source_framework=state.source_target.value,
+                    destination_framework=state.destination_target.value,
+                    source_code=state.source_code,
+                    system_time=datetime.now(tz=UTC).isoformat(),
+                )
 
-    agent = create_agent(
-        model,
-        tools=db_tools,
-        system_prompt=system_prompt,
-        middleware=[
-            ModelRetryMiddleware(),
-            ToolRetryMiddleware(),
-        ],
-        debug=True,
-    )
+                agent = create_agent(
+                    model,
+                    tools=tools,
+                    system_prompt=system_prompt,
+                    middleware=[
+                        ModelRetryMiddleware(),
+                        ToolRetryMiddleware(),
+                    ],
+                    debug=True,
+                )
 
-    message = f"""Inspect the database schemas relevant to translating code from {state.source_target.value} to {state.destination_target.value}.
+                message = f"""Inspect the database schemas relevant to translating code from {state.source_target.value} to {state.destination_target.value}.
 
 Source code being translated:
 {state.source_code}
 
 Please provide a concise summary of the relevant source and target database structures."""
 
-    try:
-        response = await agent.ainvoke({"messages": [HumanMessage(content=message)]})
-        # Extract the final assistant response as schema context
-        schema_summary = (
-            response["messages"][-1].content if response["messages"] else ""
-        )
-        return {"schema_context": str(schema_summary)}
+                try:
+                    response = await agent.ainvoke(
+                        {"messages": [HumanMessage(content=message)]}
+                    )
+                    # Extract the final assistant response as schema context
+                    schema_summary = (
+                        response["messages"][-1].content if response["messages"] else ""
+                    )
+                    return {"schema_context": str(schema_summary)}
+                except Exception:
+                    logger.warning("Schema inspection failed.", exc_info=True)
+                    return {
+                        "schema_context": "Schema inspection encountered an error. Proceeding without schema context."
+                    }
     except Exception:
-        logger.warning("Schema inspection failed.", exc_info=True)
-        return {
-            "schema_context": "Schema inspection encountered an error. Proceeding without schema context."
-        }
+        logger.warning(
+            "Failed to load database tools.",
+            exc_info=True,
+        )
 
 
 async def _generate_council_strategy(
@@ -229,48 +265,48 @@ async def translation_agent(
     # Load async tools and merge with static tools
     all_tools = list(TOOLS)
 
-    db_tools = await load_database_toolbox_tools()
-    all_tools.extend(db_tools)
+    async with load_database_tools() as db_tools:
+        async with load_docs_mcp_tools() as doc_tools:
+            all_tools.extend(db_tools)
+            all_tools.extend(doc_tools)
 
-    try:
-        doc_tools = await load_docs_mcp_tools()
-        all_tools.extend(doc_tools)
-    except Exception:
-        logger.warning("Failed to load documentation tools.", exc_info=True)
+            system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
+                origin_frameworks=[f.value for f in FrameworkType],
+                destination_frameworks=[f.value for f in FrameworkType],
+                system_time=datetime.now(tz=UTC).isoformat(),
+                schema_context=state.schema_context or "No schema context available.",
+            )
 
-    system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
-        origin_frameworks=[f.value for f in FrameworkType],
-        destination_frameworks=[f.value for f in FrameworkType],
-        system_time=datetime.now(tz=UTC).isoformat(),
-        schema_context=state.schema_context or "No schema context available.",
-    )
+            # Create the ReAct agent
+            agent = create_agent(
+                model,
+                tools=all_tools,
+                response_format=TranslationOutput,
+                system_prompt=system_prompt,
+                middleware=[
+                    ModelRetryMiddleware(),
+                    ModelFallbackMiddleware(
+                        _get_model(
+                            config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
+                        ),
+                    ),
+                    ToolRetryMiddleware(),
+                    LLMToolEmulator(
+                        tools=["dotnet_validator", "java_validator"],
+                        model=_get_model(
+                            config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
+                        ),
+                    ),
+                ],
+                debug=True,
+            )
 
-    # Create the ReAct agent
-    agent = create_agent(
-        model,
-        tools=all_tools,
-        response_format=TranslationOutput,
-        system_prompt=system_prompt,
-        middleware=[
-            ModelRetryMiddleware(),
-            ModelFallbackMiddleware(
-                _get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B),
-            ),
-            ToolRetryMiddleware(),
-            LLMToolEmulator(
-                tools=["dotnet_validator", "java_validator"],
-                model=_get_model(
-                    config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
-                ),
-            ),
-        ],
-        debug=True,
-    )
+            strategies = "\n".join(
+                [r.get("strategy", "") for r in state.council_responses]
+            )
 
-    strategies = "\n".join([r.get("strategy", "") for r in state.council_responses])
+            message = f"""Translate the following code from {state.source_target.value} to {state.destination_target.value}.
 
-    message = f"""Translate the following code from {state.source_target.value} to {state.destination_target.value}.
-    
 Strategies to consider:
 {strategies}
 
@@ -282,20 +318,19 @@ Database Schema Context:
 Source Code:
 {state.source_code}
 """
-    # Invoke the agent. It manages its own messages and tool calls loops.
-    response = await agent.ainvoke({"messages": [HumanMessage(content=message)]})
+            # Invoke the agent. It manages its own messages and tool calls loops.
+            response = await agent.ainvoke(
+                {"messages": [HumanMessage(content=message)]}
+            )
 
     # Extract structured output if available
     updates: dict[str, Any] = {"messages": response["messages"]}
 
-    if hasattr(response, "structured_response") and isinstance(
-        response.structured_response, TranslationOutput
-    ):
-        output = response.structured_response
-        if output.translated_schema_code:
-            updates["schema_translated_code"] = output.translated_schema_code
-        if output.translated_query_code:
-            updates["query_translated_code"] = output.translated_query_code
+    output = response["structured_response"]
+    if output["translated_schema_code"]:
+        updates["schema_translated_code"] = output["translated_schema_code"]
+    if output["translated_query_code"]:
+        updates["query_translated_code"] = output["translated_query_code"]
 
     return updates
 

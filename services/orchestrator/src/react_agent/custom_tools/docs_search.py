@@ -9,10 +9,12 @@ Provides tools for fetching framework documentation from:
 import logging
 import os
 import shutil
-from typing import Any
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator
 
 import httpx
 from langchain_core.tools import BaseTool, tool
+from langchain_mcp_adapters.tools import load_mcp_tools
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -101,7 +103,8 @@ def _build_fallback_urls(query: str, framework_version: str) -> list[str]:
     return urls
 
 
-async def load_docs_mcp_tools() -> list[BaseTool]:
+@asynccontextmanager
+async def load_docs_mcp_tools() -> AsyncGenerator[list[BaseTool], None]:
     """Load documentation tools from MCP servers.
 
     Connects to:
@@ -131,12 +134,14 @@ async def load_docs_mcp_tools() -> list[BaseTool]:
                 "transport": "stdio",
             }
 
-        async with MultiServerMCPClient(servers) as client:
-            mcp_tools = await client.get_tools()
+        client = MultiServerMCPClient(servers)
+        async with client.session("docs_mcp") as docs_mcp_session:
+            mcp_tools = await load_mcp_tools(docs_mcp_session)
             tools.extend(mcp_tools)
             logger.info(
                 "Loaded MCP documentation tools: %s", [tool.name for tool in mcp_tools]
             )
+            yield tools
 
     except Exception:
         logger.warning(
@@ -144,5 +149,3 @@ async def load_docs_mcp_tools() -> list[BaseTool]:
             "Only fallback fetch_web_docs will be available.",
             exc_info=True,
         )
-
-    return tools

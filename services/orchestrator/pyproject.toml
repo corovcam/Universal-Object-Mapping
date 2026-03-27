@@ -25,9 +25,8 @@ dependencies = [
     "asyncssh>=2.14.0",
 ]
 
-
 [project.optional-dependencies]
-dev = ["mypy>=1.11.1", "ty>=0.0.23", "ruff>=0.6.1"]
+dev = ["ty>=0.0.23", "ruff>=0.6.1"]
 
 [build-system]
 requires = ["setuptools>=73.0.0", "wheel"]
@@ -94,3 +93,6 @@ include = ["tests"]
 [tool.ty.overrides.rules]
 missing-typed-dict-key = "warn"
 invalid-key = "warn"
+
+[tool.pyright]
+include = ["src", "tests"]

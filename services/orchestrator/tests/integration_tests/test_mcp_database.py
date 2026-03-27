@@ -11,7 +11,7 @@ from langgraph.runtime import Runtime
 from react_agent.context import Context
 from react_agent.custom_tools.mcp_database import (
     list_mongodb_collections,
-    load_database_toolbox_tools,
+    load_database_tools,
 )
 
 pytestmark = pytest.mark.anyio
@@ -34,9 +34,9 @@ class TestListMongoDBCollections:
 
         # The real DB should have collections OR return "No collections"
         assert isinstance(result, str)
-        assert (
-            "Collections in" in result or "No collections found" in result
-        ), f"Unexpected result: {result}"
+        assert "Collections in" in result or "No collections found" in result, (
+            f"Unexpected result: {result}"
+        )
 
     async def test_error_on_invalid_uri(self):
         """Verify graceful error handling with an invalid MongoDB URI."""
@@ -69,7 +69,7 @@ class TestLoadDatabaseToolboxTools:
             "react_agent.custom_tools.mcp_database.get_runtime",
             return_value=runtime,
         ):
-            tools = await load_database_toolbox_tools()
+            tools = await load_database_tools()
 
         # Should always include list_mongodb_collections at minimum
         assert len(tools) >= 1
@@ -87,7 +87,7 @@ class TestLoadDatabaseToolboxTools:
             "react_agent.custom_tools.mcp_database.get_runtime",
             return_value=bad_runtime,
         ):
-            tools = await load_database_toolbox_tools()
+            tools = await load_database_tools()
 
         # Fallback: only native tools
         assert len(tools) >= 1

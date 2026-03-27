@@ -9,10 +9,12 @@ the genai-toolbox does not support $listCollections as an aggregate stage.
 """
 
 import logging
-import os
-from typing import Any
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator
 
 from langchain_core.tools import BaseTool, tool
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.runtime import get_runtime
 from pymongo import AsyncMongoClient
 from toolbox_langchain import ToolboxClient
@@ -48,12 +50,12 @@ async def list_mongodb_collections() -> str:
         return f"Error listing collections: {e}"
 
 
-async def load_database_toolbox_tools() -> list[BaseTool]:
-    """Load all database tools from the MCP Toolbox for Databases server.
+@asynccontextmanager
+async def load_database_tools() -> AsyncGenerator[list[BaseTool], None]:
+    """Load all database tools from the MCP Toolbox for Databases Server and MongoDB MCP Server.
 
-    Connects to the toolbox server and loads every available tool
-    (prebuilt mssql/neo4j + custom mongodb tools from database_tools.yaml).
-    Also includes the native list_mongodb_collections tool.
+    Connects to the toolbox and mongodb mcp server and loads every available tool
+    (prebuilt mssql/neo4j + mongodb tools).
 
     Returns:
         A list of LangChain-compatible tool objects.
@@ -63,23 +65,41 @@ async def load_database_toolbox_tools() -> list[BaseTool]:
     toolbox_uri = runtime.context.db_toolbox_uri
 
     # Always include native tools that don't depend on the toolbox
-    tools: list[BaseTool] = [list_mongodb_collections]
+    tools: list[BaseTool] = []
+
+    custom_db_mcp_servers: dict[str, Any] = {
+        "mongodb": {
+            "transport": "stdio",
+            "command": "npx",
+            "args": ["-y", "mongodb-mcp-server@latest", "--readOnly"],
+            "env": {
+                "MDB_MCP_CONNECTION_STRING": runtime.context.mongodb_uri,
+                "MDB_MCP_DISABLED_TOOLS": "create,update,delete",
+            },
+        }
+    }
 
     try:
-        async with ToolboxClient(toolbox_uri) as client:
-            toolbox_tools: list[Any] = await client.aload_toolset()
-            tools.extend(toolbox_tools)
-            logger.info(
-                "Loaded database tools from toolbox at %s: %s",
-                toolbox_uri,
-                [tool.name for tool in toolbox_tools],
-            )
+        db_mcp_client = MultiServerMCPClient(custom_db_mcp_servers)
+        async with ToolboxClient(toolbox_uri) as toolbox_client:
+            async with db_mcp_client.session("mongodb") as db_mcp_session:
+                toolbox_tools: list[Any] = await toolbox_client.aload_toolset()
+                db_tools: list[Any] = await load_mcp_tools(db_mcp_session)
+                tools.extend(toolbox_tools)
+                tools.extend(db_tools)
+                logger.info(
+                    "Loaded database tools from toolbox at %s: %s",
+                    toolbox_uri,
+                    [tool.name for tool in toolbox_tools],
+                )
+                logger.info(
+                    "Loaded database tools from mongodb mcp server: %s",
+                    [tool.name for tool in db_tools],
+                )
+                yield tools
     except Exception:
         logger.warning(
-            "Failed to connect to database toolbox at %s. "
-            "Only native database tools will be available.",
-            toolbox_uri,
+            "Failed to load database tools. Only native database tools will be available.",
             exc_info=True,
         )
-
-    return tools
+        yield tools

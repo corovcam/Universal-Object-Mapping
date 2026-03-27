@@ -89,18 +89,38 @@ class Context:
     )
 
     db_toolbox_uri: str = field(
-        default=os.environ.get("DB_TOOLBOX_URI", "http://localhost:5000"),
+        default=os.environ.get("DB_TOOLBOX_URI", "http://localhost:5010"),
         metadata={"description": "URI of the MCP Toolbox for Databases server."},
     )
 
     mongodb_uri: str = field(
-        default=os.environ.get("MONGODB_URI", "mongodb://localhost:27017"),
+        default=os.environ.get("MONGODB_URI", "mongodb://localhost:27027"),
         metadata={"description": "Connection URI for MongoDB."},
     )
 
     mongodb_database: str = field(
         default=os.environ.get("MONGODB_DATABASE", "uom"),
         metadata={"description": "Name of the MongoDB database to use."},
+    )
+
+    dotnet_service_uri: str = field(
+        default=os.environ.get("DOTNET_SERVICE_URI", "http://localhost:5083"),
+        metadata={"description": "URI of the .NET service."},
+    )
+
+    dotnet_service_ssh_uri: str = field(
+        default=os.environ.get("DOTNET_SERVICE_SSH_URI", "ssh://localhost:5022"),
+        metadata={"description": "SSH URI of the .NET service."},
+    )
+
+    java_service_uri: str = field(
+        default=os.environ.get("JAVA_SERVICE_URI", "http://localhost:8090"),
+        metadata={"description": "URI of the Java service."},
+    )
+
+    java_service_ssh_uri: str = field(
+        default=os.environ.get("JAVA_SERVICE_SSH_URI", "ssh://localhost:8022"),
+        metadata={"description": "SSH URI of the Java service."},
     )
 
     def __post_init__(self) -> None:
