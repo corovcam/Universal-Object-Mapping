@@ -6,6 +6,8 @@ from typing import Literal
 import asyncssh
 from langchain_core.tools import tool
 
+from react_agent.utils import get_ssh_host_and_port
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,8 +32,9 @@ async def execute_in_sandbox(
 
         # Connect using the configured root password inside the Dockerfile
         # By default in docker compose, the container hostname matches the service name.
+        host, port = get_ssh_host_and_port(service_name)
         async with asyncssh.connect(
-            host=service_name, username="root", password="root", known_hosts=None
+            host=host, port=port, username="root", password="root", known_hosts=None
         ) as conn:
             logger.info("Executing command: %s in service: %s", command, service_name)
             result = await conn.run(command)

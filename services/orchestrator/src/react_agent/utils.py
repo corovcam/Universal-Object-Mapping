@@ -4,6 +4,9 @@ from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
+from langgraph.runtime import get_runtime
+
+from react_agent.context import Context
 
 
 def get_message_text(msg: BaseMessage) -> str:
@@ -38,3 +41,11 @@ def load_chat_model(
         )
 
     return init_chat_model(model, model_provider=provider)
+
+
+def get_ssh_host_and_port(service_name: str) -> tuple[str, int]:
+    """Get the SSH host and port for a service from SSH URI in .env file."""
+    runtime = get_runtime(Context)
+    uri = getattr(runtime.context, f"{service_name.replace('-', '_')}_ssh_uri")
+    host, port = uri.replace("ssh://", "").rsplit(":", 1)
+    return host, int(port)
