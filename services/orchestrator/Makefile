@@ -8,9 +8,11 @@ all: help
 ######################
 
 dev:
+	powershell -ExecutionPolicy Bypass -File scripts/load_env.ps1 .env.dev
 	langgraph dev
 
 debug:
+	powershell -ExecutionPolicy Bypass -File scripts/load_env.ps1 .env.dev
 	langgraph dev --debug-port 5678 --allow-blocking
 
 ######################
