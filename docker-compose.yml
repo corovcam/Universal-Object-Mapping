@@ -33,6 +33,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${DOTNET_SERVICE_PORT}:5073"
+      - "${DOTNET_SERVICE_SSH_PORT}:22"
     environment:
       - MSSQL_HOST=mssql_db
       - MSSQL_PORT=1433
@@ -48,6 +49,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${JAVA_SERVICE_PORT}:8080"
+      - "${JAVA_SERVICE_SSH_PORT}:22"
     environment:
       - SPRING_NEO4J_URI=bolt://neo4j:7687
       - SPRING_NEO4J_AUTHENTICATION_USERNAME=${NEO4J_USERNAME}
