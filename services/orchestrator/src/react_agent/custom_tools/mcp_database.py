@@ -8,17 +8,15 @@ Also provides a native Python tool for listing MongoDB collections, since
 the genai-toolbox does not support $listCollections as an aggregate stage.
 """
 import logging
-import os
+from asyncio import CancelledError
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
-import anyio
+from anyio import BrokenResourceError
 from langchain_core.tools import BaseTool, tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.runtime import get_runtime
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
 from pymongo import AsyncMongoClient
 from toolbox_langchain import ToolboxClient
 
@@ -78,12 +76,6 @@ async def load_database_tools() -> AsyncGenerator[list[BaseTool], None]:
             },
         }
     }
-    
-    mongodb_server_params = StdioServerParameters(
-        command=custom_db_mcp_servers["mongodb"]["command"],
-        args=custom_db_mcp_servers["mongodb"]["args"],
-        env=custom_db_mcp_servers["mongodb"]["env"],
-    )
 
     tools: list[BaseTool] = []
     try:
@@ -97,38 +89,31 @@ async def load_database_tools() -> AsyncGenerator[list[BaseTool], None]:
             )
             mcp_client_yielded = False
             try:
-                # db_mcp_client = MultiServerMCPClient(custom_db_mcp_servers, tool_name_prefix=True)
-                # async with db_mcp_client.session("mongodb") as db_mcp_session:
-                #     db_tools = await load_mcp_tools(db_mcp_session)
-                #     tools.extend(db_tools)
-                #     logger.info(
-                #         "Loaded database tools from mongodb mcp server: %s",
-                #         [tool.name for tool in db_tools],
-                #     )
-                #     yield tools
-                #     mcp_client_yielded = True
-                async with stdio_client(mongodb_server_params) as (read, write):
-                    async with ClientSession(read, write) as db_mcp_session:
-                        await db_mcp_session.initialize()
-                        db_tools = await load_mcp_tools(db_mcp_session)
-                        tools.extend(db_tools)
-                        logger.info(
-                            "Loaded database tools from mongodb mcp server: %s",
-                            [tool.name for tool in db_tools],
-                        )
-                        yield tools
-                        mcp_client_yielded = True
-                    await read.aclose()
-                    await write.aclose()  
-            except* (anyio.BrokenResourceError, Exception) as e:
-                logger.warning(
-                    "Failed to load tools from MongoDB MCP server with URI %s.",
-                    runtime.context.mongodb_uri,
-                    exc_info=True,
-                )
+                db_mcp_client = MultiServerMCPClient(custom_db_mcp_servers, tool_name_prefix=True)
+                async with db_mcp_client.session("mongodb") as db_mcp_session:
+                    db_tools = await load_mcp_tools(db_mcp_session)
+                    tools.extend(db_tools)
+                    logger.info(
+                        "Loaded database tools from mongodb mcp server: %s",
+                        [tool.name for tool in db_tools],
+                    )
+                    yield tools
+                    mcp_client_yielded = True
+            except* (BrokenResourceError, CancelledError, Exception):
                 if not mcp_client_yielded:
+                    logger.warning(
+                        "Failed to load tools from MongoDB MCP server with URI %s.",
+                        runtime.context.mongodb_uri,
+                        exc_info=True,
+                    )
                     yield tools  # Yield toolbox tools even if MCP tools failed
-    except Exception as e:
+                else:
+                    logger.debug(
+                        "Error details for MongoDB MCP server failure with URI %s.",
+                        runtime.context.mongodb_uri,
+                        exc_info=True,
+                    )
+    except Exception:
         logger.warning(
             "Failed to load database tools from toolbox server at %s.",
             toolbox_uri,
