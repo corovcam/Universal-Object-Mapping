@@ -7,13 +7,21 @@ all: help
 # DEVELOPMENT
 ######################
 
+ifeq ($(OS),Windows_NT)
 dev:
 	powershell -ExecutionPolicy Bypass -File scripts/load_env.ps1 .env.dev
-	langgraph dev
+	langgraph dev --allow-blocking
 
 debug:
 	powershell -ExecutionPolicy Bypass -File scripts/load_env.ps1 .env.dev
 	langgraph dev --debug-port 5678 --allow-blocking
+else
+dev:
+	langgraph dev
+
+debug:
+	langgraph dev --debug-port 5678
+endif
 
 ######################
 # TESTS

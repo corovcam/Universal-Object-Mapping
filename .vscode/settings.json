@@ -12,8 +12,8 @@
   "python.analysis.include": ["./services/orchestrator/[src,tests]/**"],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
-  "python.envFile": "${workspaceFolder}\\services\\orchestrator\\.env.dev",
-  "python.testing.cwd": "${workspaceFolder}\\services\\orchestrator",
+  "python.envFile": "${workspaceFolder}/services/orchestrator/.env.dev",
+  "python.testing.cwd": "${workspaceFolder}/services/orchestrator",
   "python.terminal.useEnvFile": true,
   "python.testing.pytestArgs": ["-v"],
   "ty.disableLanguageServices": true // if using Pylance in VSCode

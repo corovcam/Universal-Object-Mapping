@@ -69,12 +69,13 @@ class TestLoadDatabaseToolboxTools:
             "react_agent.custom_tools.mcp_database.get_runtime",
             return_value=runtime,
         ):
-            tools = await load_database_tools()
-
-        # Should always include list_mongodb_collections at minimum
-        assert len(tools) >= 1
-        tool_names = [t.name for t in tools]
-        assert "list_mongodb_collections" in tool_names
+            async with load_database_tools() as tools:
+                tool_names = [t.name for t in tools]
+            assert len(tool_names) >= 1
+            real_tools = ["execute_sql", "list_tables", "execute_cypher", "get_schema"]
+            assert any(name in tool_names for name in real_tools), (
+                f"Expected at least one database tool, got: {tool_names}"
+            )
 
     async def test_fallback_on_invalid_uri(self):
         """When toolbox is unreachable, still returns native tools."""
@@ -87,9 +88,7 @@ class TestLoadDatabaseToolboxTools:
             "react_agent.custom_tools.mcp_database.get_runtime",
             return_value=bad_runtime,
         ):
-            tools = await load_database_tools()
-
-        # Fallback: only native tools
-        assert len(tools) >= 1
-        tool_names = [t.name for t in tools]
-        assert "list_mongodb_collections" in tool_names
+            async with load_database_tools() as tools:
+                assert len(tools) == 0
+                tool_names = [t.name for t in tools]
+            assert tool_names == [], f"Expected no tools loaded from toolbox, got: {tool_names}"
