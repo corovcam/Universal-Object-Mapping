@@ -8,12 +8,12 @@ Provides tools for fetching framework documentation from:
 
 import logging
 import os
-import shutil
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
 import httpx
 from langchain_core.tools import BaseTool, tool
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 from pydantic import BaseModel, Field
 
@@ -111,38 +111,47 @@ async def load_docs_mcp_tools() -> AsyncGenerator[list[BaseTool], None]:
     1. Microsoft Learn MCP (streamable HTTP)
     2. Spring Docs MCP (stdio via npx)
 
-    Returns loaded MCP tools + the fallback fetch_web_docs tool.
-    Falls back gracefully if MCP servers are unavailable.
+    Returns loaded MCP tools.
     """
-    tools: list[BaseTool] = [fetch_web_docs]  # Always include the fallback tool
-
+    servers: dict[str, Any] = {
+        "microsoft_learn": {
+            "url": "https://learn.microsoft.com/api/mcp",
+            "transport": "streamable_http",
+        },
+        "spring_docs": {
+            "command": "npx",
+            "args": ["@enokdev/springdocs-mcp@latest"],
+            "transport": "stdio",
+        },
+    }
+    
+    tools: list[BaseTool] = []
     try:
-        from langchain_mcp_adapters.client import MultiServerMCPClient
-
-        servers: dict[str, Any] = {
-            "microsoft_learn": {
-                "url": "https://learn.microsoft.com/api/mcp",
-                "transport": "streamable_http",
-            },
-        }
-
-        # Only add Spring Docs MCP if npx is available
-        if shutil.which("npx"):
-            servers["spring_docs"] = {
-                "command": "npx",
-                "args": ["@enokdev/springdocs-mcp@latest"],
-                "transport": "stdio",
-            }
-
-        client = MultiServerMCPClient(servers)
-        async with client.session("docs_mcp") as docs_mcp_session:
+        client = MultiServerMCPClient(servers, tool_name_prefix=True)
+        async with client.session("microsoft_learn") as docs_mcp_session:
             mcp_tools = await load_mcp_tools(docs_mcp_session)
             tools.extend(mcp_tools)
             logger.info(
                 "Loaded MCP documentation tools: %s", [tool.name for tool in mcp_tools]
             )
-            yield tools
-
+            spring_docs_mcp_yielded = False
+            try:
+                async with client.session("spring_docs") as spring_docs_session:
+                    spring_tools = await load_mcp_tools(spring_docs_session)
+                    tools.extend(spring_tools)
+                    logger.info(
+                        "Loaded Spring Docs MCP tools: %s",
+                        [tool.name for tool in spring_tools],
+                    )
+                    yield tools
+                    spring_docs_mcp_yielded = True
+            except Exception:
+                logger.warning(
+                    "Failed to load Spring Docs MCP tools.",
+                    exc_info=True,
+                )
+                if not spring_docs_mcp_yielded:
+                    yield tools
     except Exception:
         logger.warning(
             "Failed to load MCP documentation tools. "

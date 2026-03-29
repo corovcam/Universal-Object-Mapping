@@ -160,6 +160,7 @@ services:
         "mssql",
         "--prebuilt",
         "neo4j",
+        "--ui",
         "--address",
         "0.0.0.0",
       ]
