@@ -15,7 +15,7 @@ from langchain.agents.middleware import (
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph import StateGraph
+from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from pydantic import BaseModel, Field
 
@@ -223,50 +223,48 @@ async def translation_agent(
     """
     model = _get_model(config, runtime)
 
-    # Load async tools and merge with static tools
-    all_tools = list(TOOLS)
+    async with (
+        load_database_tools() as db_tools, 
+        load_docs_mcp_tools() as doc_tools
+    ):
+        all_tools = TOOLS + db_tools + doc_tools
 
-    async with load_database_tools() as db_tools:
-        async with load_docs_mcp_tools() as doc_tools:
-            all_tools.extend(db_tools)
-            all_tools.extend(doc_tools)
+        system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
+            origin_frameworks=[f.value for f in FrameworkType],
+            destination_frameworks=[f.value for f in FrameworkType],
+            system_time=datetime.now(tz=UTC).isoformat(),
+            schema_context=state.schema_context or "No schema context available.",
+        )
 
-            system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
-                origin_frameworks=[f.value for f in FrameworkType],
-                destination_frameworks=[f.value for f in FrameworkType],
-                system_time=datetime.now(tz=UTC).isoformat(),
-                schema_context=state.schema_context or "No schema context available.",
-            )
-
-            # Create the ReAct agent
-            agent = create_agent(
-                model,
-                tools=all_tools,
-                response_format=TranslationOutput,
-                system_prompt=system_prompt,
-                middleware=[
-                    ModelRetryMiddleware(),
-                    ModelFallbackMiddleware(
-                        _get_model(
-                            config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
-                        ),
+        # Create the ReAct agent
+        agent = create_agent(
+            model,
+            tools=all_tools,
+            response_format=TranslationOutput,
+            system_prompt=system_prompt,
+            middleware=[
+                ModelRetryMiddleware(),
+                ModelFallbackMiddleware(
+                    _get_model(
+                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
                     ),
-                    ToolRetryMiddleware(),
-                    LLMToolEmulator(
-                        tools=["dotnet_validator", "java_validator"],
-                        model=_get_model(
-                            config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
-                        ),
+                ),
+                ToolRetryMiddleware(),
+                LLMToolEmulator(
+                    tools=["dotnet_validator", "java_validator"],
+                    model=_get_model(
+                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
                     ),
-                ],
-                debug=True,
-            )
+                ),
+            ],
+            debug=True,
+        )
 
-            strategies = "\n".join(
-                [r.get("strategy", "") for r in state.council_responses]
-            )
+        strategies = "\n".join(
+            [r.get("strategy", "") for r in state.council_responses]
+        )
 
-            message = f"""Translate the following code from {state.source_target.value} to {state.destination_target.value}.
+        message = f"""Translate the following code from {state.source_target.value} to {state.destination_target.value}.
 
 Strategies to consider:
 {strategies}
@@ -279,18 +277,18 @@ Database Schema Context:
 Source Code:
 {state.source_code}
 """
-            # Invoke the agent. It manages its own messages and tool calls loops.
-            response = await agent.ainvoke(
-                {"messages": [HumanMessage(content=message)]}
-            )
+        # Invoke the agent. It manages its own messages and tool calls loops.
+        response = await agent.ainvoke(
+            {"messages": [HumanMessage(content=message)]}
+        )
 
     # Extract structured output if available
     updates: dict[str, Any] = {"messages": response["messages"]}
 
     output = response["structured_response"]
-    if output["translated_schema_code"]:
+    if output.translated_schema_code:
         updates["schema_translated_code"] = output["translated_schema_code"]
-    if output["translated_query_code"]:
+    if output.translated_query_code:
         updates["query_translated_code"] = output["translated_query_code"]
 
     return updates
@@ -304,10 +302,10 @@ builder.add_node("schema_inspection", schema_inspection)  # type: ignore
 builder.add_node("council_of_models", council_of_models)  # type: ignore
 builder.add_node("translation_agent", translation_agent)  # type: ignore
 
-builder.add_edge("__start__", "extract_input")
+builder.add_edge(START, "extract_input")
 builder.add_edge("extract_input", "schema_inspection")
 builder.add_edge("schema_inspection", "council_of_models")
 builder.add_edge("council_of_models", "translation_agent")
-builder.add_edge("translation_agent", "__end__")
+builder.add_edge("translation_agent", END)
 
 graph = builder.compile(name="UOM Orchestrator Workflow", debug=True)

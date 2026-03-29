@@ -28,6 +28,15 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["ty>=0.0.23", "ruff>=0.6.1"]
 
+[dependency-groups]
+dev = [
+    "anyio>=4.7.0",
+    "debugpy>=1.8.20",
+    "langgraph-cli[inmem]>=0.4.15",
+    "pytest>=8.3.5",
+    "ty>=0.0.23",
+]
+
 [build-system]
 requires = ["setuptools>=73.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -74,15 +83,6 @@ markers = [
     "integration: requires running Docker services (MongoDB, db-toolbox, Ollama, etc.)",
 ]
 log_cli = true
-
-[dependency-groups]
-dev = [
-    "anyio>=4.7.0",
-    "debugpy>=1.8.20",
-    "langgraph-cli[inmem]>=0.4.15",
-    "pytest>=8.3.5",
-    "ty>=0.0.23",
-]
 
 [tool.ty.src]
 include = ["src", "tests"]
