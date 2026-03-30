@@ -27,7 +27,7 @@ async def search(query: str) -> Optional[dict[str, Any]]:
     """
     runtime = get_runtime(Context)
     wrapped = TavilySearch(max_results=runtime.context.max_search_results)
-    return cast(dict[str, Any], await wrapped.ainvoke({"query": query}))  # type: ignore
+    return cast(dict[str, Any], await wrapped.ainvoke({"query": query}))
 
 
 # Static tools available without async initialization.
