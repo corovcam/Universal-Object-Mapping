@@ -163,5 +163,5 @@ cython_debug/
 
 .langgraph_api
 
-old/
+misc/
 .env.dev

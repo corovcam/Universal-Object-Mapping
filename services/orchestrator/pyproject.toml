@@ -24,6 +24,10 @@ dependencies = [
     "pymongo>=4.16.0",
     "asyncssh>=2.14.0",
 ]
+# external-dependencies = [
+#     "pkg:generic/node@24",
+#     "pkg:generic/npm@11",
+# ]
 
 [project.optional-dependencies]
 dev = ["ty>=0.0.23", "ruff>=0.6.1"]
