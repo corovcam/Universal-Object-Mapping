@@ -22,5 +22,35 @@
     "${workspaceFolder}/services/orchestrator/tests"
   ],
   "python.analysis.inlayHints.pytestParameters": true,
-  "ty.disableLanguageServices": true // if using Pylance in VSCode
+  "ty.disableLanguageServices": true,
+  "sqltools.connections": [
+    {
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5433,
+      "driver": "PostgreSQL",
+      "name": "langgraph-postgres",
+      "database": "postgres",
+      "username": "postgres",
+      "password": "postgres"
+    },
+    {
+      "connectionTimeout": 15,
+      "mssqlOptions": {
+        "appName": "SQLTools",
+        "useUTC": true,
+        "encrypt": true,
+        "trustServerCertificate": true
+      },
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 1444,
+      "driver": "MSSQL",
+      "name": "uom-mssql",
+      "username": "sa",
+      "password": "Testingorms123"
+    }
+  ] // if using Pylance in VSCode
 }

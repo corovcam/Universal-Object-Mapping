@@ -3,4 +3,3 @@ gha-creds-*.json
 .env
 /.idea/
 *.dump
-.output/
