@@ -2,6 +2,8 @@ package uom.services.benchmarks.controller;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -30,6 +32,8 @@ import java.nio.file.Path;
 @RestController
 @RequestMapping("/api/compiler")
 public class CompilationController {
+    @Autowired
+    private Environment environment;
 
     private static final Logger log = LoggerFactory.getLogger(CompilationController.class);
 
@@ -123,8 +127,8 @@ public class CompilationController {
                 ));
             }
         } finally {
-            // Always clean up the compilation output directory
-            if (classesDir != null) {
+            // Always clean up the compilation output directory in production
+            if (classesDir != null && !environment.matchesProfiles("development")) {
                 // classesDir is inside the temp compile dir (e.g., /app/sandbox/compile-xxx/classes)
                 // We want to clean up the parent temp dir
                 Path tempDir = classesDir.getParent();

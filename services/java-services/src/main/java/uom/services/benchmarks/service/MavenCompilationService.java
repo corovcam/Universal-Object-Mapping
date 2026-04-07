@@ -2,7 +2,9 @@ package uom.services.benchmarks.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import uom.services.benchmarks.dto.CompilationResult;
 import uom.services.benchmarks.dto.CompilationResult.CompilationError;
@@ -27,6 +29,8 @@ import java.util.regex.Pattern;
  */
 @Service
 public class MavenCompilationService {
+    @Autowired
+    private Environment environment;
 
     private static final Logger log = LoggerFactory.getLogger(MavenCompilationService.class);
 
@@ -99,7 +103,7 @@ public class MavenCompilationService {
             // Run mvn compile
             ProcessBuilder pb = new ProcessBuilder(
                     "mvn", "compile",
-                    "-f", pomDest.toString(),
+                    "-f", "pom.xml",
                     "-q", // quiet mode to reduce output noise
                     "--batch-mode",
                     "--no-transfer-progress"
@@ -119,7 +123,9 @@ public class MavenCompilationService {
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
-                compilationService.cleanupDirectory(projectDir);
+                if (!environment.matchesProfiles("development")) {
+                    compilationService.cleanupDirectory(projectDir);
+                }
                 return new CompilationService.CompileOutput(
                         CompilationResult.failure(
                                 "Maven compilation timed out after " + timeoutSeconds + " seconds.",
@@ -152,7 +158,9 @@ public class MavenCompilationService {
 
                 String msg = String.format("Maven compilation failed with %d error(s).", errors.size());
                 log.warn(msg);
-                compilationService.cleanupDirectory(projectDir);
+                if (!environment.matchesProfiles("development")) {
+                    compilationService.cleanupDirectory(projectDir);
+                }
                 return new CompilationService.CompileOutput(
                         CompilationResult.failure(msg, errors),
                         null
@@ -160,7 +168,8 @@ public class MavenCompilationService {
             }
         } catch (IOException e) {
             log.error("IO error during Maven compilation", e);
-            if (projectDir != null) compilationService.cleanupDirectory(projectDir);
+            if (projectDir != null && !environment.matchesProfiles("development"))
+                compilationService.cleanupDirectory(projectDir);
             return new CompilationService.CompileOutput(
                     CompilationResult.failure(
                             "IO error: " + e.getMessage(),
@@ -170,7 +179,8 @@ public class MavenCompilationService {
             );
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            if (projectDir != null) compilationService.cleanupDirectory(projectDir);
+            if (projectDir != null && !environment.matchesProfiles("development"))
+                compilationService.cleanupDirectory(projectDir);
             return new CompilationService.CompileOutput(
                     CompilationResult.failure(
                             "Maven compilation interrupted.",

@@ -1,6 +1,6 @@
 {
   "java.compile.nullAnalysis.mode": "automatic",
-  "java.configuration.updateBuildConfiguration": "interactive",
+  "java.configuration.updateBuildConfiguration": "automatic",
   "python-envs.pythonProjects": [
     {
       "path": "./services/orchestrator",
@@ -11,18 +11,21 @@
   "python.analysis.useNearestConfiguration": true,
   "python.analysis.include": ["./services/orchestrator/[src,tests]/**"],
   "python.testing.unittestEnabled": false,
-  "python.testing.pytestEnabled": true,
+  "python.testing.pytestEnabled": false,
+  "pythonTestExplorer.testFramework": "pytest",
   "python.envFile": "${workspaceFolder}/services/orchestrator/.env.dev",
   "python.testing.cwd": "${workspaceFolder}/services/orchestrator",
-  "python.testing.autoTestDiscoverOnSaveEnabled": false,
+  "python.testing.autoTestDiscoverOnSaveEnabled": true,
   "python.testing.autoTestDiscoverOnSavePattern": "${workspaceFolder}/services/orchestrator/tests/**/*.py",
   "python.terminal.useEnvFile": true,
+  "python.testing.pytestPath": "${workspaceFolder}/services/orchestrator/.venv/bin/pytest",
   "python.testing.pytestArgs": [
     "-v",
     "${workspaceFolder}/services/orchestrator/tests"
   ],
   "python.analysis.inlayHints.pytestParameters": true,
-  "ty.disableLanguageServices": true,
+  // if using Pylance in VSCode
+  "ty.disableLanguageServices": false,
   "sqltools.connections": [
     {
       "ssh": "Disabled",
@@ -52,5 +55,8 @@
       "username": "sa",
       "password": "Testingorms123"
     }
-  ] // if using Pylance in VSCode
+  ],
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "explicit"
+  }
 }
