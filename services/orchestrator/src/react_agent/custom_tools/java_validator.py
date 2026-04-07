@@ -1,14 +1,19 @@
 """Java compilation and validation tool using the Java Spring Boot service REST API."""
 
+import logging
 import os
 
 import httpx
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
+logger = logging.getLogger(__name__)
+
 
 class JavaValidationInput(BaseModel):
-    source_code: str = Field(description="The Java source code to compile and validate.")
+    source_code: str = Field(
+        description="The Java source code to compile and validate."
+    )
     framework: str = Field(
         default="none",
         description=(
@@ -93,25 +98,40 @@ async def validate_java_code(
         "validate": validate_schema,
     }
 
+    logger.debug(
+        f"Requesting Java validation at {url} (framework: {framework}, validate: {validate_schema})"
+    )
+
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(url, json=payload)
     except httpx.ConnectError:
+        logger.error(
+            f"Connection Error: Could not connect to Java service at {base_url}"
+        )
         return (
             f"[Connection Error] Could not connect to Java service at {base_url}. "
             "Ensure the java-service container is running."
         )
     except httpx.TimeoutException:
+        logger.error(
+            f"Timeout: Java service at {base_url} did not respond within 60 seconds"
+        )
         return (
             f"[Timeout] Java service at {base_url} did not respond within 60 seconds. "
             "The compilation may be too complex or the service is overloaded."
         )
     except httpx.HTTPError as e:
+        logger.error(f"HTTP Error failed to communicate with Java service: {e}")
         return f"[HTTP Error] Failed to communicate with Java service: {e}"
 
     try:
         result = response.json()
-    except Exception:
+        logger.debug(f"Java validation response: {result}")
+    except Exception as e:
+        logger.error(
+            f"Non-JSON response from Java service: {e} - Status {response.status_code}"
+        )
         return (
             f"[Error] Java service returned non-JSON response "
             f"(status {response.status_code}): {response.text[:500]}"
@@ -123,6 +143,7 @@ async def validate_java_code(
     errors = result.get("errors", [])
 
     if success:
+        logger.info(f"Java validation passed. Message: {message}")
         # Build success response
         parts = [f"[Java Validation Passed] {message}"]
         if warnings:
@@ -131,6 +152,9 @@ async def validate_java_code(
                 parts.append(f"  - {w}")
         return "\n".join(parts)
     else:
+        logger.warning(
+            f"Java validation failed. Message: {message}. Errors: {len(errors)}"
+        )
         # Build failure response with structured errors
         mode = "Maven" if use_maven else "JavaCompiler"
         parts = [f"[Java Compilation/Validation Failed ({mode})] {message}"]

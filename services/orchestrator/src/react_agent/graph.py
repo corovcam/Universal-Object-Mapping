@@ -161,7 +161,9 @@ Source code being translated:
 Please provide a concise summary of the relevant source and target database structures."""
 
         try:
-            response = await agent.ainvoke({"messages": [HumanMessage(content=message)]})
+            response = await agent.ainvoke(
+                {"messages": [HumanMessage(content=message)]}
+            )
             # Extract the final assistant response as schema context
             schema_summary = (
                 response["messages"][-1].content if response["messages"] else ""
@@ -223,10 +225,7 @@ async def translation_agent(
     """
     model = _get_model(config, runtime)
 
-    async with (
-        load_database_tools() as db_tools, 
-        load_docs_mcp_tools() as doc_tools
-    ):
+    async with load_database_tools() as db_tools, load_docs_mcp_tools() as doc_tools:
         all_tools = TOOLS + db_tools + doc_tools
 
         system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
@@ -245,13 +244,11 @@ async def translation_agent(
             middleware=[
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
-                    _get_model(
-                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
-                    ),
+                    _get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B),
                 ),
                 ToolRetryMiddleware(),
                 LLMToolEmulator(
-                    tools=["dotnet_validator", "java_validator"],
+                    tools=["dotnet_validator"],
                     model=_get_model(
                         config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
                     ),
@@ -260,9 +257,7 @@ async def translation_agent(
             debug=True,
         )
 
-        strategies = "\n".join(
-            [r.get("strategy", "") for r in state.council_responses]
-        )
+        strategies = "\n".join([r.get("strategy", "") for r in state.council_responses])
 
         message = f"""Translate the following code from {state.source_target.value} to {state.destination_target.value}.
 
@@ -278,9 +273,7 @@ Source Code:
 {state.source_code}
 """
         # Invoke the agent. It manages its own messages and tool calls loops.
-        response = await agent.ainvoke(
-            {"messages": [HumanMessage(content=message)]}
-        )
+        response = await agent.ainvoke({"messages": [HumanMessage(content=message)]})
 
     # Extract structured output if available
     updates: dict[str, Any] = {"messages": response["messages"]}

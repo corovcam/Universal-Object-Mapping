@@ -15,11 +15,9 @@ from typing_extensions import Annotated
 class FrameworkType(str, Enum):
     """Supported Object-Relational/Document Mapping targets."""
 
-    MS_SQL_NATIVE = "MS SQL Native"
     EFCORE_LINQ = "C# EFCore LINQ"
     DAPPER = "C# Dapper"
     NHIBERNATE_HQL = "C# NHibernate HQL"
-    SPRING_DATA_JPA = "Java Spring Data JPA"
     SPRING_DATA_MONGODB = "Java Spring Data MongoDB"
     SPRING_DATA_NEO4J = "Java Spring Data Neo4j"
     UNKNOWN = "Unknown"
