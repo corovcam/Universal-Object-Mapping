@@ -2,7 +2,9 @@ package uom.services.benchmarks.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import uom.services.benchmarks.dto.CompilationResult;
 import uom.services.benchmarks.dto.CompilationResult.CompilationError;
@@ -28,17 +30,21 @@ import java.util.stream.Stream;
  */
 @Service
 public class CompilationService {
+    @Autowired
+    private Environment environment;
 
     private static final Logger log = LoggerFactory.getLogger(CompilationService.class);
 
     /**
      * Pattern to extract a public class name (determines the .java filename).
+     * Handles annotations preceding the class declaration on the same line,
+     * e.g. {@code @Document(collection="orders") public class Order}.
      * Falls back to any top-level class if no public class is found.
      */
     private static final Pattern PUBLIC_CLASS_PATTERN =
-            Pattern.compile("^\\s*public\\s+(?:class|record|enum|interface)\\s+(\\w+)", Pattern.MULTILINE);
+            Pattern.compile("\\bpublic\\s+(?:class|record|enum|interface)\\s+(\\w+)");
     private static final Pattern ANY_CLASS_PATTERN =
-            Pattern.compile("^\\s*(?:class|record|enum|interface)\\s+(\\w+)", Pattern.MULTILINE);
+            Pattern.compile("(?:^|\\s)(?:class|record|enum|interface)\\s+(\\w+)", Pattern.MULTILINE);
 
     private final Path sandboxDir;
 
@@ -127,13 +133,15 @@ public class CompilationService {
                     String msg = String.format("Compilation failed with %d error(s).", errors.size());
                     log.warn(msg);
                     // Clean up on failure
-                    cleanupDirectory(outputDir);
+                    if (!environment.matchesProfiles("development")) {
+                        cleanupDirectory(outputDir);
+                    }
                     return new CompileOutput(CompilationResult.failure(msg, errors, warnings), null);
                 }
             }
         } catch (IOException e) {
             log.error("IO error during compilation", e);
-            if (outputDir != null) {
+            if (outputDir != null && !environment.matchesProfiles("development")) {
                 cleanupDirectory(outputDir);
             }
             return new CompileOutput(
@@ -166,28 +174,35 @@ public class CompilationService {
     }
 
     /**
-     * Builds the classpath string from the running application's classpath.
-     * This includes all Spring Data dependencies (MongoDB, Neo4j) and their
-     * transitive dependencies.
+     * Builds the classpath string for the dynamic compiler.
+     * <p>
+     * When running under {@code mvn spring-boot:run}, the {@code java.class.path}
+     * system property only contains the Maven launcher jar. The actual application
+     * classes and dependencies are loaded by a custom classloader. We need to
+     * reconstruct the full classpath by scanning known locations.
      */
     String buildClasspath() {
-        String runtimeClasspath = System.getProperty("java.class.path");
-        if (runtimeClasspath != null && !runtimeClasspath.isBlank()) {
-            log.debug("Using runtime classpath ({} chars)", runtimeClasspath.length());
-            return runtimeClasspath;
-        }
-
-        // Fallback: scan Maven target directories
-        log.warn("java.class.path is empty, scanning for jars...");
         List<String> paths = new ArrayList<>();
 
-        // Main application classes
+        // 1. Application's own compiled classes
         Path appClasses = Path.of("/app/target/classes");
         if (Files.isDirectory(appClasses)) {
             paths.add(appClasses.toString());
         }
 
-        // Maven dependency jars
+        // 2. Maven local repository jars (used by mvn spring-boot:run)
+        //    Spring Boot Maven plugin resolves deps to ~/.m2/repository
+        Path m2Repo = Path.of(System.getProperty("user.home", "/root"), ".m2", "repository");
+        if (Files.isDirectory(m2Repo)) {
+            try (Stream<Path> jars = Files.walk(m2Repo)) {
+                jars.filter(p -> p.toString().endsWith(".jar"))
+                        .forEach(p -> paths.add(p.toString()));
+            } catch (IOException e) {
+                log.warn("Failed to scan Maven local repository at {}", m2Repo, e);
+            }
+        }
+
+        // 3. Also try any copied dependency jars in target/dependency/
         Path depsDir = Path.of("/app/target/dependency");
         if (Files.isDirectory(depsDir)) {
             try (Stream<Path> jars = Files.walk(depsDir)) {
@@ -198,7 +213,18 @@ public class CompilationService {
             }
         }
 
-        return String.join(File.pathSeparator, paths);
+        // 4. Fallback: if we found nothing above, try java.class.path
+        if (paths.isEmpty()) {
+            String runtimeClasspath = System.getProperty("java.class.path");
+            if (runtimeClasspath != null && !runtimeClasspath.isBlank()) {
+                log.info("Using runtime java.class.path as fallback ({} chars)", runtimeClasspath.length());
+                return runtimeClasspath;
+            }
+        }
+
+        String classpath = String.join(File.pathSeparator, paths);
+        log.info("Built classpath with {} entries ({} chars)", paths.size(), classpath.length());
+        return classpath;
     }
 
     private long countClassFiles(Path classesDir) {

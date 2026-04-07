@@ -1,0 +1,49 @@
+### Compile Single Class (Success)
+POST http://localhost:8090/api/compiler/compile
+Content-Type: application/json
+
+{
+  "sourceCode": "import org.springframework.data.annotation.Id;\nimport org.springframework.data.mongodb.core.mapping.Document;\n\n@Document(collection = \"orders\")\nclass Order {\n    @Id\n    private String id;\n    private String customerName;\n\n    public Order() {}\n    public String getId() { return id; }\n    public void setId(String id) { this.id = id; }\n    public String getCustomerName() { return customerName; }\n    public void setCustomerName(String customerName) { this.customerName = customerName; }\n}",
+  "framework": "spring-data-mongodb",
+  "validate": false
+}
+
+### Compile Multi-Class Complex Schema (Success)
+POST http://localhost:8090/api/compiler/compile
+Content-Type: application/json
+
+{
+  "sourceCode": "import java.math.BigDecimal;\nimport java.time.LocalDate;\nimport java.time.LocalDateTime;\nimport java.util.ArrayList;\nimport java.util.List;\nimport org.springframework.data.annotation.Id;\nimport org.springframework.data.mongodb.core.mapping.Document;\nimport org.springframework.data.mongodb.core.mapping.Field;\n\n@Document(collection = \"orders\")\nclass Order {\n    @Id\n    private String id;\n    @Field(\"orderId\")\n    private Integer orderId;\n    @Field(\"customerId\")\n    private Integer customerId;\n    @Field(\"orderDate\")\n    private LocalDateTime orderDate;\n    private Customer customer;\n    public Order() {}\n    public String getId() { return id; }\n}\n\nclass Customer {\n    private Integer customerId;\n    private String customerName;\n    private BigDecimal creditLimit;\n    private List<CustomerTransaction> customerTransactions = new ArrayList<>();\n    public Customer() {}\n}\n\nclass CustomerTransaction {\n    private Integer customerTransactionId;\n    private BigDecimal transactionAmount;\n    public CustomerTransaction() {}\n}\n\n@Document(collection = \"orderLines\")\nclass OrderLine {\n    @Id\n    private String id;\n    @Field(\"orderLineId\")\n    private Integer orderLineId;\n    private Integer quantity;\n    private BigDecimal unitPrice;\n    private StockItem stockItem;\n    public OrderLine() {}\n}\n\nclass StockItem {\n    private Integer stockItemId;\n    private String stockItemName;\n    public StockItem() {}\n}",
+  "framework": "spring-data-mongodb",
+  "validate": false
+}
+
+### Compile + Validate vs Live MongoDB (Success)
+POST http://localhost:8090/api/compiler/compile
+Content-Type: application/json
+
+{
+  "sourceCode": "import org.springframework.data.annotation.Id;\nimport org.springframework.data.mongodb.core.mapping.Document;\n\n@Document(collection = \"orders\")\nclass Order {\n    @Id\n    private String id;\n    public Order() {}\n}",
+  "framework": "spring-data-mongodb",
+  "validate": true
+}
+
+### Compilation Error Case (Expected Failure)
+POST http://localhost:8090/api/compiler/compile
+Content-Type: application/json
+
+{
+  "sourceCode": "import org.springframework.data.mongodb.core.mapping.Document;\n\n@Document(collection = \"orders\")\nclass Order {\n    private UndefinedType foo;\n}",
+  "framework": "spring-data-mongodb",
+  "validate": false
+}
+
+### Maven Fallback Compilation (Success)
+POST http://localhost:8090/api/compiler/maven-compile
+Content-Type: application/json
+
+{
+  "sourceCode": "import org.springframework.data.annotation.Id;\nimport org.springframework.data.mongodb.core.mapping.Document;\n\n@Document(collection = \"orders\")\nclass Order {\n    @Id\n    private String id;\n    public Order() {}\n}",
+  "framework": "spring-data-mongodb",
+  "validate": false
+}
