@@ -54,15 +54,63 @@ class TestDotnetValidator:
 # ── Java Validator ───────────────────────────────────────────────────────────
 
 
-SAMPLE_JAVA = """\
-public class Customer {
-    private int id;
-    private String name;
+SAMPLE_JAVA = """import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+
+@Document(collection = "orders")
+class Order {
+    @Id
+    private String id;
+    @Field("orderId")
+    private Integer orderId;
+    @Field("customerId")
+    private Integer customerId;
+    @Field("orderDate")
+    private LocalDateTime orderDate;
+    private Customer customer;
+    public Order() {}
+    public String getId() { return id; }
 }
-"""
+
+class Customer {
+    private Integer customerId;
+    private String customerName;
+    private BigDecimal creditLimit;
+    private List<CustomerTransaction> customerTransactions = new ArrayList<>();
+    public Customer() {}
+}
+
+class CustomerTransaction {
+    private Integer customerTransactionId;
+    private BigDecimal transactionAmount;
+    public CustomerTransaction() {}
+}
+
+@Document(collection = "orderLines")
+class OrderLine {
+    @Id
+    private String id;
+    @Field("orderLineId")
+    private Integer orderLineId;
+    private Integer quantity;
+    private BigDecimal unitPrice;
+    private StockItem stockItem;
+    public OrderLine() {}
+}
+
+class StockItem {
+    private Integer stockItemId;
+    private String stockItemName;
+    public StockItem() {}
+}"""
 
 
-@pytest.mark.skip
 class TestJavaValidator:
     """Tests for validate_java_code tool."""
 
@@ -77,13 +125,17 @@ class TestJavaValidator:
         result = await validate_java_code.ainvoke(
             {"source_code": "System.out.println('hello');", "framework": "none"}
         )
-        assert "Compilation Error" in result
+        assert "Compilation/Validation Failed" in result
 
-    async def test_framework_parameter_reflected(self):
+    async def test_maven_fallback(self):
         result = await validate_java_code.ainvoke(
-            {"source_code": SAMPLE_JAVA, "framework": "spring-data-neo4j"}
+            {
+                "source_code": "System.out.println('hello');",
+                "framework": "none",
+                "use_maven": True,
+            }
         )
-        assert "spring-data-neo4j" in result.lower()
+        assert "Compilation/Validation Failed (Maven)" in result
 
 
 # ── Documentation Search ────────────────────────────────────────────────────
@@ -132,7 +184,7 @@ class TestLoadDocsMcpTools:
     @pytest.mark.integration
     async def test_loads_at_least_fallback(self):
         """Always loads at least the fetch_web_docs fallback tool."""
-        tools = await load_docs_mcp_tools()
-        assert len(tools) >= 1
-        tool_names = [t.name for t in tools]
+        async with load_docs_mcp_tools() as tools:
+            assert len(tools) >= 1
+            tool_names = [t.name for t in tools]
         assert "fetch_web_docs" in tool_names
