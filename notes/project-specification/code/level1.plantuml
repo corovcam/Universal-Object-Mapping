@@ -1,0 +1,29 @@
+@startuml C4_Context
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+!$ICONURL = "https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/v3.0.0/icons"
+!include $ICONURL/common.puml
+
+!define DEVICONS2 $ICONURL/devicons2
+!define FONTAWESOME6 $ICONURL/font-awesome-6
+!include DEVICONS2/microsoftsqlserver.puml
+!include DEVICONS2/mongodb.puml
+!include DEVICONS2/neo4j.puml
+
+Person(dev, "Developer / DB Architect", "Migrates ORM schemas and queries across frameworks; evaluates performance.")
+
+System(orm_morpher, "ORMorpher Web App", $descr="Existing ASP.NET Core web app for ORM translations.")
+System(uom, "Universal Object Mapping (UOM) System", "LLM-driven translation and validation pipeline for ORM/ODM/OGM migration.")
+
+System_Ext(ollama_ext, "MFF UK Ollama Server", "Faculty's local Ollama server", $type="Ollama Server")
+System_Ext(einfra_ext, "E-Infra vLLM API", "Remote LLM API provided by Metacentrum", $type="OpenAI-Compatible API")
+
+Rel(dev, orm_morpher, "Creates/imports SQL Server database", "Docker / Scripts")
+Rel(dev, orm_morpher, "Submits source code; selects frameworks; views results", "Web UI")
+BiRel(orm_morpher, uom, "Submits source schema+queries; receives translated code", "HTTPS / Web UI")
+
+Rel(uom, ollama_ext, "Uses LLM", "SSH Tunnel")
+Rel(uom, einfra_ext, "Uses LLM", "HTTPS")
+
+SHOW_LEGEND()
+@enduml

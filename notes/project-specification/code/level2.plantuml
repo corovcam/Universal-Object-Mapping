@@ -1,0 +1,72 @@
+@startuml C4_Containers
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+!$ICONURL = "https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/v3.0.0/icons"
+!include $ICONURL/common.puml
+
+!define DEVICONS2 $ICONURL/devicons2
+!define FONTAWESOME6 $ICONURL/font-awesome-6
+!include DEVICONS2/microsoftsqlserver.puml
+!include DEVICONS2/mongodb.puml
+!include DEVICONS2/neo4j.puml
+!include DEVICONS2/postgresql.puml
+!include DEVICONS2/redis.puml
+!include DEVICONS2/dot_net.puml
+!include DEVICONS2/java.puml
+
+Person(dev, "Developer / DB Architect")
+
+System_Boundary(orm_morpher, "ORMorpher Web App", $descr="Existing ASP.NET Core web app for ORM translations.") {
+  Container(ormui, "ORMorpher Web UI", "Angular/React", "Web UI hosting the ORM translation workflow. Extended with LLM advisor widget. Exposes REST API.")
+}
+
+System_Boundary(uom, "Universal Object Mapping (UOM) System") {
+  Container(orchestrator, "LangGraph Orchestrator", "Python, LangGraph API Server, FastAPI", "Core LLM orchestratation engine. Runs translation pipeline, manages graph state, and coordinates interactions between LLM agents and system components.")
+
+  Container(dotnet_svc, ".NET Service", "ASP.NET Core, Roslyn", "C# schema/query compilation and validation. Frameworks: EF Core, NHibernate, Dapper.", $sprite="dot_net")
+
+  Container(java_svc, "Java Service", "Spring Boot, Maven", "Java schema/query compilation and validation. Frameworks: Spring Data MongoDB, Spring Data Neo4j.", $sprite="java")
+
+  Boundary(db, "Databases") {
+    ContainerDb(pg, "PostgreSQL", "PostgreSQL + pgvector", "LangGraph persistence store; vector embeddings for context retrieval.", $sprite="postgresql")
+
+    ContainerDb(redis, "Redis", "Redis", "LangGraph in-memory cache store for LLM agents.", $sprite="redis")
+
+    ContainerDb(mssql, "MS SQL Server", "SQL Server 2022", "Source relational database.", $sprite="microsoftsqlserver")
+
+    ContainerDb(mongo, "MongoDB", "MongoDB 8", "Target document database.", $sprite="mongodb")
+
+    ContainerDb(neo4j, "Neo4j", "Neo4j 2026", "Target graph database.", $sprite="neo4j")
+  }
+
+  Boundary(etl, "ETL Tools") {
+    Container(etl_mongo, "MongoDB Relational Migrator", "Web UI", "Creates relational-document mapping and loads data into MongoDB.")
+
+    Container(etl_neo4j, "Neo4j ETL", "Neo4j ETL Tool UI/CLI + Bash (neo4j-admin)", "Creates relational-graph mapping and loads data into Neo4j.")
+  }
+}
+
+System_Ext(ollama_ext, "MFF UK Ollama Server", "Faculty's local Ollama server", $type="Ollama Server")
+System_Ext(einfra_ext, "E-Infra vLLM API", "Remote LLM API provided by Metacentrum", $type="OpenAI-Compatible API")
+
+Rel(dev, orm_morpher, "Creates/imports SQL Server database", "Docker / Scripts")
+Rel(orm_morpher, mssql, "ORM data source", "ADO.NET")
+
+Rel(dev, ormui, "Submits source code; selects frameworks; views results", "WEB UI")
+BiRel(ormui, orchestrator, "Forwards translation request; receives streamed results", "REST / SSE")
+Rel(orchestrator, dotnet_svc, "Compile & validate .NET", "REST / CLI")
+Rel(orchestrator, java_svc, "Compile & validate Java", "REST / CLI")
+Rel(orchestrator, pg, "Persist graph state; vector context", "SQL")
+Rel(orchestrator, redis, "LangGraph caching", "Redis Protocol")
+Rel(orchestrator, ollama_ext, "Uses LLM", "SSH Tunnel")
+Rel(orchestrator, einfra_ext, "Uses LLM", "HTTPS")
+Rel(dotnet_svc, mssql, "Execute benchmark queries", "ADO.NET")
+Rel(java_svc, mongo, "Execute benchmark queries", "Spring Data MongoDB")
+Rel(java_svc, neo4j, "Execute benchmark queries", "Spring Data Neo4j")
+
+Rel(dev, etl, "Creates mappping and loads data")
+Rel(etl_mongo, mongo, "Create mapping; load documents")
+Rel(etl_neo4j, neo4j, "Create mapping in UI; load data with bash script")
+
+SHOW_LEGEND()
+@enduml
