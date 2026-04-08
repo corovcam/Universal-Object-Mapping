@@ -1,5 +1,8 @@
 package uom.services.benchmarks.service;
 
+import org.neo4j.cypherdsl.core.Cypher;
+import org.neo4j.cypherdsl.core.Statement;
+import org.neo4j.cypherdsl.core.StatementBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -16,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 /**
@@ -228,7 +232,7 @@ public class ValidationService {
     }
 
     /**
-     * Validates a MongoDB entity by running {@code mongoTemplate.find(query, entityClass)}
+     * Validates a MongoDB entity by running {@code mongoTemplate.findOne(query, entityClass)}
      * with a limit of 1. If the mapping is invalid, Spring Data MongoDB will throw.
      */
     private void validateMongoEntity(Class<?> entityClass) {
@@ -236,23 +240,17 @@ public class ValidationService {
         Query query = new Query().limit(1);
         // This will throw MappingException or similar if the entity mapping is invalid
         // or if the collection doesn't exist / has incompatible data
-        mongoTemplate.find(query, entityClass);
+        mongoTemplate.findOne(query, entityClass);
     }
 
     /**
      * Validates a Neo4j entity by running {@code neo4jTemplate.findAll(entityClass)}
      * which translates to a MATCH query. If the mapping is invalid, Spring Data Neo4j
      * will throw a MappingException.
-     * <p>
-     * Note: Neo4jTemplate doesn't natively support LIMIT in findAll, so we use
-     * findAll and accept that it may return more results. For validation purposes,
-     * even one record returning without error is sufficient.
      */
     private void validateNeo4jEntity(Class<?> entityClass) {
         log.info("Validating Neo4j entity: {}", entityClass.getSimpleName());
-        // findAll will execute MATCH (n:Label) RETURN n
-        // If the mapping is invalid, this throws MappingException
-        neo4jTemplate.findAll(entityClass);
+        neo4jTemplate.findOne("MATCH (n) RETURN n LIMIT 1", Map.of(), entityClass);
     }
 
     /**
