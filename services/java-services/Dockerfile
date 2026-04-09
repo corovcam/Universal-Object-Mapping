@@ -6,8 +6,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
   apt-get install -y --no-install-recommends openjdk-25-jdk maven openssh-server && \
   mkdir -p /var/run/sshd && \
+  useradd -d /app/sandbox -s /bin/rbash sandbox && \
+  echo 'sandbox:sandbox' | chpasswd && \
   echo 'root:root' | chpasswd && \
   sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+  echo 'Match User sandbox' >> /etc/ssh/sshd_config && \
+  echo '    ChrootDirectory none' >> /etc/ssh/sshd_config && \
   rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -24,11 +28,15 @@ RUN mvn clean compile -DskipTests
 # 2. Pre-download sandbox dependencies so first compilation is fast
 # 3. Create sandbox working directory
 RUN mkdir -p /app/sandbox && \
-  cp /app/sandbox-pom.xml /app/sandbox-pom.xml 2>/dev/null || true && \
-  if [ -f /app/sandbox-pom.xml ]; then \
-  mvn dependency:resolve -f /app/sandbox-pom.xml --batch-mode --no-transfer-progress || true; \
-  fi
+  chmod 711 /app && \
+  cp /app/sandbox-pom.xml /app/sandbox/sandbox-pom.xml 2>/dev/null || true && \
+  if [ -f /app/sandbox/sandbox-pom.xml ]; then \
+  cd /app/sandbox && \
+  mvn dependency:resolve -f sandbox-pom.xml --batch-mode --no-transfer-progress || true && \
+  cd /app; \
+  fi && \
+  chown -R sandbox:sandbox /app/sandbox
 
 EXPOSE 8080 22
 
-CMD /usr/sbin/sshd && mvn spring-boot:run
+CMD ["/usr/sbin/sshd", "&&", "mvn", "spring-boot:run"]

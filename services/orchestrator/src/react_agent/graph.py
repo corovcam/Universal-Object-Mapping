@@ -2,21 +2,28 @@
 
 import asyncio
 import logging
+import os
 from datetime import UTC, datetime
 from typing import Any
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
+    ClearToolUsesEdit,
+    ContextEditingMiddleware,
     LLMToolEmulator,
+    LLMToolSelectorMiddleware,
     ModelFallbackMiddleware,
     ModelRetryMiddleware,
+    SummarizationMiddleware,
     ToolRetryMiddleware,
 )
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
+from langgraph.store.memory import InMemoryStore
 from pydantic import BaseModel, Field
 
 from react_agent.context import AvailableModel, Context
@@ -62,13 +69,18 @@ class ExtractionOutput(BaseModel):
     """Structured output for identifying user intent from messages."""
 
     source_code: str = Field(
-        description="The source code snippet or query mapped by the user."
+        description="The source code snippet or query mapped by the user.",
+        min_length=1,
     )
-    source_target: FrameworkType = Field(
-        description="The identified origin framework/ORM."
+    source_target: FrameworkType = Field(description="The identified origin framework.")
+    source_target_version: str | None = Field(
+        description="The identified origin framework version."
     )
     destination_target: FrameworkType = Field(
-        description="The identified target framework/ORM."
+        description="The identified target framework."
+    )
+    destination_target_version: str | None = Field(
+        description="The identified target framework version."
     )
 
 
@@ -103,7 +115,7 @@ async def extract_input(
         origin_frameworks=[f.value for f in FrameworkType],
         destination_frameworks=[f.value for f in FrameworkType],
     )
-    prompt = f"Analyze the following conversation and extract the source code, the origin framework, and the desired destination target framework:\n{state.messages[-1].content}"
+    prompt = f"Analyze the following conversation and extract the source code, the origin framework, the origin framework version (if available), the destination framework and the destination framework version (if available):\n{state.messages[-1].content}"
 
     extraction = await structured_llm.ainvoke(
         [SystemMessage(content=system_prompt), HumanMessage(content=prompt)]
@@ -113,7 +125,9 @@ async def extract_input(
     return {
         "source_code": extraction.source_code,
         "source_target": extraction.source_target,
+        "source_target_version": extraction.source_target_version,
         "destination_target": extraction.destination_target,
+        "destination_target_version": extraction.destination_target_version,
     }
 
 
@@ -136,9 +150,6 @@ async def schema_inspection(
         model = _get_model(config, runtime, AvailableModel.EINFRA_GLM_5)
 
         system_prompt = SYSTEM_PROMPT_SCHEMA_INSPECTOR.format(
-            source_framework=state.source_target.value,
-            destination_framework=state.destination_target.value,
-            source_code=state.source_code,
             system_time=datetime.now(tz=UTC).isoformat(),
         )
 
@@ -150,10 +161,10 @@ async def schema_inspection(
                 ModelRetryMiddleware(),
                 ToolRetryMiddleware(),
             ],
-            debug=True,
+            debug=True if os.getenv("DEVELOPMENT") else False,
         )
 
-        message = f"""Inspect the database schemas relevant to translating code from {state.source_target.value} to {state.destination_target.value}.
+        message = f"""Inspect the database schemas relevant to translating code from {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 
 Source code being translated:
 {state.source_code}
@@ -225,14 +236,13 @@ async def translation_agent(
     """
     model = _get_model(config, runtime)
 
-    async with load_database_tools() as db_tools, load_docs_mcp_tools() as doc_tools:
-        all_tools = TOOLS + db_tools + doc_tools
+    async with load_database_tools() as db_tools:
+        all_tools = TOOLS + db_tools
 
         system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
             origin_frameworks=[f.value for f in FrameworkType],
             destination_frameworks=[f.value for f in FrameworkType],
             system_time=datetime.now(tz=UTC).isoformat(),
-            schema_context=state.schema_context or "No schema context available.",
         )
 
         # Create the ReAct agent
@@ -244,9 +254,24 @@ async def translation_agent(
             middleware=[
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
+                    _get_model(config, runtime, AvailableModel.EINFRA_GLM_5),
+                    _get_model(config, runtime, AvailableModel.EINFRA_AGENTIC),
                     _get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B),
                 ),
                 ToolRetryMiddleware(),
+                LLMToolSelectorMiddleware(
+                    model=_get_model(config, runtime, AvailableModel.EINFRA_QWEN3_5),
+                    always_include=["search"],
+                ),
+                ContextEditingMiddleware(
+                    edits=[
+                        ClearToolUsesEdit(
+                            trigger=100000,
+                            keep=3,
+                        )
+                    ]
+                ),
+                SummarizationMiddleware(model, trigger=("fraction", 0.8)),
                 LLMToolEmulator(
                     tools=["dotnet_validator"],
                     model=_get_model(
@@ -254,19 +279,15 @@ async def translation_agent(
                     ),
                 ),
             ],
-            debug=True,
+            debug=True if os.getenv("DEVELOPMENT") else False,
         )
 
         strategies = "\n".join([r.get("strategy", "") for r in state.council_responses])
 
-        message = f"""Translate the following code from {state.source_target.value} to {state.destination_target.value}.
+        message = f"""Translate the following Source Code from {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 
-Strategies to consider:
-{strategies}
-
-Database Schema Context:
-{state.schema_context or "No schema context available."}
-
+{f"Strategies to consider:\n{strategies}\n" if strategies else ""}
+{f"Database Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}
 ---
 
 Source Code:
@@ -274,31 +295,46 @@ Source Code:
 """
         # Invoke the agent. It manages its own messages and tool calls loops.
         response = await agent.ainvoke({"messages": [HumanMessage(content=message)]})
+        logger.debug("Translation response: %s", response)
 
     # Extract structured output if available
     updates: dict[str, Any] = {"messages": response["messages"]}
 
+    if "structured_response" not in response:
+        logger.warning("No structured response available.")
+        return response
     output = response["structured_response"]
     if output.translated_schema_code:
-        updates["schema_translated_code"] = output["translated_schema_code"]
+        updates["schema_translated_code"] = output.translated_schema_code
     if output.translated_query_code:
-        updates["query_translated_code"] = output["translated_query_code"]
+        updates["query_translated_code"] = output.translated_query_code
 
     return updates
 
 
 # Build the graph
-builder = StateGraph(State, input_schema=InputState, context_schema=Context)
+checkpointer = InMemorySaver()
+store = InMemoryStore()
+builder = StateGraph(
+    State,
+    input_schema=InputState,
+    context_schema=Context,
+    checkpointer=checkpointer,
+    store=store,
+)
 
 builder.add_node("extract_input", extract_input)  # type: ignore
 builder.add_node("schema_inspection", schema_inspection)  # type: ignore
-builder.add_node("council_of_models", council_of_models)  # type: ignore
+# builder.add_node("council_of_models", council_of_models)  # type: ignore
 builder.add_node("translation_agent", translation_agent)  # type: ignore
 
 builder.add_edge(START, "extract_input")
 builder.add_edge("extract_input", "schema_inspection")
-builder.add_edge("schema_inspection", "council_of_models")
-builder.add_edge("council_of_models", "translation_agent")
+# builder.add_edge("schema_inspection", "council_of_models")
+# builder.add_edge("council_of_models", "translation_agent")
+builder.add_edge("schema_inspection", "translation_agent")
 builder.add_edge("translation_agent", END)
 
-graph = builder.compile(name="UOM Orchestrator Workflow", debug=True)
+graph = builder.compile(
+    name="UOM Orchestrator Workflow", debug=True if os.getenv("DEVELOPMENT") else False
+)

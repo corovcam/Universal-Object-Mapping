@@ -118,13 +118,13 @@ async def load_docs_mcp_tools() -> AsyncGenerator[list[BaseTool], None]:
             "url": "https://learn.microsoft.com/api/mcp",
             "transport": "streamable_http",
         },
-        "spring_docs": {
-            "command": "npx",
-            "args": ["@enokdev/springdocs-mcp@latest"],
-            "transport": "stdio",
-        },
+        # "spring_docs": {
+        #     "command": "npx",
+        #     "args": ["@enokdev/springdocs-mcp@latest"],
+        #     "transport": "stdio",
+        # },
     }
-    
+
     tools: list[BaseTool] = []
     try:
         client = MultiServerMCPClient(servers, tool_name_prefix=True)

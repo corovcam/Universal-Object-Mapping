@@ -44,6 +44,7 @@ class AvailableModel(str, Enum):
     EINFRA_KIMI_K2_5 = "openai/kimi-k2.5"
     EINFRA_QWEN3_5 = "openai/qwen3.5"
     EINFRA_QWEN3_CODER_NEXT = "openai/qwen3-coder-next"
+    EINFRA_QWEN3_5_122B = "openai/qwen3.5-122b"
     EINFRA_GLM_4_7 = "openai/glm-4.7"
     EINFRA_GLM_5 = "openai/glm-5"
 

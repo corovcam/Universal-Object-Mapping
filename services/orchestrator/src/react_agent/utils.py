@@ -3,6 +3,7 @@
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
+from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 from langgraph.runtime import get_runtime
 
@@ -34,13 +35,28 @@ def load_chat_model(
 
     if provider == "openai":
         config = config or {}
-        return ChatOpenAI(
+        model_client = ChatOpenAI(
             model=model,  # type: ignore
             base_url=config.get("openai_api_url"),  # type: ignore
             api_key=config.get("openai_api_key"),  # type: ignore
+            max_retries=10,
+            request_timeout=120,
+            stream_usage=True,
+        )
+    elif provider == "ollama":
+        model_client = ChatOllama(
+            model=model,
+            # base_url=config.get("ollama_api_url"),
+            reasoning=True,
+        )
+    else:
+        model_client = init_chat_model(
+            model, model_provider=provider, max_retries=10, timeout=120
         )
 
-    return init_chat_model(model, model_provider=provider)
+    # if (not model_client.profile):
+
+    return model_client
 
 
 def get_ssh_host_and_port(service_name: str) -> tuple[str, int]:

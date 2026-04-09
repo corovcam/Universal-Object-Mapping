@@ -35,8 +35,8 @@ async def search(query: str) -> Optional[dict[str, Any]]:
 TOOLS: List[Any] = [
     validate_java_code,
     validate_dotnet_code,
-    fetch_web_docs,
-    execute_in_sandbox,
+    # fetch_web_docs,
+    # execute_in_sandbox,
 ]
 
 __all__ = [
