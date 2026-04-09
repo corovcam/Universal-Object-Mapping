@@ -52,7 +52,9 @@ class InputState:
     # The original source code snippet the user wants translated
     source_code: str = field(default="")
     source_target: FrameworkType = field(default=FrameworkType.UNKNOWN)
+    source_target_version: str | None = field(default=None)
     destination_target: FrameworkType = field(default=FrameworkType.UNKNOWN)
+    destination_target_version: str | None = field(default=None)
 
 
 @dataclass

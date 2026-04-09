@@ -7,6 +7,7 @@ database_tools.yaml.
 Also provides a native Python tool for listing MongoDB collections, since
 the genai-toolbox does not support $listCollections as an aggregate stage.
 """
+
 import logging
 from asyncio import CancelledError
 from contextlib import asynccontextmanager
@@ -74,6 +75,13 @@ async def load_database_tools() -> AsyncGenerator[list[BaseTool], None]:
                 "MDB_MCP_CONNECTION_STRING": runtime.context.mongodb_uri,
                 "MDB_MCP_DISABLED_TOOLS": "create,update,delete",
             },
+            # "disabledTools": [
+            #     "switch-connection",
+            #     "atlas-local-list-deployments",
+            #     "atlas-local-create-deployment",
+            #     "atlas-local-connect-deployment",
+            #     "atlas-local-delete-deployment",
+            # ],
         }
     }
 
@@ -89,7 +97,9 @@ async def load_database_tools() -> AsyncGenerator[list[BaseTool], None]:
             )
             mcp_client_yielded = False
             try:
-                db_mcp_client = MultiServerMCPClient(custom_db_mcp_servers, tool_name_prefix=True)
+                db_mcp_client = MultiServerMCPClient(
+                    custom_db_mcp_servers, tool_name_prefix=True
+                )
                 async with db_mcp_client.session("mongodb") as db_mcp_session:
                     db_tools = await load_mcp_tools(db_mcp_session)
                     tools.extend(db_tools)
