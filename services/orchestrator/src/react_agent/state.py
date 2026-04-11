@@ -105,10 +105,6 @@ class State(InputState, OutputState):
     """
 
     # Core variables
-    translation_type: TranslationType = field(default=TranslationType.BOTH)
-    source_target: FrameworkType = field(default=FrameworkType.EFCORE_LINQ)
-    destination_target: FrameworkType = field(default=FrameworkType.SPRING_DATA_MONGODB)
-
     schema_context: str = field(default="")
     council_responses: list[dict] = field(default_factory=list)
     translation_messages: Annotated[Sequence[AnyMessage], add_messages] = field(
