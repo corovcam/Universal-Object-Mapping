@@ -33,6 +33,7 @@ async def search(query: str) -> Optional[dict[str, Any]]:
 # Static tools available without async initialization.
 # Database and documentation tools are loaded dynamically in graph nodes.
 TOOLS: List[Any] = [
+    # search,
     validate_java_code,
     validate_dotnet_code,
     # fetch_web_docs,

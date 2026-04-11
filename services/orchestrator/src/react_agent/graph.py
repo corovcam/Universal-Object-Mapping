@@ -194,12 +194,16 @@ async def schema_inspection(
                 ModelFallbackMiddleware(
                     await get_model(config, runtime, AvailableModel.EINFRA_GLM_5),
                     await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC),
-                    await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B),
+                    await get_model(
+                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
+                    ),
                 ),
                 ToolRetryMiddleware(),
-                LLMToolSelectorMiddleware(
-                    model=await get_model(config, runtime, AvailableModel.EINFRA_QWEN3_5),
-                ),
+                # LLMToolSelectorMiddleware(
+                #     model=await get_model(
+                #         config, runtime, AvailableModel.EINFRA_QWEN3_5
+                #     ),
+                # ),
                 ContextEditingMiddleware(
                     edits=[
                         ClearToolUsesEdit(
@@ -208,17 +212,17 @@ async def schema_inspection(
                         )
                     ]
                 ),
-                SummarizationMiddleware(model, trigger=("fraction", 0.8)),
+                # SummarizationMiddleware(model, trigger=("fraction", 0.8)),
             ],
             debug=True if os.getenv("DEVELOPMENT") else False,
         )
 
         message = f"""Inspect the database schemas relevant to translating code from {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 
-{f"Mapping from {database_mapping['source']} to {database_mapping['destination']}:\n{database_mapping['mapping']}\n" if database_mapping else ""}
+{f"Mapping from {database_mapping['source']} to {database_mapping['destination']}:\n<database_mapping>{database_mapping['mapping']}</database_mapping>\n" if database_mapping else ""}
 Source code being translated:
-{state.source_code}
-"""
+{f"<schema_code>{state.source_schema_code}</schema_code>\n" if state.source_schema_code else ""}
+{f"<query_code>{state.source_query_code}</query_code>" if state.source_query_code else ""}"""  # ty:ignore[unresolved-attribute]
 
         try:
             response = await agent.ainvoke(
@@ -251,7 +255,7 @@ async def _generate_council_strategy(
 From {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 
 Database schema context:
-{state.schema_context}"""
+{state.schema_context}"""  # ty:ignore[unresolved-attribute]
 
     response = await llm.ainvoke([HumanMessage(content=prompt)])
     return {"model": model_name, "strategy": str(response.content)}
@@ -306,13 +310,16 @@ async def translation_agent(
                 ModelFallbackMiddleware(
                     await get_model(config, runtime, AvailableModel.EINFRA_GLM_5),
                     await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC),
-                    await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B),
+                    await get_model(
+                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
+                    ),
                 ),
                 ToolRetryMiddleware(),
-                LLMToolSelectorMiddleware(
-                    model=await get_model(config, runtime, AvailableModel.EINFRA_QWEN3_5),
-                    always_include=["search"],
-                ),
+                # LLMToolSelectorMiddleware(
+                #     model=await get_model(
+                #         config, runtime, AvailableModel.EINFRA_QWEN3_5
+                #     ),
+                # ),
                 ContextEditingMiddleware(
                     edits=[
                         ClearToolUsesEdit(
@@ -321,7 +328,7 @@ async def translation_agent(
                         )
                     ]
                 ),
-                SummarizationMiddleware(model, trigger=("fraction", 0.8)),
+                # SummarizationMiddleware(model, trigger=("fraction", 0.8)),
                 LLMToolEmulator(
                     tools=["dotnet_validator"],
                     model=await get_model(
@@ -343,7 +350,7 @@ async def translation_agent(
 Source Code:
 {f"Schema:\n{state.source_schema_code}\n" if state.source_schema_code else ""}
 {f"Query:\n{state.source_query_code}" if state.source_query_code else ""}
-"""
+"""  # ty:ignore[unresolved-attribute]
         # summarization_middleware = SummarizationMiddleware(model, trigger=("messages", 1))
         # summarized_messages: dict[str, Any] | None = await summarization_middleware.abefore_model(AgentState(messages=[*state.translation_messages]), Runtime())
 
@@ -378,14 +385,16 @@ Source Code:
     return updates
 
 
-def should_extract_input(state: State) -> str:
+def should_extract_input(state: State) -> Literal["schema_inspection", "extract_input"]:
     if is_input_extracted(state):
         return "schema_inspection"
     else:
         return "extract_input"
 
 
-def should_continue_translation(state: State) -> str:
+def should_continue_translation(
+    state: State,
+) -> Literal["translation_agent", END]:  # ty:ignore[invalid-type-form]
     if state.translation_type == TranslationType.SCHEMA:
         is_translated = state.translated_schema_code is not None
     elif state.translation_type == TranslationType.QUERY:
@@ -417,16 +426,14 @@ else:
 langfuse_handler = CallbackHandler()
 
 # Build the graph
-checkpointer = InMemorySaver()
-store = InMemoryStore()
+# checkpointer = InMemorySaver()
+# store = InMemoryStore()
 cache = InMemoryCache()
 builder = StateGraph(
     State,
     input_schema=InputState,
     output_schema=OutputState,
     context_schema=Context,
-    checkpointer=checkpointer,
-    store=store,
 )
 
 
@@ -452,8 +459,8 @@ builder.add_conditional_edges("translation_agent", should_continue_translation)
 
 graph = builder.compile(
     name="UOM Orchestrator Workflow",
-    checkpointer=checkpointer,
-    store=store,
+    # checkpointer=checkpointer,
+    # store=store,
     cache=cache,
     debug=True if os.getenv("DEVELOPMENT") else False,
 ).with_config({"callbacks": [langfuse_handler]})

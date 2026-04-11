@@ -1,5 +1,7 @@
 """Utility & helper functions."""
 
+import logging
+
 import aiofiles
 from langchain.agents.middleware import Runtime
 from langchain.chat_models import init_chat_model
@@ -13,6 +15,8 @@ from langgraph.runtime import get_runtime
 
 from react_agent.context import Context
 from react_agent.state import FrameworkType
+
+logger = logging.getLogger(__name__)
 
 
 def get_message_text(msg: BaseMessage) -> str:
@@ -38,18 +42,7 @@ async def load_chat_model(
     """
     provider, model = fully_specified_name.split("/", maxsplit=1)
 
-    if provider == "litellm" or provider == "einfra":
-        config = config or {}
-        model_client = ChatLiteLLM(
-            model=model,
-            base_url=config.get("openai_api_url"),  # type: ignore
-            api_key=config.get("openai_api_key"),
-            streaming=True,
-            max_retries=10,
-            request_timeout=120,
-            temperature=0.1,
-        )
-    elif provider == "openai":
+    if provider == "openai" or provider == "einfra":
         config = config or {}
         model_client = ChatOpenAI(
             model=model,  # type: ignore
@@ -58,7 +51,14 @@ async def load_chat_model(
             max_retries=10,
             request_timeout=120,
             stream_usage=True,
-            temperature=0.1,
+        )
+    elif provider == "ollama":
+        config = config or {}
+        model_client = ChatOllama(
+            model=model,
+            base_url=config.get("ollama_api_url", "http://localhost:11434"),
+            temperature=0,
+            # reasoning=True,
         )
     else:
         model_client = init_chat_model(
@@ -68,7 +68,6 @@ async def load_chat_model(
             stream_usage=True,
             max_retries=10,
             timeout=120,
-            temperature=0.1,
         )
 
     if getattr(model_client, "profile", None) is None:
@@ -150,8 +149,6 @@ async def load_chat_model(
                                 if check:
                                     p_kwargs[key] = True
 
-                            profile = ModelProfile(**p_kwargs)
-
             elif provider == "ollama":
                 config = config or {}
                 base_url = config.get(
@@ -182,14 +179,66 @@ async def load_chat_model(
                     if "tools" in capabilities or "tool_calling" in capabilities:
                         p_kwargs["tool_calling"] = True
 
-                    profile = ModelProfile(**p_kwargs)
+            # Try to get missing info from AI Gateway
+            if (
+                not p_kwargs.get("max_input_tokens")
+                or "reasoning_output" not in p_kwargs
+            ):
+                creator_map = {
+                    "kimi-k2.5": "moonshotai",
+                    "qwen3-coder": "qwen",
+                    "qwen3-coder-next": "qwen",
+                    "qwen3-coder-30b": "qwen",
+                    "qwen3.5": "qwen",
+                    "qwen3.5-122b": "qwen",
+                    "glm-4.7": "zhipu",
+                    "glm-5": "zhipu",
+                    "deepseek-v3.2": "deepseek",
+                    "deepseek-v3.2-thinking": "deepseek",
+                    "mistral-large": "mistralai",
+                    "llama-4-scout-17b-16e-instruct": "meta",
+                }
+                creator = creator_map.get(model)
+                if creator:
+                    gateway_url = (
+                        f"https://ai-gateway.vercel.sh/v1/models/{creator}/{model}"
+                    )
+                    try:
+                        async with httpx.AsyncClient() as client:
+                            gw_resp = await client.get(gateway_url, timeout=5.0)
+                        if gw_resp.status_code == 200:
+                            gw_data = gw_resp.json()
+
+                            if (
+                                not p_kwargs.get("max_input_tokens")
+                                and "context_window" in gw_data
+                            ):
+                                p_kwargs["max_input_tokens"] = gw_data["context_window"]
+
+                            if (
+                                not p_kwargs.get("max_output_tokens")
+                                and "max_tokens" in gw_data
+                            ):
+                                p_kwargs["max_output_tokens"] = gw_data["max_tokens"]
+
+                            tags = gw_data.get("tags", [])
+                            if (
+                                "reasoning_output" not in p_kwargs
+                                and "reasoning" in tags
+                            ):
+                                p_kwargs["reasoning_output"] = True
+                            if "image_inputs" not in p_kwargs and "vision" in tags:
+                                p_kwargs["image_inputs"] = True
+                            if "tool_calling" not in p_kwargs and "tool-use" in tags:
+                                p_kwargs["tool_calling"] = True
+                    except Exception as e:
+                        logger.debug(
+                            f"Could not fetch AI Gateway profile for {creator}/{model}: {e}"
+                        )
+            profile = ModelProfile(**p_kwargs)
 
         except Exception as e:
-            import logging
-
-            logging.warning(
-                f"Failed to fetch model profile for {provider}/{model}: {e}"
-            )
+            logger.warning(f"Failed to fetch model profile for {provider}/{model}: {e}")
 
         if profile is not None:
             model_client.profile = profile
