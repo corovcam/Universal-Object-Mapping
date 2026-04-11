@@ -14,7 +14,7 @@ from langgraph.runtime import Runtime
 
 from react_agent.context import AvailableModel, Context
 from react_agent.graph import graph as default_graph
-from react_agent.state import FrameworkType, State
+from react_agent.state import FrameworkType, State, TranslationType
 
 
 @pytest.fixture(scope="session")
@@ -109,7 +109,7 @@ def sample_state() -> State:
                 )
             )
         ],
-        source_code=SAMPLE_EFCORE_CODE,
+        translation_type=TranslationType.BOTH,
         source_target=FrameworkType.EFCORE_LINQ,
         destination_target=FrameworkType.SPRING_DATA_MONGODB,
     )
@@ -127,7 +127,4 @@ def empty_state() -> State:
                 )
             )
         ],
-        source_code="",
-        source_target=FrameworkType.UNKNOWN,
-        destination_target=FrameworkType.UNKNOWN,
     )
