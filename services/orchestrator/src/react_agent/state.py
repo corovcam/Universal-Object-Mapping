@@ -20,7 +20,26 @@ class FrameworkType(str, Enum):
     NHIBERNATE_HQL = "C# NHibernate HQL"
     SPRING_DATA_MONGODB = "Java Spring Data MongoDB"
     SPRING_DATA_NEO4J = "Java Spring Data Neo4j"
-    UNKNOWN = "Unknown"
+
+
+# class SourceFramework(str, Enum):
+#     EFCORE_LINQ = "C# EFCore LINQ"
+#     DAPPER = "C# Dapper"
+#     NHIBERNATE_HQL = "C# NHibernate HQL"
+#     UNKNOWN = "Unknown"
+
+# class DestinationFramework(str, Enum):
+#     SPRING_DATA_MONGODB = "Java Spring Data MongoDB"
+#     SPRING_DATA_NEO4J = "Java Spring Data Neo4j"
+#     UNKNOWN = "Unknown"
+
+# FrameworkType = Union[SourceFramework, DestinationFramework]
+
+
+class TranslationType(str, Enum):
+    SCHEMA = "schema"
+    QUERY = "query"
+    BOTH = "both"
 
 
 @dataclass
@@ -50,15 +69,28 @@ class InputState:
     """
 
     # The original source code snippet the user wants translated
-    source_code: str = field(default="")
-    source_target: FrameworkType = field(default=FrameworkType.UNKNOWN)
+    source_schema_code: str | None = field(default=None)
+    source_query_code: str | None = field(default=None)
+    translation_type: TranslationType | None = field(default=None)
+    source_target: FrameworkType | None = field(default=None)
     source_target_version: str | None = field(default=None)
-    destination_target: FrameworkType = field(default=FrameworkType.UNKNOWN)
+    destination_target: FrameworkType | None = field(default=None)
     destination_target_version: str | None = field(default=None)
 
 
 @dataclass
-class State(InputState):
+class OutputState:
+    """Defines the output state for the agent, representing a narrower interface to the outside world.
+
+    This class is used to define the final state and structure of outgoing data.
+    """
+
+    translated_schema_code: str | None = field(default=None)
+    translated_query_code: str | None = field(default=None)
+
+
+@dataclass
+class State(InputState, OutputState):
     """Represents the complete state of the agent, extending InputState with additional attributes.
 
     This class can be used to store any information needed throughout the agent's lifecycle.
@@ -73,7 +105,12 @@ class State(InputState):
     """
 
     # Core variables
+    translation_type: TranslationType = field(default=TranslationType.BOTH)
+    source_target: FrameworkType = field(default=FrameworkType.EFCORE_LINQ)
+    destination_target: FrameworkType = field(default=FrameworkType.SPRING_DATA_MONGODB)
+
     schema_context: str = field(default="")
-    schema_translated_code: str = field(default="")
-    query_translated_code: str = field(default="")
     council_responses: list[dict] = field(default_factory=list)
+    translation_messages: Annotated[Sequence[AnyMessage], add_messages] = field(
+        default_factory=list
+    )

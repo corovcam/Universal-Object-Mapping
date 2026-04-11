@@ -1,0 +1,5127 @@
+[
+  {
+    "name": "NODE_WideWorldImporters.Sales.OrderLines_ac45fa67-b059-4330-8bd2-a25fef94921b",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Node",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"OrderLineID\" AS \"OrderLineID\", \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"OrderLineID\" AS \"OrderLineID\", \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"Quantity\" AS \"Quantity\", \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"Description\" AS \"Description\", \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"PickedQuantity\" AS \"PickedQuantity\", \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"UnitPrice\" AS \"UnitPrice\", \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"PickingCompletedWhen\" AS \"PickingCompletedWhen\", \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"TaxRate\" AS \"TaxRate\", \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"LastEditedWhen\" AS \"LastEditedWhen\", 'OrderLine' AS \"_NODE_LABEL_\" FROM \"WideWorldImporters\".\"Sales\".\"OrderLines\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "OrderLines",
+              "schema": "WideWorldImporters.Sales",
+              "name": "OrderLineID",
+              "alias": "OrderLineID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "Id",
+          "name": "",
+          "id-space": "wideworldimporters.sales.orderlines"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "name": "OrderLineID",
+          "alias": "OrderLineID",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "orderLineId",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "name": "Quantity",
+          "alias": "Quantity",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "quantity",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "name": "Description",
+          "alias": "Description",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "description",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PickedQuantity",
+          "alias": "PickedQuantity",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "pickedQuantity",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "name": "UnitPrice",
+          "alias": "UnitPrice",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "unitPrice",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PickingCompletedWhen",
+          "alias": "PickingCompletedWhen",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "pickingCompletedWhen",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "name": "TaxRate",
+          "alias": "TaxRate",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "taxRate",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "name": "LastEditedWhen",
+          "alias": "LastEditedWhen",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "lastEditedWhen",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "name": "OrderLine",
+          "alias": "_NODE_LABEL_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Label"
+        }
+      }
+    ]
+  },
+  {
+    "name": "NODE_WideWorldImporters.Warehouse.StockGroups_05b83b24-7bba-4a4e-a6ef-c4a604d5912c",
+    "schema": "WideWorldImporters.Warehouse",
+    "graph-object-type": "Node",
+    "sql": "SELECT \"WideWorldImporters\".\"Warehouse\".\"StockGroups\".\"StockGroupID\" AS \"StockGroupID\", \"WideWorldImporters\".\"Warehouse\".\"StockGroups\".\"StockGroupID\" AS \"StockGroupID\", \"WideWorldImporters\".\"Warehouse\".\"StockGroups\".\"ValidFrom\" AS \"ValidFrom\", \"WideWorldImporters\".\"Warehouse\".\"StockGroups\".\"ValidTo\" AS \"ValidTo\", \"WideWorldImporters\".\"Warehouse\".\"StockGroups\".\"StockGroupName\" AS \"StockGroupName\", 'StockGroup' AS \"_NODE_LABEL_\" FROM \"WideWorldImporters\".\"Warehouse\".\"StockGroups\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "StockGroups",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "StockGroupID",
+              "alias": "StockGroupID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "Id",
+          "name": "",
+          "id-space": "wideworldimporters.warehouse.stockgroups"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "StockGroupID",
+          "alias": "StockGroupID",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "stockGroupId",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "ValidFrom",
+          "alias": "ValidFrom",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "validFrom",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "ValidTo",
+          "alias": "ValidTo",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "validTo",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "StockGroupName",
+          "alias": "StockGroupName",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "stockGroupName",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "StockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "StockGroup",
+          "alias": "_NODE_LABEL_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Label"
+        }
+      }
+    ]
+  },
+  {
+    "name": "NODE_WideWorldImporters.Purchasing.Suppliers_65818064-8b4a-4603-9f9a-463a808b9772",
+    "schema": "WideWorldImporters.Purchasing",
+    "graph-object-type": "Node",
+    "sql": "SELECT \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"SupplierID\" AS \"SupplierID\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"SupplierID\" AS \"SupplierID\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"ValidTo\" AS \"ValidTo\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"WebsiteURL\" AS \"WebsiteURL\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"DeliveryPostalCode\" AS \"DeliveryPostalCode\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"BankInternationalCode\" AS \"BankInternationalCode\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"PostalPostalCode\" AS \"PostalPostalCode\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"ValidFrom\" AS \"ValidFrom\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"BankAccountCode\" AS \"BankAccountCode\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"BankAccountBranch\" AS \"BankAccountBranch\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"PostalAddressLine1\" AS \"PostalAddressLine1\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"BankAccountName\" AS \"BankAccountName\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"PaymentDays\" AS \"PaymentDays\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"FaxNumber\" AS \"FaxNumber\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"BankAccountNumber\" AS \"BankAccountNumber\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"SupplierName\" AS \"SupplierName\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"PhoneNumber\" AS \"PhoneNumber\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"PostalAddressLine2\" AS \"PostalAddressLine2\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"DeliveryAddressLine1\" AS \"DeliveryAddressLine1\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"DeliveryAddressLine2\" AS \"DeliveryAddressLine2\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"InternalComments\" AS \"InternalComments\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"SupplierReference\" AS \"SupplierReference\", 'Supplier' AS \"_NODE_LABEL_\" FROM \"WideWorldImporters\".\"Purchasing\".\"Suppliers\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Suppliers",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "SupplierID",
+              "alias": "SupplierID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "Id",
+          "name": "",
+          "id-space": "wideworldimporters.purchasing.suppliers"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "SupplierID",
+          "alias": "SupplierID",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "supplierId",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "ValidTo",
+          "alias": "ValidTo",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "validTo",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "WebsiteURL",
+          "alias": "WebsiteURL",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "websiteUrl",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "DeliveryPostalCode",
+          "alias": "DeliveryPostalCode",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "deliveryPostalCode",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "BankInternationalCode",
+          "alias": "BankInternationalCode",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "bankInternationalCode",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "PostalPostalCode",
+          "alias": "PostalPostalCode",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "postalPostalCode",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "ValidFrom",
+          "alias": "ValidFrom",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "validFrom",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "BankAccountCode",
+          "alias": "BankAccountCode",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "bankAccountCode",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "BankAccountBranch",
+          "alias": "BankAccountBranch",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "bankAccountBranch",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "PostalAddressLine1",
+          "alias": "PostalAddressLine1",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "postalAddressLine1",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "BankAccountName",
+          "alias": "BankAccountName",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "bankAccountName",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "PaymentDays",
+          "alias": "PaymentDays",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "paymentDays",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "FaxNumber",
+          "alias": "FaxNumber",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "faxNumber",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "BankAccountNumber",
+          "alias": "BankAccountNumber",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "bankAccountNumber",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "SupplierName",
+          "alias": "SupplierName",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "supplierName",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "PhoneNumber",
+          "alias": "PhoneNumber",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "phoneNumber",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "PostalAddressLine2",
+          "alias": "PostalAddressLine2",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "postalAddressLine2",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "DeliveryAddressLine1",
+          "alias": "DeliveryAddressLine1",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "deliveryAddressLine1",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "DeliveryAddressLine2",
+          "alias": "DeliveryAddressLine2",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "deliveryAddressLine2",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "InternalComments",
+          "alias": "InternalComments",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "internalComments",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "SupplierReference",
+          "alias": "SupplierReference",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "supplierReference",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "Supplier",
+          "alias": "_NODE_LABEL_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Label"
+        }
+      }
+    ]
+  },
+  {
+    "name": "NODE_WideWorldImporters.Sales.Customers_8ed0008e-d49e-47b1-b2ae-5a903392839e",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Node",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"Customers\".\"CustomerID\" AS \"CustomerID\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"CustomerID\" AS \"CustomerID\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"IsOnCreditHold\" AS \"IsOnCreditHold\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"PhoneNumber\" AS \"PhoneNumber\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"WebsiteURL\" AS \"WebsiteURL\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"PostalAddressLine1\" AS \"PostalAddressLine1\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"PostalAddressLine2\" AS \"PostalAddressLine2\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"DeliveryPostalCode\" AS \"DeliveryPostalCode\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"DeliveryRun\" AS \"DeliveryRun\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"AccountOpenedDate\" AS \"AccountOpenedDate\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"PaymentDays\" AS \"PaymentDays\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"RunPosition\" AS \"RunPosition\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"ValidFrom\" AS \"ValidFrom\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"ValidTo\" AS \"ValidTo\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"CustomerName\" AS \"CustomerName\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"IsStatementSent\" AS \"IsStatementSent\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"StandardDiscountPercentage\" AS \"StandardDiscountPercentage\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"CreditLimit\" AS \"CreditLimit\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"PostalPostalCode\" AS \"PostalPostalCode\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"DeliveryAddressLine2\" AS \"DeliveryAddressLine2\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"FaxNumber\" AS \"FaxNumber\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"DeliveryAddressLine1\" AS \"DeliveryAddressLine1\", 'Customer' AS \"_NODE_LABEL_\" FROM \"WideWorldImporters\".\"Sales\".\"Customers\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Customers",
+              "schema": "WideWorldImporters.Sales",
+              "name": "CustomerID",
+              "alias": "CustomerID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "Id",
+          "name": "",
+          "id-space": "wideworldimporters.sales.customers"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "CustomerID",
+          "alias": "CustomerID",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "customerId",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "IsOnCreditHold",
+          "alias": "IsOnCreditHold",
+          "sql-data-type": "BIT",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "isOnCreditHold",
+          "neo4j-data-type": "Byte",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PhoneNumber",
+          "alias": "PhoneNumber",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "phoneNumber",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "WebsiteURL",
+          "alias": "WebsiteURL",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "websiteUrl",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PostalAddressLine1",
+          "alias": "PostalAddressLine1",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "postalAddressLine1",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PostalAddressLine2",
+          "alias": "PostalAddressLine2",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "postalAddressLine2",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "DeliveryPostalCode",
+          "alias": "DeliveryPostalCode",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "deliveryPostalCode",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "DeliveryRun",
+          "alias": "DeliveryRun",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "deliveryRun",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "AccountOpenedDate",
+          "alias": "AccountOpenedDate",
+          "sql-data-type": "DATE",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "accountOpenedDate",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PaymentDays",
+          "alias": "PaymentDays",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "paymentDays",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "RunPosition",
+          "alias": "RunPosition",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "runPosition",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "ValidFrom",
+          "alias": "ValidFrom",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "validFrom",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "ValidTo",
+          "alias": "ValidTo",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "validTo",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "CustomerName",
+          "alias": "CustomerName",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "customerName",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "IsStatementSent",
+          "alias": "IsStatementSent",
+          "sql-data-type": "BIT",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "isStatementSent",
+          "neo4j-data-type": "Byte",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "StandardDiscountPercentage",
+          "alias": "StandardDiscountPercentage",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "standardDiscountPercentage",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "CreditLimit",
+          "alias": "CreditLimit",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "creditLimit",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PostalPostalCode",
+          "alias": "PostalPostalCode",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "postalPostalCode",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "DeliveryAddressLine2",
+          "alias": "DeliveryAddressLine2",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "deliveryAddressLine2",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "FaxNumber",
+          "alias": "FaxNumber",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "faxNumber",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "DeliveryAddressLine1",
+          "alias": "DeliveryAddressLine1",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "deliveryAddressLine1",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "Customer",
+          "alias": "_NODE_LABEL_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Label"
+        }
+      }
+    ]
+  },
+  {
+    "name": "NODE_WideWorldImporters.Purchasing.PurchaseOrders_ccb558d2-a7df-440b-9a30-d7e59f682b43",
+    "schema": "WideWorldImporters.Purchasing",
+    "graph-object-type": "Node",
+    "sql": "SELECT \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"PurchaseOrderID\" AS \"PurchaseOrderID\", \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"PurchaseOrderID\" AS \"PurchaseOrderID\", \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"InternalComments\" AS \"InternalComments\", \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"ExpectedDeliveryDate\" AS \"ExpectedDeliveryDate\", \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"SupplierReference\" AS \"SupplierReference\", \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"Comments\" AS \"Comments\", \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"LastEditedWhen\" AS \"LastEditedWhen\", \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"OrderDate\" AS \"OrderDate\", \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"IsOrderFinalized\" AS \"IsOrderFinalized\", 'PurchaseOrder' AS \"_NODE_LABEL_\" FROM \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "PurchaseOrders",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "PurchaseOrderID",
+              "alias": "PurchaseOrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "Id",
+          "name": "",
+          "id-space": "wideworldimporters.purchasing.purchaseorders"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "PurchaseOrderID",
+          "alias": "PurchaseOrderID",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "purchaseOrderId",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "InternalComments",
+          "alias": "InternalComments",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "internalComments",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "ExpectedDeliveryDate",
+          "alias": "ExpectedDeliveryDate",
+          "sql-data-type": "DATE",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "expectedDeliveryDate",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "SupplierReference",
+          "alias": "SupplierReference",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "supplierReference",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "Comments",
+          "alias": "Comments",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "comments",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "LastEditedWhen",
+          "alias": "LastEditedWhen",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "lastEditedWhen",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "OrderDate",
+          "alias": "OrderDate",
+          "sql-data-type": "DATE",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "orderDate",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "IsOrderFinalized",
+          "alias": "IsOrderFinalized",
+          "sql-data-type": "BIT",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "isOrderFinalized",
+          "neo4j-data-type": "Byte",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "PurchaseOrder",
+          "alias": "_NODE_LABEL_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Label"
+        }
+      }
+    ]
+  },
+  {
+    "name": "NODE_WideWorldImporters.Warehouse.StockItemStockGroups_f0077a15-dd3f-4be7-b5fd-4e7e3bf2f0e8",
+    "schema": "WideWorldImporters.Warehouse",
+    "graph-object-type": "Node",
+    "sql": "SELECT \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\".\"StockItemStockGroupID\" AS \"StockItemStockGroupID\", \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\".\"StockItemStockGroupID\" AS \"StockItemStockGroupID\", \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\".\"LastEditedWhen\" AS \"LastEditedWhen\", 'StockItemStockGroup' AS \"_NODE_LABEL_\" FROM \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "StockItemStockGroups",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "StockItemStockGroupID",
+              "alias": "StockItemStockGroupID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "Id",
+          "name": "",
+          "id-space": "wideworldimporters.warehouse.stockitemstockgroups"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "StockItemStockGroupID",
+          "alias": "StockItemStockGroupID",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "stockItemStockGroupId",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "LastEditedWhen",
+          "alias": "LastEditedWhen",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "lastEditedWhen",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "StockItemStockGroup",
+          "alias": "_NODE_LABEL_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Label"
+        }
+      }
+    ]
+  },
+  {
+    "name": "NODE_WideWorldImporters.Sales.Orders_cb3a04f2-cbab-4a45-b850-9f9b386835d5",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Node",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"Orders\".\"OrderID\" AS \"OrderID\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"OrderID\" AS \"OrderID\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"IsUndersupplyBackordered\" AS \"IsUndersupplyBackordered\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"InternalComments\" AS \"InternalComments\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"PickingCompletedWhen\" AS \"PickingCompletedWhen\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"LastEditedWhen\" AS \"LastEditedWhen\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"CustomerPurchaseOrderNumber\" AS \"CustomerPurchaseOrderNumber\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"DeliveryInstructions\" AS \"DeliveryInstructions\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"ExpectedDeliveryDate\" AS \"ExpectedDeliveryDate\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"OrderDate\" AS \"OrderDate\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"Comments\" AS \"Comments\", 'Order' AS \"_NODE_LABEL_\" FROM \"WideWorldImporters\".\"Sales\".\"Orders\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "OrderID",
+              "alias": "OrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "Id",
+          "name": "",
+          "id-space": "wideworldimporters.sales.orders"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "OrderID",
+          "alias": "OrderID",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "orderId",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "IsUndersupplyBackordered",
+          "alias": "IsUndersupplyBackordered",
+          "sql-data-type": "BIT",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "isUndersupplyBackordered",
+          "neo4j-data-type": "Byte",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "InternalComments",
+          "alias": "InternalComments",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "internalComments",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PickingCompletedWhen",
+          "alias": "PickingCompletedWhen",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "pickingCompletedWhen",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "LastEditedWhen",
+          "alias": "LastEditedWhen",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "lastEditedWhen",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "CustomerPurchaseOrderNumber",
+          "alias": "CustomerPurchaseOrderNumber",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "customerPurchaseOrderNumber",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "DeliveryInstructions",
+          "alias": "DeliveryInstructions",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "deliveryInstructions",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "ExpectedDeliveryDate",
+          "alias": "ExpectedDeliveryDate",
+          "sql-data-type": "DATE",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "expectedDeliveryDate",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "OrderDate",
+          "alias": "OrderDate",
+          "sql-data-type": "DATE",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "orderDate",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "Comments",
+          "alias": "Comments",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "comments",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "Order",
+          "alias": "_NODE_LABEL_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Label"
+        }
+      }
+    ]
+  },
+  {
+    "name": "NODE_WideWorldImporters.Sales.CustomerTransactions_e199192f-66fe-49a7-927d-eb276c48b6ef",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Node",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"CustomerTransactionID\" AS \"CustomerTransactionID\", \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"CustomerTransactionID\" AS \"CustomerTransactionID\", \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"TransactionAmount\" AS \"TransactionAmount\", \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"LastEditedWhen\" AS \"LastEditedWhen\", \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"AmountExcludingTax\" AS \"AmountExcludingTax\", \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"OutstandingBalance\" AS \"OutstandingBalance\", \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"TransactionDate\" AS \"TransactionDate\", \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"TaxAmount\" AS \"TaxAmount\", \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"FinalizationDate\" AS \"FinalizationDate\", \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"IsFinalized\" AS \"IsFinalized\", 'CustomerTransaction' AS \"_NODE_LABEL_\" FROM \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "CustomerTransactions",
+              "schema": "WideWorldImporters.Sales",
+              "name": "CustomerTransactionID",
+              "alias": "CustomerTransactionID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "Id",
+          "name": "",
+          "id-space": "wideworldimporters.sales.customertransactions"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "name": "CustomerTransactionID",
+          "alias": "CustomerTransactionID",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "customerTransactionId",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "name": "TransactionAmount",
+          "alias": "TransactionAmount",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "transactionAmount",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "name": "LastEditedWhen",
+          "alias": "LastEditedWhen",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "lastEditedWhen",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "name": "AmountExcludingTax",
+          "alias": "AmountExcludingTax",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "amountExcludingTax",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "name": "OutstandingBalance",
+          "alias": "OutstandingBalance",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "outstandingBalance",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "name": "TransactionDate",
+          "alias": "TransactionDate",
+          "sql-data-type": "DATE",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "transactionDate",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "name": "TaxAmount",
+          "alias": "TaxAmount",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "taxAmount",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "name": "FinalizationDate",
+          "alias": "FinalizationDate",
+          "sql-data-type": "DATE",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "finalizationDate",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "name": "IsFinalized",
+          "alias": "IsFinalized",
+          "sql-data-type": "BIT",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "isFinalized",
+          "neo4j-data-type": "Byte",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "name": "CustomerTransaction",
+          "alias": "_NODE_LABEL_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Label"
+        }
+      }
+    ]
+  },
+  {
+    "name": "NODE_WideWorldImporters.Application.People_7ed902f6-335b-4748-aa32-43963a30c74c",
+    "schema": "WideWorldImporters.Application",
+    "graph-object-type": "Node",
+    "sql": "SELECT \"WideWorldImporters\".\"Application\".\"People\".\"PersonID\" AS \"PersonID\", \"WideWorldImporters\".\"Application\".\"People\".\"PersonID\" AS \"PersonID\", \"WideWorldImporters\".\"Application\".\"People\".\"IsSystemUser\" AS \"IsSystemUser\", \"WideWorldImporters\".\"Application\".\"People\".\"FaxNumber\" AS \"FaxNumber\", \"WideWorldImporters\".\"Application\".\"People\".\"EmailAddress\" AS \"EmailAddress\", \"WideWorldImporters\".\"Application\".\"People\".\"IsPermittedToLogon\" AS \"IsPermittedToLogon\", \"WideWorldImporters\".\"Application\".\"People\".\"ValidTo\" AS \"ValidTo\", \"WideWorldImporters\".\"Application\".\"People\".\"PreferredName\" AS \"PreferredName\", \"WideWorldImporters\".\"Application\".\"People\".\"LogonName\" AS \"LogonName\", \"WideWorldImporters\".\"Application\".\"People\".\"SearchName\" AS \"SearchName\", \"WideWorldImporters\".\"Application\".\"People\".\"IsSalesperson\" AS \"IsSalesperson\", \"WideWorldImporters\".\"Application\".\"People\".\"IsEmployee\" AS \"IsEmployee\", \"WideWorldImporters\".\"Application\".\"People\".\"FullName\" AS \"FullName\", \"WideWorldImporters\".\"Application\".\"People\".\"ValidFrom\" AS \"ValidFrom\", \"WideWorldImporters\".\"Application\".\"People\".\"CustomFields\" AS \"CustomFields\", \"WideWorldImporters\".\"Application\".\"People\".\"IsExternalLogonProvider\" AS \"IsExternalLogonProvider\", \"WideWorldImporters\".\"Application\".\"People\".\"UserPreferences\" AS \"UserPreferences\", \"WideWorldImporters\".\"Application\".\"People\".\"OtherLanguages\" AS \"OtherLanguages\", \"WideWorldImporters\".\"Application\".\"People\".\"PhoneNumber\" AS \"PhoneNumber\", 'Person' AS \"_NODE_LABEL_\" FROM \"WideWorldImporters\".\"Application\".\"People\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "People",
+              "schema": "WideWorldImporters.Application",
+              "name": "PersonID",
+              "alias": "PersonID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "Id",
+          "name": "",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "PersonID",
+          "alias": "PersonID",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "personId",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "IsSystemUser",
+          "alias": "IsSystemUser",
+          "sql-data-type": "BIT",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "isSystemUser",
+          "neo4j-data-type": "Byte",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "FaxNumber",
+          "alias": "FaxNumber",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "faxNumber",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "EmailAddress",
+          "alias": "EmailAddress",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "emailAddress",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "IsPermittedToLogon",
+          "alias": "IsPermittedToLogon",
+          "sql-data-type": "BIT",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "isPermittedToLogon",
+          "neo4j-data-type": "Byte",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "ValidTo",
+          "alias": "ValidTo",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "validTo",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "PreferredName",
+          "alias": "PreferredName",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "preferredName",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "LogonName",
+          "alias": "LogonName",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "logonName",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "SearchName",
+          "alias": "SearchName",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "searchName",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "IsSalesperson",
+          "alias": "IsSalesperson",
+          "sql-data-type": "BIT",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "isSalesperson",
+          "neo4j-data-type": "Byte",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "IsEmployee",
+          "alias": "IsEmployee",
+          "sql-data-type": "BIT",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "isEmployee",
+          "neo4j-data-type": "Byte",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "FullName",
+          "alias": "FullName",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "fullName",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "ValidFrom",
+          "alias": "ValidFrom",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "validFrom",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "CustomFields",
+          "alias": "CustomFields",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "customFields",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "IsExternalLogonProvider",
+          "alias": "IsExternalLogonProvider",
+          "sql-data-type": "BIT",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "isExternalLogonProvider",
+          "neo4j-data-type": "Byte",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "UserPreferences",
+          "alias": "UserPreferences",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "userPreferences",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "OtherLanguages",
+          "alias": "OtherLanguages",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "otherLanguages",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "PhoneNumber",
+          "alias": "PhoneNumber",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "phoneNumber",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "Person",
+          "alias": "_NODE_LABEL_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Label"
+        }
+      }
+    ]
+  },
+  {
+    "name": "NODE_WideWorldImporters.Warehouse.StockItems_06706002-30c6-4c8d-821a-a7617ca5a24d",
+    "schema": "WideWorldImporters.Warehouse",
+    "graph-object-type": "Node",
+    "sql": "SELECT \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"StockItemID\" AS \"StockItemID\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"StockItemID\" AS \"StockItemID\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"Size\" AS \"Size\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"Barcode\" AS \"Barcode\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"StockItemName\" AS \"StockItemName\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"InternalComments\" AS \"InternalComments\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"SearchDetails\" AS \"SearchDetails\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"RecommendedRetailPrice\" AS \"RecommendedRetailPrice\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"CustomFields\" AS \"CustomFields\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"QuantityPerOuter\" AS \"QuantityPerOuter\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"UnitPrice\" AS \"UnitPrice\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"TaxRate\" AS \"TaxRate\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"Tags\" AS \"Tags\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"ValidTo\" AS \"ValidTo\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"IsChillerStock\" AS \"IsChillerStock\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"MarketingComments\" AS \"MarketingComments\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"ValidFrom\" AS \"ValidFrom\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"TypicalWeightPerUnit\" AS \"TypicalWeightPerUnit\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"Brand\" AS \"Brand\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"LeadTimeDays\" AS \"LeadTimeDays\", 'StockItem' AS \"_NODE_LABEL_\" FROM \"WideWorldImporters\".\"Warehouse\".\"StockItems\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "StockItems",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "StockItemID",
+              "alias": "StockItemID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "Id",
+          "name": "",
+          "id-space": "wideworldimporters.warehouse.stockitems"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "StockItemID",
+          "alias": "StockItemID",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "stockItemId",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "Size",
+          "alias": "Size",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "size",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "Barcode",
+          "alias": "Barcode",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "barcode",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "StockItemName",
+          "alias": "StockItemName",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "stockItemName",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "InternalComments",
+          "alias": "InternalComments",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "internalComments",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "SearchDetails",
+          "alias": "SearchDetails",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "searchDetails",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "RecommendedRetailPrice",
+          "alias": "RecommendedRetailPrice",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "recommendedRetailPrice",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "CustomFields",
+          "alias": "CustomFields",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "customFields",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "QuantityPerOuter",
+          "alias": "QuantityPerOuter",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "quantityPerOuter",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "UnitPrice",
+          "alias": "UnitPrice",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "unitPrice",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "TaxRate",
+          "alias": "TaxRate",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "taxRate",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "Tags",
+          "alias": "Tags",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "tags",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "ValidTo",
+          "alias": "ValidTo",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "validTo",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "IsChillerStock",
+          "alias": "IsChillerStock",
+          "sql-data-type": "BIT",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "isChillerStock",
+          "neo4j-data-type": "Byte",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "MarketingComments",
+          "alias": "MarketingComments",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "marketingComments",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "ValidFrom",
+          "alias": "ValidFrom",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "validFrom",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "TypicalWeightPerUnit",
+          "alias": "TypicalWeightPerUnit",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "typicalWeightPerUnit",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "Brand",
+          "alias": "Brand",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "brand",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "LeadTimeDays",
+          "alias": "LeadTimeDays",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "leadTimeDays",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "StockItem",
+          "alias": "_NODE_LABEL_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Label"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_f09eb9a9-3e8f-43ba-9414-6d4913640dae",
+    "schema": "WideWorldImporters.Warehouse",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\".\"StockItemStockGroupID\" AS \"StockItemStockGroupID\", \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\".\"LastEditedBy\" AS \"LastEditedBy\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "StockItemStockGroups",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "StockItemStockGroupID",
+              "alias": "StockItemStockGroupID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.warehouse.stockitemstockgroups"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "StockItemStockGroups",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "LastEditedBy",
+              "alias": "LastEditedBy",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_7fc9a331-e816-4d26-9b0a-ed611f981819",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"Orders\".\"OrderID\" AS \"OrderID\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"SalespersonPersonID\" AS \"SalespersonPersonID\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"Orders\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "OrderID",
+              "alias": "OrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.orders"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "SalespersonPersonID",
+              "alias": "SalespersonPersonID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_d44881f0-f1e9-43f4-8042-37f3bce268b3",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"Customers\".\"CustomerID\" AS \"CustomerID\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"LastEditedBy\" AS \"LastEditedBy\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"Customers\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Customers",
+              "schema": "WideWorldImporters.Sales",
+              "name": "CustomerID",
+              "alias": "CustomerID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.customers"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Customers",
+              "schema": "WideWorldImporters.Sales",
+              "name": "LastEditedBy",
+              "alias": "LastEditedBy",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_Orders_81195165-c429-4617-b164-f72b2de24357",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"Orders\".\"OrderID\" AS \"OrderID\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"BackorderOrderID\" AS \"BackorderOrderID\", 'ORDERS' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"Orders\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "OrderID",
+              "alias": "OrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.orders"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "BackorderOrderID",
+              "alias": "BackorderOrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "Orders",
+                "schema": "WideWorldImporters.Sales",
+                "name": "OrderID",
+                "alias": "OrderID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.sales.orders"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "ORDERS",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_e8e86525-52eb-4f09-9735-04b793d04bed",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"Orders\".\"OrderID\" AS \"OrderID\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"ContactPersonID\" AS \"ContactPersonID\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"Orders\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "OrderID",
+              "alias": "OrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.orders"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "ContactPersonID",
+              "alias": "ContactPersonID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_2faad973-f9fe-4f07-bc20-7b8ca5c9c177",
+    "schema": "WideWorldImporters.Warehouse",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Warehouse\".\"StockGroups\".\"StockGroupID\" AS \"StockGroupID\", \"WideWorldImporters\".\"Warehouse\".\"StockGroups\".\"LastEditedBy\" AS \"LastEditedBy\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Warehouse\".\"StockGroups\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "StockGroups",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "StockGroupID",
+              "alias": "StockGroupID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.warehouse.stockgroups"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "StockGroups",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "LastEditedBy",
+              "alias": "LastEditedBy",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "StockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_9ece9be9-667d-43d3-b310-19c72a665f25",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"CustomerTransactionID\" AS \"CustomerTransactionID\", \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"LastEditedBy\" AS \"LastEditedBy\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "CustomerTransactions",
+              "schema": "WideWorldImporters.Sales",
+              "name": "CustomerTransactionID",
+              "alias": "CustomerTransactionID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.customertransactions"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "CustomerTransactions",
+              "schema": "WideWorldImporters.Sales",
+              "name": "LastEditedBy",
+              "alias": "LastEditedBy",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_9ea82b60-d46a-4a05-bec0-602b82deaecc",
+    "schema": "WideWorldImporters.Purchasing",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"SupplierID\" AS \"SupplierID\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"LastEditedBy\" AS \"LastEditedBy\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Purchasing\".\"Suppliers\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Suppliers",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "SupplierID",
+              "alias": "SupplierID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.purchasing.suppliers"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Suppliers",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "LastEditedBy",
+              "alias": "LastEditedBy",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_1fefb4fa-624b-4673-9d62-b5d9a3ef8ee0",
+    "schema": "WideWorldImporters.Purchasing",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"SupplierID\" AS \"SupplierID\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"PrimaryContactPersonID\" AS \"PrimaryContactPersonID\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Purchasing\".\"Suppliers\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Suppliers",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "SupplierID",
+              "alias": "SupplierID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.purchasing.suppliers"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Suppliers",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "PrimaryContactPersonID",
+              "alias": "PrimaryContactPersonID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_StockGroups_64ed4aef-d688-4475-8c14-faeae0e0992a",
+    "schema": "WideWorldImporters.Warehouse",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\".\"StockItemStockGroupID\" AS \"StockItemStockGroupID\", \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\".\"StockGroupID\" AS \"StockGroupID\", 'STOCK_GROUPS' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "StockItemStockGroups",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "StockItemStockGroupID",
+              "alias": "StockItemStockGroupID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.warehouse.stockitemstockgroups"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "StockItemStockGroups",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "StockGroupID",
+              "alias": "StockGroupID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "StockGroups",
+                "schema": "WideWorldImporters.Warehouse",
+                "name": "StockGroupID",
+                "alias": "StockGroupID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.warehouse.stockgroups"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "STOCK_GROUPS",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_StockItems_dbf10308-bb4f-4ac6-ab62-c036ad23562e",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"OrderLineID\" AS \"OrderLineID\", \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"StockItemID\" AS \"StockItemID\", 'STOCK_ITEMS' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"OrderLines\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "OrderLines",
+              "schema": "WideWorldImporters.Sales",
+              "name": "OrderLineID",
+              "alias": "OrderLineID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.orderlines"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "OrderLines",
+              "schema": "WideWorldImporters.Sales",
+              "name": "StockItemID",
+              "alias": "StockItemID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "StockItems",
+                "schema": "WideWorldImporters.Warehouse",
+                "name": "StockItemID",
+                "alias": "StockItemID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.warehouse.stockitems"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "name": "STOCK_ITEMS",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_Orders_df1c6805-c630-403f-943f-4c49b67e8a02",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"OrderLineID\" AS \"OrderLineID\", \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"OrderID\" AS \"OrderID\", 'ORDERS' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"OrderLines\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "OrderLines",
+              "schema": "WideWorldImporters.Sales",
+              "name": "OrderLineID",
+              "alias": "OrderLineID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.orderlines"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "OrderLines",
+              "schema": "WideWorldImporters.Sales",
+              "name": "OrderID",
+              "alias": "OrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "Orders",
+                "schema": "WideWorldImporters.Sales",
+                "name": "OrderID",
+                "alias": "OrderID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.sales.orders"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "name": "ORDERS",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_7389a136-5880-48a7-9892-2e1bb1780bed",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"Customers\".\"CustomerID\" AS \"CustomerID\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"AlternateContactPersonID\" AS \"AlternateContactPersonID\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"Customers\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Customers",
+              "schema": "WideWorldImporters.Sales",
+              "name": "CustomerID",
+              "alias": "CustomerID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.customers"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Customers",
+              "schema": "WideWorldImporters.Sales",
+              "name": "AlternateContactPersonID",
+              "alias": "AlternateContactPersonID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_Customers_c9844227-88f2-417c-81db-36937e4e23d1",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"CustomerTransactionID\" AS \"CustomerTransactionID\", \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\".\"CustomerID\" AS \"CustomerID\", 'CUSTOMERS' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"CustomerTransactions\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "CustomerTransactions",
+              "schema": "WideWorldImporters.Sales",
+              "name": "CustomerTransactionID",
+              "alias": "CustomerTransactionID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.customertransactions"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "CustomerTransactions",
+              "schema": "WideWorldImporters.Sales",
+              "name": "CustomerID",
+              "alias": "CustomerID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "Customers",
+                "schema": "WideWorldImporters.Sales",
+                "name": "CustomerID",
+                "alias": "CustomerID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.sales.customers"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "CustomerTransactions",
+          "schema": "WideWorldImporters.Sales",
+          "name": "CUSTOMERS",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_e95cbb51-f44b-4fad-b7c0-1b271859918b",
+    "schema": "WideWorldImporters.Purchasing",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"PurchaseOrderID\" AS \"PurchaseOrderID\", \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"ContactPersonID\" AS \"ContactPersonID\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "PurchaseOrders",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "PurchaseOrderID",
+              "alias": "PurchaseOrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.purchasing.purchaseorders"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "PurchaseOrders",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "ContactPersonID",
+              "alias": "ContactPersonID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_cd058df8-86a0-4aa8-906f-92db0c8dd669",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"Orders\".\"OrderID\" AS \"OrderID\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"LastEditedBy\" AS \"LastEditedBy\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"Orders\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "OrderID",
+              "alias": "OrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.orders"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "LastEditedBy",
+              "alias": "LastEditedBy",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_StockItems_a9362f12-eaf2-4cc2-afff-5a3c908188ae",
+    "schema": "WideWorldImporters.Warehouse",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\".\"StockItemStockGroupID\" AS \"StockItemStockGroupID\", \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\".\"StockItemID\" AS \"StockItemID\", 'STOCK_ITEMS' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Warehouse\".\"StockItemStockGroups\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "StockItemStockGroups",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "StockItemStockGroupID",
+              "alias": "StockItemStockGroupID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.warehouse.stockitemstockgroups"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "StockItemStockGroups",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "StockItemID",
+              "alias": "StockItemID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "StockItems",
+                "schema": "WideWorldImporters.Warehouse",
+                "name": "StockItemID",
+                "alias": "StockItemID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.warehouse.stockitems"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "StockItemStockGroups",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "STOCK_ITEMS",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_Customers_9fb45881-4a6a-4011-8ece-551af4971f4e",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"Orders\".\"OrderID\" AS \"OrderID\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"CustomerID\" AS \"CustomerID\", 'CUSTOMERS' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"Orders\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "OrderID",
+              "alias": "OrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.orders"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "CustomerID",
+              "alias": "CustomerID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "Customers",
+                "schema": "WideWorldImporters.Sales",
+                "name": "CustomerID",
+                "alias": "CustomerID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.sales.customers"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "CUSTOMERS",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_6dd11ddd-4ea1-4a42-af9a-1df8c049156b",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"OrderLineID\" AS \"OrderLineID\", \"WideWorldImporters\".\"Sales\".\"OrderLines\".\"LastEditedBy\" AS \"LastEditedBy\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"OrderLines\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "OrderLines",
+              "schema": "WideWorldImporters.Sales",
+              "name": "OrderLineID",
+              "alias": "OrderLineID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.orderlines"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "OrderLines",
+              "schema": "WideWorldImporters.Sales",
+              "name": "LastEditedBy",
+              "alias": "LastEditedBy",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "OrderLines",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_Customers_fb727152-3be7-44ec-b503-377df9206f99",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"Customers\".\"CustomerID\" AS \"CustomerID\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"BillToCustomerID\" AS \"BillToCustomerID\", 'CUSTOMERS' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"Customers\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Customers",
+              "schema": "WideWorldImporters.Sales",
+              "name": "CustomerID",
+              "alias": "CustomerID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.customers"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Customers",
+              "schema": "WideWorldImporters.Sales",
+              "name": "BillToCustomerID",
+              "alias": "BillToCustomerID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "Customers",
+                "schema": "WideWorldImporters.Sales",
+                "name": "CustomerID",
+                "alias": "CustomerID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.sales.customers"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "CUSTOMERS",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_1bc2a7dd-4964-4d09-ab32-00c62056bd8a",
+    "schema": "WideWorldImporters.Purchasing",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"PurchaseOrderID\" AS \"PurchaseOrderID\", \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"LastEditedBy\" AS \"LastEditedBy\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "PurchaseOrders",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "PurchaseOrderID",
+              "alias": "PurchaseOrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.purchasing.purchaseorders"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "PurchaseOrders",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "LastEditedBy",
+              "alias": "LastEditedBy",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_6925960b-9913-433a-b216-95e45d08015f",
+    "schema": "WideWorldImporters.Purchasing",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"SupplierID\" AS \"SupplierID\", \"WideWorldImporters\".\"Purchasing\".\"Suppliers\".\"AlternateContactPersonID\" AS \"AlternateContactPersonID\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Purchasing\".\"Suppliers\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Suppliers",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "SupplierID",
+              "alias": "SupplierID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.purchasing.suppliers"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Suppliers",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "AlternateContactPersonID",
+              "alias": "AlternateContactPersonID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Suppliers",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_0a9ba6ad-2c22-4733-b401-bc94386e92e0",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"Orders\".\"OrderID\" AS \"OrderID\", \"WideWorldImporters\".\"Sales\".\"Orders\".\"PickedByPersonID\" AS \"PickedByPersonID\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"Orders\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "OrderID",
+              "alias": "OrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.orders"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Orders",
+              "schema": "WideWorldImporters.Sales",
+              "name": "PickedByPersonID",
+              "alias": "PickedByPersonID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Orders",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_Suppliers_09a502b6-8ccf-4969-83f8-dbc78889ed7b",
+    "schema": "WideWorldImporters.Purchasing",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"PurchaseOrderID\" AS \"PurchaseOrderID\", \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\".\"SupplierID\" AS \"SupplierID\", 'SUPPLIERS' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Purchasing\".\"PurchaseOrders\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "PurchaseOrders",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "PurchaseOrderID",
+              "alias": "PurchaseOrderID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.purchasing.purchaseorders"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "PurchaseOrders",
+              "schema": "WideWorldImporters.Purchasing",
+              "name": "SupplierID",
+              "alias": "SupplierID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "Suppliers",
+                "schema": "WideWorldImporters.Purchasing",
+                "name": "SupplierID",
+                "alias": "SupplierID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.purchasing.suppliers"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "PurchaseOrders",
+          "schema": "WideWorldImporters.Purchasing",
+          "name": "SUPPLIERS",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_Suppliers_0f3254fd-1605-4b8b-a59f-143604e25079",
+    "schema": "WideWorldImporters.Warehouse",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"StockItemID\" AS \"StockItemID\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"SupplierID\" AS \"SupplierID\", 'SUPPLIERS' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Warehouse\".\"StockItems\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "StockItems",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "StockItemID",
+              "alias": "StockItemID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.warehouse.stockitems"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "StockItems",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "SupplierID",
+              "alias": "SupplierID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "Suppliers",
+                "schema": "WideWorldImporters.Purchasing",
+                "name": "SupplierID",
+                "alias": "SupplierID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.purchasing.suppliers"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "SUPPLIERS",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_fbf49009-2b57-4273-ae4c-69b699430945",
+    "schema": "WideWorldImporters.Warehouse",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"StockItemID\" AS \"StockItemID\", \"WideWorldImporters\".\"Warehouse\".\"StockItems\".\"LastEditedBy\" AS \"LastEditedBy\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Warehouse\".\"StockItems\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "StockItems",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "StockItemID",
+              "alias": "StockItemID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.warehouse.stockitems"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "StockItems",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "LastEditedBy",
+              "alias": "LastEditedBy",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "StockItems",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_9742a15a-d3d8-4a0a-a28e-726f0be78d35",
+    "schema": "WideWorldImporters.Application",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Application\".\"People\".\"PersonID\" AS \"PersonID\", \"WideWorldImporters\".\"Application\".\"People\".\"LastEditedBy\" AS \"LastEditedBy\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Application\".\"People\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "People",
+              "schema": "WideWorldImporters.Application",
+              "name": "PersonID",
+              "alias": "PersonID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "People",
+              "schema": "WideWorldImporters.Application",
+              "name": "LastEditedBy",
+              "alias": "LastEditedBy",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "People",
+          "schema": "WideWorldImporters.Application",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_People_a12d8bff-7490-4acc-92ba-e88b1583cd71",
+    "schema": "WideWorldImporters.Sales",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Sales\".\"Customers\".\"CustomerID\" AS \"CustomerID\", \"WideWorldImporters\".\"Sales\".\"Customers\".\"PrimaryContactPersonID\" AS \"PrimaryContactPersonID\", 'PEOPLE' AS \"_RELATIONSHIP_TYPE_\" FROM \"WideWorldImporters\".\"Sales\".\"Customers\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "role": "PrimaryKey",
+          "columns": [
+            {
+              "type": "SimpleColumn",
+              "role": "Data",
+              "table": "Customers",
+              "schema": "WideWorldImporters.Sales",
+              "name": "CustomerID",
+              "alias": "CustomerID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue"
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.sales.customers"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "Customers",
+              "schema": "WideWorldImporters.Sales",
+              "name": "PrimaryContactPersonID",
+              "alias": "PrimaryContactPersonID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "Customers",
+          "schema": "WideWorldImporters.Sales",
+          "name": "PEOPLE",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      }
+    ]
+  },
+  {
+    "name": "REL_STOCKITEMHOLDINGS_5a8924cf-4e07-4c24-8727-c3a44c7ffe00",
+    "schema": "WideWorldImporters.Warehouse",
+    "graph-object-type": "Relationship",
+    "sql": "SELECT \"WideWorldImporters\".\"Warehouse\".\"StockItemHoldings\".\"LastEditedBy\" AS \"LastEditedBy\", \"WideWorldImporters\".\"Warehouse\".\"StockItemHoldings\".\"StockItemID\" AS \"StockItemID\", 'STOCK_ITEM_HOLDINGS' AS \"_RELATIONSHIP_TYPE_\", \"WideWorldImporters\".\"Warehouse\".\"StockItemHoldings\".\"QuantityOnHand\" AS \"QuantityOnHand\", \"WideWorldImporters\".\"Warehouse\".\"StockItemHoldings\".\"LastEditedWhen\" AS \"LastEditedWhen\", \"WideWorldImporters\".\"Warehouse\".\"StockItemHoldings\".\"LastStocktakeQuantity\" AS \"LastStocktakeQuantity\", \"WideWorldImporters\".\"Warehouse\".\"StockItemHoldings\".\"BinLocation\" AS \"BinLocation\", \"WideWorldImporters\".\"Warehouse\".\"StockItemHoldings\".\"LastCostPrice\" AS \"LastCostPrice\", \"WideWorldImporters\".\"Warehouse\".\"StockItemHoldings\".\"ReorderLevel\" AS \"ReorderLevel\", \"WideWorldImporters\".\"Warehouse\".\"StockItemHoldings\".\"TargetStockLevel\" AS \"TargetStockLevel\" FROM \"WideWorldImporters\".\"Warehouse\".\"StockItemHoldings\"",
+    "mappings": [
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItemHoldings",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "StockItemHoldings",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "LastEditedBy",
+              "alias": "LastEditedBy",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "People",
+                "schema": "WideWorldImporters.Application",
+                "name": "PersonID",
+                "alias": "PersonID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "StartId",
+          "id-space": "wideworldimporters.application.people"
+        }
+      },
+      {
+        "column": {
+          "type": "CompositeColumn",
+          "table": "StockItemHoldings",
+          "schema": "WideWorldImporters.Warehouse",
+          "role": "ForeignKey",
+          "columns": [
+            {
+              "type": "JoinColumn",
+              "role": "Data",
+              "table": "StockItemHoldings",
+              "schema": "WideWorldImporters.Warehouse",
+              "name": "StockItemID",
+              "alias": "StockItemID",
+              "sql-data-type": "INTEGER",
+              "column-value-selection-strategy": "SelectColumnValue",
+              "referenced-column": {
+                "type": "SimpleColumn",
+                "role": "Data",
+                "table": "StockItems",
+                "schema": "WideWorldImporters.Warehouse",
+                "name": "StockItemID",
+                "alias": "StockItemID",
+                "sql-data-type": "INTEGER",
+                "column-value-selection-strategy": "SelectColumnValue"
+              }
+            }
+          ]
+        },
+        "field": {
+          "type": "EndId",
+          "id-space": "wideworldimporters.warehouse.stockitems"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Literal",
+          "table": "StockItemHoldings",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "STOCK_ITEM_HOLDINGS",
+          "alias": "_RELATIONSHIP_TYPE_",
+          "sql-data-type": "VARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "RelationshipType"
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItemHoldings",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "QuantityOnHand",
+          "alias": "QuantityOnHand",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "quantityOnHand",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItemHoldings",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "LastEditedWhen",
+          "alias": "LastEditedWhen",
+          "sql-data-type": "TIMESTAMP",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "lastEditedWhen",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItemHoldings",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "LastStocktakeQuantity",
+          "alias": "LastStocktakeQuantity",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "lastStocktakeQuantity",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItemHoldings",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "BinLocation",
+          "alias": "BinLocation",
+          "sql-data-type": "NVARCHAR",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "binLocation",
+          "neo4j-data-type": "String",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItemHoldings",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "LastCostPrice",
+          "alias": "LastCostPrice",
+          "sql-data-type": "DECIMAL",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "lastCostPrice",
+          "neo4j-data-type": "Double",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItemHoldings",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "ReorderLevel",
+          "alias": "ReorderLevel",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "reorderLevel",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      },
+      {
+        "column": {
+          "type": "SimpleColumn",
+          "role": "Data",
+          "table": "StockItemHoldings",
+          "schema": "WideWorldImporters.Warehouse",
+          "name": "TargetStockLevel",
+          "alias": "TargetStockLevel",
+          "sql-data-type": "INTEGER",
+          "column-value-selection-strategy": "SelectColumnValue"
+        },
+        "field": {
+          "type": "Data",
+          "name": "targetStockLevel",
+          "neo4j-data-type": "Long",
+          "is-array": false
+        }
+      }
+    ]
+  }
+]

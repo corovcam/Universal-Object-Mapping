@@ -73,7 +73,7 @@ async def load_database_tools() -> AsyncGenerator[list[BaseTool], None]:
             "args": ["-y", "mongodb-mcp-server@latest", "--readOnly"],
             "env": {
                 "MDB_MCP_CONNECTION_STRING": runtime.context.mongodb_uri,
-                "MDB_MCP_DISABLED_TOOLS": "create,update,delete",
+                "MDB_MCP_DISABLED_TOOLS": "create,update,delete,switch-connection,atlas-local-list-deployments,atlas-local-create-deployment,atlas-local-connect-deployment,atlas-local-delete-deployment,list-knowledge-sources,search-knowledge,export,collection-storage-size,collection-indexes,db-stats,mongodb-logs,connect",
             },
             # "disabledTools": [
             #     "switch-connection",
@@ -81,6 +81,14 @@ async def load_database_tools() -> AsyncGenerator[list[BaseTool], None]:
             #     "atlas-local-create-deployment",
             #     "atlas-local-connect-deployment",
             #     "atlas-local-delete-deployment",
+            #     "list-knowledge-sources",
+            #     "search-knowledge",
+            #     "export",
+            #     "collection-storage-size",
+            #     "collection-indexes",
+            #     "db-stats",
+            #     "mongodb-logs",
+            #     "connect",
             # ],
         }
     }
