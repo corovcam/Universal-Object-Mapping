@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from langchain_core.callbacks.base import BaseCallbackHandler
 from pythonjsonlogger.orjson import OrjsonFormatter as JsonFormatter
-from typing_extensions import override
 
 if TYPE_CHECKING:
     from langchain_core.agents import AgentAction, AgentFinish
