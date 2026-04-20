@@ -15,7 +15,11 @@ log_file="logs/neo4j-etl-tool_$timestamp.log"
 # then you need to stop the Neo4j instance first (sometimes twice in a row):
 # `neo4j stop`
 
+# TODO: export mapping_file from Neo4j Desktop ETL tool UI config directory automatically; save it to ../../orchestrator/src/context directory in the end 
+# TODO: add mapping_file, database credentials, etc. as parameters to the script instead of hardcoding them here
 container_name="universal-object-mapping-neo4j-1"
+mapping_file="mssql_WideWorldImporters_mapping.json"
+
 etl_container_path="/neo4j-etl"
 output_dir="$etl_container_path/csv-output/$timestamp"
 mssql_jdbc_driver_path="$etl_container_path/sqljdbc_13.4/enu/jars/mssql-jdbc-13.4.0.jre11.jar"
@@ -29,7 +33,7 @@ docker exec -u 0 -it "$container_name" cp -f "$mssql_jdbc_driver_path" "$etl_con
 # Step 1: Export from SQL Server to CSV using neo4j-etl inside the container
 echo "[$(date +"%Y-%m-%d %T")] Neo4j ETL Export started" |& tee -a "$log_file"
 docker exec -u 0 -w "$etl_container_path" -it "$container_name" ./neo4j-etl-cli-1.6.0/bin/neo4j-etl export \
-  --mapping-file mssql_WideWorldImporters_mapping.json \
+  --mapping-file "$mapping_file" \
   --rdbms:password Testingorms123 \
   --rdbms:user sa \
   --rdbms:url "jdbc:sqlserver://mssql_db:1433;databaseName=WideWorldImporters;encrypt=false;trustServerCertificate=true" \
@@ -72,6 +76,9 @@ docker exec -u 0 -it "$container_name" /var/lib/neo4j/bin/neo4j-admin database i
   exit 1
 }
 echo "[$(date +"%Y-%m-%d %T")] Neo4j ETL process finished successfully" |& tee -a "$log_file"
+
+cp "$mapping_file" "../../orchestrator/src/context/mssql_neo4j.json" 2>&1 | tee -a "$log_file" || echo "[$(date +"%Y-%m-%d %T")] Warning: Failed to copy mapping file to orchestrator context directory. Please copy it manually."
+echo "[$(date +"%Y-%m-%d %T")] Mapping file copied to orchestrator context directory" |& tee -a "$log_file"
 
 # Step 5: Restart the database
 echo "[$(date +"%Y-%m-%d %T")] Restarting Neo4j database..." |& tee -a "$log_file"
