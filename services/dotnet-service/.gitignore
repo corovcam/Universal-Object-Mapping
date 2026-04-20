@@ -489,3 +489,5 @@ $RECYCLE.BIN/
 # Custom
 *.dll
 .vs/
+
+sandbox/
