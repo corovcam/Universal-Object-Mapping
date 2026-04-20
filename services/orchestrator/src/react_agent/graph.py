@@ -24,7 +24,6 @@ from langchain_core.runnables import RunnableConfig
 from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 from langgraph.cache.memory import InMemoryCache
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.store.memory import InMemoryStore
@@ -32,7 +31,6 @@ from langgraph.types import CachePolicy, RetryPolicy
 from pydantic import BaseModel, Field
 
 from react_agent.context import AvailableModel, Context
-from react_agent.custom_tools.docs_search import load_docs_mcp_tools
 from react_agent.custom_tools.mcp_database import load_database_tools
 from react_agent.prompts import (
     SYSTEM_PROMPT_EXTRACTION,
@@ -47,14 +45,19 @@ from react_agent.state import (
     TranslationType,
 )
 from react_agent.tools import TOOLS
-from react_agent.utils import get_database_mapping_json, get_model
+from react_agent.utils import (
+    LoggingCallbackHandler,
+    get_database_mapping_json,
+    get_message_text,
+    get_model,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class ExtractionOutput(BaseModel):
     """Structured output for identifying user intent from messages."""
-
+    
     # source_code: str = Field(
     #     description="The source code snippet and/or query mapped by the user.",
     #     min_length=1,
@@ -120,13 +123,27 @@ async def extract_input(
     if is_input_extracted(state):
         return {}
 
-    model = await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B)
-    structured_llm = model.with_structured_output(ExtractionOutput)
+    # model = await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B)
+    # structured_llm = model.with_structured_output(ExtractionOutput)
 
     system_prompt = SYSTEM_PROMPT_EXTRACTION.format(
         system_time=datetime.now(tz=UTC).isoformat(),
         origin_frameworks=[f.value for f in FrameworkType],
         destination_frameworks=[f.value for f in FrameworkType],
+    )
+    
+    extraction_agent = create_agent(
+        await get_model(config, runtime, AvailableModel.EINFRA_QWEN3_CODER_30B),
+        system_prompt=system_prompt,
+        response_format=ExtractionOutput,
+        middleware=[
+            ModelRetryMiddleware(),
+            ModelFallbackMiddleware(
+                await get_model(config, runtime, AvailableModel.EINFRA_MINI),
+                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B),
+            ),
+        ],
+        # debug=True if os.getenv("DEVELOPMENT") else False,
     )
     already_extracted = {
         "source_schema_code": state.source_schema_code,
@@ -145,10 +162,15 @@ Already extracted:
 Conversation:
 {state.messages[-1].content}"""
 
-    extraction = await structured_llm.ainvoke(
-        [SystemMessage(content=system_prompt), HumanMessage(content=prompt)]
+    response = await extraction_agent.ainvoke(
+        {"messages": [HumanMessage(content=prompt)]}
     )
-    assert isinstance(extraction, ExtractionOutput)
+    
+    if "structured_response" not in response:
+        logger.warning("Extraction agent did not return structured response.")
+        return {}
+    
+    extraction: ExtractionOutput = response["structured_response"]
 
     return {
         "source_schema_code": extraction.source_schema_code,
@@ -214,15 +236,16 @@ async def schema_inspection(
                 ),
                 # SummarizationMiddleware(model, trigger=("fraction", 0.8)),
             ],
-            debug=True if os.getenv("DEVELOPMENT") else False,
+            # debug=True if os.getenv("DEVELOPMENT") else False,
         )
 
         message = f"""Inspect the database schemas relevant to translating code from {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 
-{f"Mapping from {database_mapping['source']} to {database_mapping['destination']}:\n<database_mapping>{database_mapping['mapping']}</database_mapping>\n" if database_mapping else ""}
+{f"Mapping from {database_mapping['source']} to {database_mapping['destination']}:\n<database_mapping>\n{json.dumps(database_mapping['mapping'])}\n</database_mapping>\n" if database_mapping else ""}
+
 Source code being translated:
-{f"<schema_code>{state.source_schema_code}</schema_code>\n" if state.source_schema_code else ""}
-{f"<query_code>{state.source_query_code}</query_code>" if state.source_query_code else ""}"""  # ty:ignore[unresolved-attribute]
+{f"<schema_code>\n{state.source_schema_code}\n</schema_code>\n" if state.source_schema_code else ""}
+{f"<query_code>\n{state.source_query_code}\n</query_code>\n" if state.source_query_code else ""}"""  # ty:ignore[unresolved-attribute]
 
         try:
             response = await agent.ainvoke(
@@ -290,79 +313,72 @@ async def translation_agent(
     """
     model = await get_model(config, runtime)
 
-    async with load_database_tools() as db_tools:
-        all_tools = TOOLS + db_tools
+    all_tools = TOOLS
 
-        system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
-            origin_frameworks=[f.value for f in FrameworkType],
-            destination_frameworks=[f.value for f in FrameworkType],
-            system_time=datetime.now(tz=UTC).isoformat(),
-        )
+    system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
+        origin_frameworks=[f.value for f in FrameworkType],
+        destination_frameworks=[f.value for f in FrameworkType],
+        system_time=datetime.now(tz=UTC).isoformat(),
+    )
 
-        # Create the ReAct agent
-        agent = create_agent(
-            model,
-            tools=all_tools,
-            response_format=TranslationOutput,
-            system_prompt=system_prompt,
-            middleware=[
-                ModelRetryMiddleware(),
-                ModelFallbackMiddleware(
-                    await get_model(config, runtime, AvailableModel.EINFRA_GLM_5),
-                    await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC),
-                    await get_model(
-                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
-                    ),
+    # Create the ReAct agent
+    agent = create_agent(
+        model,
+        tools=all_tools,
+        response_format=TranslationOutput,
+        system_prompt=system_prompt,
+        middleware=[
+            ModelRetryMiddleware(),
+            ModelFallbackMiddleware(
+                await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_5),
+                await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC),
+                await get_model(
+                    config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
                 ),
-                ToolRetryMiddleware(),
-                # LLMToolSelectorMiddleware(
-                #     model=await get_model(
-                #         config, runtime, AvailableModel.EINFRA_QWEN3_5
-                #     ),
-                # ),
-                ContextEditingMiddleware(
-                    edits=[
-                        ClearToolUsesEdit(
-                            trigger=100000,
-                            keep=3,
-                        )
-                    ]
-                ),
-                # SummarizationMiddleware(model, trigger=("fraction", 0.8)),
-                LLMToolEmulator(
-                    tools=["dotnet_validator"],
-                    model=await get_model(
-                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
-                    ),
-                ),
-            ],
-            debug=True if os.getenv("DEVELOPMENT") else False,
-        )
+            ),
+            ToolRetryMiddleware(),
+            # LLMToolSelectorMiddleware(
+            #     model=await get_model(
+            #         config, runtime, AvailableModel.EINFRA_QWEN3_5
+            #     ),
+            # ),
+            ContextEditingMiddleware(
+                edits=[
+                    ClearToolUsesEdit(
+                        trigger=100000,
+                        keep=3,
+                    )
+                ]
+            ),
+            # SummarizationMiddleware(model, trigger=("fraction", 0.8)),
+            # LLMToolEmulator(
+            #     tools=["validate_java_code", "dotnet_validator", "validate_source_query", "validate_target_query", "check_query_equivalence"],
+            #     model=await get_model(config, runtime, AvailableModel.EINFRA_MINI),
+            # ),
+        ],
+        # debug=True if os.getenv("DEVELOPMENT") else False,
+    )
 
-        strategies = "\n".join([r.get("strategy", "") for r in state.council_responses])
+    strategies = "\n".join([r.get("strategy", "") for r in state.council_responses])
 
-        message = f"""Translate the following Source Code from {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
-
-{f"Strategies to consider:\n{strategies}\n" if strategies else ""}
-{f"Database Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}
----
+    message = f"""Translate the following Source Code ({"schema/query" if state.translation_type.value == TranslationType.BOTH else state.translation_type.value}) from {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
+{f"\nStrategies to consider:\n{strategies}\n" if strategies else ""}{f"\nDatabase Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}---
 
 Source Code:
-{f"Schema:\n{state.source_schema_code}\n" if state.source_schema_code else ""}
-{f"Query:\n{state.source_query_code}" if state.source_query_code else ""}
+{f"<source_schema_code>\n{state.source_schema_code.strip()}\n</source_schema_code>" if state.source_schema_code else ""}{f"\n<source_query_code>\n{state.source_query_code.strip()}\n</source_query_code>" if state.source_query_code else ""}
 """  # ty:ignore[unresolved-attribute]
-        # summarization_middleware = SummarizationMiddleware(model, trigger=("messages", 1))
-        # summarized_messages: dict[str, Any] | None = await summarization_middleware.abefore_model(AgentState(messages=[*state.translation_messages]), Runtime())
+    # summarization_middleware = SummarizationMiddleware(model, trigger=("messages", 1))
+    # summarized_messages: dict[str, Any] | None = await summarization_middleware.abefore_model(AgentState(messages=[*state.translation_messages]), Runtime())
 
-        # Invoke the agent. It manages its own messages and tool calls loops.
-        response = await agent.ainvoke(
-            {
-                "messages": [*state.translation_messages]
-                if len(state.translation_messages) > 0
-                else [HumanMessage(content=message)]
-            }
-        )
-        logger.debug("Translation response: %s", response)
+    # Invoke the agent. It manages its own messages and tool calls loops.
+    response = await agent.ainvoke(
+        {
+            "messages": [*state.translation_messages]
+            if len(state.translation_messages) > 0
+            else [HumanMessage(content=message)]
+        }
+    )
+    logger.debug("Translation response: %s", response)
 
     if "structured_response" not in response:
         logger.warning("No structured response available.")
@@ -386,6 +402,7 @@ Source Code:
 
 
 def should_extract_input(state: State) -> Literal["schema_inspection", "extract_input"]:
+    """Route execution to extraction until mandatory input fields are present."""
     if is_input_extracted(state):
         return "schema_inspection"
     else:
@@ -437,21 +454,21 @@ builder = StateGraph(
 )
 
 
-builder.add_node(extract_input, retry_policy=RetryPolicy(max_attempts=3))
+builder.add_node(extract_input, retry_policy=RetryPolicy(max_attempts=3)) # type: ignore
 builder.add_node(
-    schema_inspection,
+    schema_inspection, # type: ignore
     cache_policy=CachePolicy(ttl=300),
     retry_policy=RetryPolicy(max_attempts=3),
 )
 # builder.add_node("council_of_models", council_of_models)
 builder.add_node(
-    translation_agent,
+    translation_agent, # type: ignore
     cache_policy=CachePolicy(ttl=300),
     retry_policy=RetryPolicy(max_attempts=3),
 )
 
 builder.add_conditional_edges(START, should_extract_input)
-builder.add_edge("extract_input", "schema_inspection")
+builder.add_conditional_edges("extract_input", should_extract_input)
 # builder.add_edge("schema_inspection", "council_of_models")
 # builder.add_edge("council_of_models", "translation_agent")
 builder.add_edge("schema_inspection", "translation_agent")
@@ -462,7 +479,9 @@ graph = builder.compile(
     # checkpointer=checkpointer,
     # store=store,
     cache=cache,
-    debug=True if os.getenv("DEVELOPMENT") else False,
-).with_config({"callbacks": [langfuse_handler]})
+    # debug=True if os.getenv("DEVELOPMENT") else False,
+).with_config({"callbacks": [langfuse_handler, LoggingCallbackHandler()]})
 
-logger.info(graph.get_graph().draw_mermaid())
+# logger.info(graph.get_graph().draw_mermaid())
+if (os.getenv("DEVELOPMENT")):
+    logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
