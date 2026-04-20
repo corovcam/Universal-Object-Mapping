@@ -9,8 +9,17 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.3" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.1.4" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.1" />
+    <PackageReference Include="Dapper" Version="2.1.66" />
+    <PackageReference Include="NHibernate" Version="5.5.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="sandbox/**/*.cs" />
+    <Content Remove="sandbox/**/*" />
+    <None Remove="sandbox/**/*" />
   </ItemGroup>
 
 </Project>
