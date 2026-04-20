@@ -14,13 +14,13 @@ dev:
 
 debug:
 	powershell -ExecutionPolicy Bypass -File scripts/load_env.ps1 .env.dev
-	langgraph dev --debug-port 5678 --allow-blocking
+	langgraph dev --debug-port 5678 --wait-for-client --allow-blocking
 else
 dev:
 	langgraph dev
 
 debug:
-	langgraph dev --debug-port 5678
+	langgraph dev --debug-port 5678 --wait-for-client
 endif
 
 ######################
