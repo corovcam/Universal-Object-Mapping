@@ -8,6 +8,9 @@ all: help
 ######################
 
 ifeq ($(OS),Windows_NT)
+install:
+	uv sync --all-extras
+
 dev:
 	powershell -ExecutionPolicy Bypass -File scripts/load_env.ps1 .env.dev
 	langgraph dev --allow-blocking
@@ -16,6 +19,11 @@ debug:
 	powershell -ExecutionPolicy Bypass -File scripts/load_env.ps1 .env.dev
 	langgraph dev --debug-port 5678 --wait-for-client --allow-blocking
 else
+install:
+	uv sync --all-extras
+	./scripts/setup_env.sh
+	./scripts/install_logdy.sh
+
 dev:
 	langgraph dev
 
@@ -86,7 +94,11 @@ spell_fix:
 
 help:
 	@echo '----'
+	@echo 'install										  - setup development environment and install dependencies'
+	@echo 'dev													- start development server'
+	@echo 'debug												- start development server in debug mode'
 	@echo 'format                       - run code formatters'
+	@echo 'type_check                   - run type checker'
 	@echo 'lint                         - run linters'
 	@echo 'test                         - run unit tests'
 	@echo 'tests                        - run unit tests'
