@@ -10,13 +10,13 @@ from unittest.mock import MagicMock
 import pytest
 from langchain_core.runnables import RunnableConfig
 
+from react_agent.constants import FrameworkType
 from react_agent.graph import (
-    council_of_models,
     extract_input,
     graph,
     schema_inspection,
 )
-from react_agent.state import FrameworkType, State
+from react_agent.state import State
 
 pytestmark = pytest.mark.anyio
 
@@ -35,8 +35,10 @@ class TestGraphStructure:
         for expected in [
             "extract_input",
             "schema_inspection",
-            "council_of_models",
-            "translation_agent",
+            "generate_translation_node",
+            "validate_schema_node",
+            "validate_query_node",
+            "human_intervention_node"
         ]:
             assert expected in nodes, f"Missing node: {expected}"
 
@@ -45,10 +47,10 @@ class TestGraphStructure:
         assert nodes[0] == "__start__"
         assert "extract_input" in nodes
 
-    def test_schema_inspection_before_council(self):
+    def test_schema_inspection_before_translation(self):
         nodes = list(graph.nodes.keys())
-        assert nodes.index("schema_inspection") < nodes.index("council_of_models"), (
-            "schema_inspection should precede council_of_models"
+        assert nodes.index("schema_inspection") < nodes.index("generate_translation_node"), (
+            "schema_inspection should precede generate_translation_node"
         )
 
     def test_edge_topology(self):
@@ -57,8 +59,9 @@ class TestGraphStructure:
         expected_order = [
             "extract_input",
             "schema_inspection",
-            "council_of_models",
-            "translation_agent",
+            "generate_translation_node",
+            "validate_schema_node",
+            "validate_query_node"
         ]
         indices = [nodes.index(n) for n in expected_order]
         assert indices == sorted(indices), f"Node order mismatch: {indices}"
@@ -88,8 +91,8 @@ class TestExtractInput:
         """
         result = await extract_input(empty_state, runnable_config, runtime)
 
-        assert "source_code" in result
-        assert len(result["source_code"]) > 0
+        assert "source_schema_code" in result
+        assert len(result["source_schema_code"]) > 0
 
         assert "source_target" in result
         assert isinstance(result["source_target"], FrameworkType)
@@ -116,35 +119,6 @@ class TestSchemaInspection:
         assert "schema_context" in result
         assert isinstance(result["schema_context"], str)
         assert len(result["schema_context"]) > 0
-
-
-# ── council_of_models Node ──────────────────────────────────────────────────
-
-
-class TestCouncilOfModels:
-    """Tests for the council_of_models node function."""
-
-    @pytest.mark.integration
-    async def test_returns_strategies(
-        self, sample_state: State, runnable_config: RunnableConfig, runtime: MagicMock
-    ):
-        """Council returns at least one valid strategy response."""
-        # Pre-fill schema_context so the council has something to work with
-        sample_state.schema_context = (
-            "Source: MSSQL with Customers/Orders tables. Target: MongoDB collections."
-        )
-
-        result = await council_of_models(sample_state, runnable_config, runtime)
-
-        assert "council_responses" in result
-        assert isinstance(result["council_responses"], list)
-        # At least one model should succeed
-        assert len(result["council_responses"]) >= 1
-
-        for resp in result["council_responses"]:
-            assert "model" in resp
-            assert "strategy" in resp
-            assert len(resp["strategy"]) > 0
 
 
 # ── Partial Graph Execution ─────────────────────────────────────────────────
@@ -174,7 +148,7 @@ class TestPartialGraphExecution:
             _result = await g.ainvoke(
                 {
                     "messages": empty_state.messages,
-                    "source_code": empty_state.source_code,
+                    "source_schema_code": empty_state.source_schema_code,
                     "source_target": empty_state.source_target,
                     "destination_target": empty_state.destination_target,
                 },

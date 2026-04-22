@@ -51,22 +51,18 @@ class InputState:
 
 @dataclass
 class OutputState:
-    """Defines the output state for the agent, representing a narrower interface to the outside world.
+    """Defines the output state for the graph, representing a narrower interface to the outside world.
 
     This class is used to define the final state and structure of outgoing data.
     """
 
     translated_schema_code: str | None = field(default=None)
     translated_query_code: str | None = field(default=None)
-    validation_sort_by_field: str | None = field(default=None)
-    validation_entry_type_name: str | None = field(default=None)
-    validation_entry_method_name: str | None = field(default=None)
-    source_validation_harness_code: str | None = field(default=None)
-    translation_loop_count: int = field(default=0)
+
 
 @dataclass
 class State(InputState, OutputState):
-    """Represents the complete state of the agent, extending InputState with additional attributes.
+    """Represents the complete state of the graph, extending InputState with additional attributes.
 
     This class can be used to store any information needed throughout the agent's lifecycle.
     """
@@ -86,3 +82,10 @@ class State(InputState, OutputState):
         default_factory=list
     )
     validation_harness_code: str | None = field(default=None)
+    validation_sort_by_field: str | None = field(default=None)
+    validation_entry_type_name: str | None = field(default=None)
+    validation_entry_method_name: str | None = field(default=None)
+    source_validation_harness_code: str | None = field(default=None)
+    source_validation_schema_code: str | None = field(default=None)
+    validation_schema_code: str | None = field(default=None)
+    translation_loop_count: int = field(default=0)

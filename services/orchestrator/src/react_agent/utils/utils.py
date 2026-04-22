@@ -203,9 +203,10 @@ async def load_chat_model(
                 if base_url:
                     base_url = base_url.rstrip("/")
                     url = f"{base_url}/model/info"
-                    headers = {
-                        "Authorization": f"Bearer {config.get('openai_api_key', '')}"
-                    }
+                    headers = {}
+                    api_key = config.get("openai_api_key")
+                    if api_key:
+                        headers["Authorization"] = f"Bearer {api_key}"
                     async with httpx.AsyncClient() as client:
                         response = await client.get(
                             url,

@@ -106,14 +106,54 @@ class TargetQueryInput(BaseModel):
 
     validation_schema_code: str = Field(
         min_length=1,
-        description="Java schema code only with .",
+        description="Java schema code only with ."
+        + """
+<example framework="MongoDb">
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+
+@Document(collection = "customers")
+class Customer {
+    @Id
+    private String id;
+    
+    @Field("customerId")
+    private Integer customerId;
+    
+    @Field("customerName")
+    private String customerName;
+}
+</example>""",
     )
     validation_harness_code: str = Field(
         min_length=1,
         description=(
             "Java query validation harness code only. Place validator-only setup/wiring here (template/bootstrap/count) while "
             "keeping translated_query_code focused on the production query method."
-        ),
+        )
+        + """
+<example framework="MongoDb">
+import java.util.Date;
+import java.util.Map;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+
+class QueryValidationHarness {
+   static Map<String, Object> build(MongoTemplate mongoTemplate) {
+      Date from = new Date(2014, 12, 20);
+      Date to = new Date(2014, 12, 31);
+      Query query = Query.query(Criteria.where("pickingCompletedWhen").gte(from).lte(to));
+      Query countQuery = Query.of(query).limit(-1).skip(-1);
+      return Map.of(
+         "query", query,
+         "countQuery", countQuery,
+         "collection", "orderLines"
+      );
+   }
+}
+</example>""",
     )
     framework: TargetFramework = Field(description="Target query framework")
     sort_by_field: str = Field(
