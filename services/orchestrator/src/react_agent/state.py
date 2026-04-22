@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Sequence
 
 from langchain_core.messages import AnyMessage
@@ -11,35 +10,7 @@ from langgraph.graph import add_messages
 from langgraph.managed import IsLastStep
 from typing_extensions import Annotated
 
-
-class FrameworkType(str, Enum):
-    """Supported Object-Relational/Document Mapping targets."""
-
-    EFCORE_LINQ = "C# EFCore LINQ"
-    DAPPER = "C# Dapper"
-    NHIBERNATE_HQL = "C# NHibernate HQL"
-    SPRING_DATA_MONGODB = "Java Spring Data MongoDB"
-    SPRING_DATA_NEO4J = "Java Spring Data Neo4j"
-
-
-# class SourceFramework(str, Enum):
-#     EFCORE_LINQ = "C# EFCore LINQ"
-#     DAPPER = "C# Dapper"
-#     NHIBERNATE_HQL = "C# NHibernate HQL"
-#     UNKNOWN = "Unknown"
-
-# class DestinationFramework(str, Enum):
-#     SPRING_DATA_MONGODB = "Java Spring Data MongoDB"
-#     SPRING_DATA_NEO4J = "Java Spring Data Neo4j"
-#     UNKNOWN = "Unknown"
-
-# FrameworkType = Union[SourceFramework, DestinationFramework]
-
-
-class TranslationType(str, Enum):
-    SCHEMA = "schema"
-    QUERY = "query"
-    BOTH = "both"
+from react_agent.constants import FrameworkType, TranslationType
 
 
 @dataclass
@@ -87,7 +58,11 @@ class OutputState:
 
     translated_schema_code: str | None = field(default=None)
     translated_query_code: str | None = field(default=None)
-
+    validation_sort_by_field: str | None = field(default=None)
+    validation_entry_type_name: str | None = field(default=None)
+    validation_entry_method_name: str | None = field(default=None)
+    source_validation_harness_code: str | None = field(default=None)
+    translation_loop_count: int = field(default=0)
 
 @dataclass
 class State(InputState, OutputState):
@@ -110,3 +85,4 @@ class State(InputState, OutputState):
     translation_messages: Annotated[Sequence[AnyMessage], add_messages] = field(
         default_factory=list
     )
+    validation_harness_code: str | None = field(default=None)

@@ -2,10 +2,18 @@
 
 import logging
 import os
+from typing import cast
 
 import httpx
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
+
+from react_agent.constants import (
+    FRAMEWORK_TO_NORMALIZED_NAME,
+    FrameworkType,
+    JavaFramework,
+)
+from react_agent.utils.utils import get_normalized_framework_name
 
 logger = logging.getLogger(__name__)
 
@@ -14,26 +22,14 @@ class JavaValidationInput(BaseModel):
     source_code: str = Field(
         description="The Java source code to compile and validate."
     )
-    framework: str = Field(
-        default="none",
-        description=(
-            "The target Spring Data framework: "
-            "'spring-data-neo4j' or 'spring-data-mongodb'."
-        ),
+    framework: JavaFramework = Field(
+        description=("The target Spring Data framework."),
     )
     validate_schema: bool = Field(
         default=True,
         description=(
             "If true, also validate entity mapping against the live database "
             "after successful compilation."
-        ),
-    )
-    use_maven: bool = Field(
-        default=False,
-        description=(
-            "If true, use Maven compilation (slower, ~10-20s) instead of javac (~1-2s). "
-            "Maven catches dependency resolution issues that javac might miss. "
-            "Use as a fallback if javac compilation succeeds but runtime validation fails."
         ),
     )
 
@@ -71,30 +67,26 @@ def _format_errors(result: dict) -> str:
 @tool("validate_java_code", args_schema=JavaValidationInput)
 async def validate_java_code(
     source_code: str,
-    framework: str = "none",
+    framework: JavaFramework,
     validate_schema: bool = True,
-    use_maven: bool = False,
 ) -> str:
     """Compile and validate Java Spring Data source code against live databases.
 
     Sends source code (which may contain multiple entity classes in one file)
     to the java-service which:
-    1. Compiles it using javax.tools.JavaCompiler (or Maven if use_maven=True)
-       with the full Spring Data classpath (MongoDB, Neo4j)
+    1. Compiles it using Maven CLI with the full Spring Data classpath (MongoDB, Neo4j)
     2. If validate_schema=True, loads the compiled entities dynamically and
        runs sample queries against the live database to verify the mapping works
 
     Returns compilation errors with line numbers, or validation success/failure.
-    Use use_maven=True as a fallback if standard javac compilation produces
-    unexpected results.
     """
     base_url = _get_java_service_uri()
-    endpoint = "/api/compiler/maven-compile" if use_maven else "/api/compiler/compile"
+    endpoint = "/api/compiler/compile"
     url = f"{base_url}{endpoint}"
 
     payload = {
         "sourceCode": source_code,
-        "framework": framework,
+        "framework": get_normalized_framework_name(framework),
         "validate": validate_schema,
     }
 
@@ -156,8 +148,7 @@ async def validate_java_code(
             f"Java validation failed. Message: {message}. Errors: {len(errors)}"
         )
         # Build failure response with structured errors
-        mode = "Maven" if use_maven else "JavaCompiler"
-        parts = [f"[Java Compilation/Validation Failed ({mode})] {message}"]
+        parts = [f"[Java Compilation/Validation Failed] {message}"]
         if errors:
             parts.append("Errors:")
             parts.append(_format_errors(result))
