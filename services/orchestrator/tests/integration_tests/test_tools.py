@@ -9,47 +9,9 @@ import os
 import pytest
 
 from react_agent.custom_tools.docs_search import fetch_web_docs, load_docs_mcp_tools
-from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
 from react_agent.custom_tools.java_validator import validate_java_code
 
 pytestmark = pytest.mark.anyio
-
-
-# ── .NET Validator ───────────────────────────────────────────────────────────
-
-
-SAMPLE_CSHARP = """\
-public class Customer
-{
-    public int Id { get; set; }
-    public string Name { get; set; }
-}
-"""
-
-
-@pytest.mark.skip
-class TestDotnetValidator:
-    """Tests for validate_dotnet_code tool."""
-
-    async def test_valid_csharp_code(self):
-        result = await validate_dotnet_code.ainvoke(
-            {"source_code": SAMPLE_CSHARP, "orm": "efcore"}
-        )
-        assert isinstance(result, str)
-        assert "Validation Passed" in result or "Compiled successfully" in result
-
-    async def test_invalid_csharp_no_class(self):
-        result = await validate_dotnet_code.ainvoke(
-            {"source_code": "int x = 42;", "orm": "efcore"}
-        )
-        assert "Compilation Error" in result
-
-    async def test_orm_parameter_reflected(self):
-        result = await validate_dotnet_code.ainvoke(
-            {"source_code": SAMPLE_CSHARP, "orm": "dapper"}
-        )
-        assert "dapper" in result.lower()
-
 
 # ── Java Validator ───────────────────────────────────────────────────────────
 

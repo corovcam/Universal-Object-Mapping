@@ -51,8 +51,6 @@ from react_agent.utils import (
     get_model,
 )
 from react_agent.utils.deterministic_checks import (
-    _deterministic_feedback_message,
-    _deterministic_translation_issues,
     _latest_validation_outcome,
 )
 
@@ -100,8 +98,92 @@ class TranslationOutput(BaseModel):
         )
     )
 
+    validation_schema_code: Union[str, None] = Field(
+        default=None,
+        description="Target schema code only. Place validator-only setup/wiring here (template/bootstrap) while keeping translated_schema_code focused on the production schema."
+        + """
+<example framework="MongoDb">
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+
+@Document(collection = "customers")
+class Customer {
+    @Id
+    private String id;
+    
+    @Field("customerId")
+    private Integer customerId;
+    
+    @Field("customerName")
+    private String customerName;
+}
+</example>"""
+    )
+
+    source_validation_schema_code: Union[str, None] = Field(
+        default=None,
+        description="Source schema/entity code. This may include DbContext/session/config/bootstrap setup, but should keep "
+        "the core source schema mapping equivalent to the original source_schema_code. Should be fully valid C# code. Do not include query-related code here."
+        + """
+<example orm="EfCore">
+using System;
+using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace Sandbox;
+
+[Table("OrderLines", Schema = "Sales")]
+public class OrderLine
+{
+    [Key]
+    public int OrderLineID { get; set; }
+
+    public DateTime? PickingCompletedWhen { get; set; }
+
+    public string Description { get; set; } = string.Empty;
+}
+
+public class WideWorldImportersContext : DbContext
+{
+    public WideWorldImportersContext(DbContextOptions<WideWorldImportersContext> options)
+        : base(options)
+    {
+    }
+
+    public DbSet<OrderLine> OrderLines => Set<OrderLine>();
+}
+</example>"""
+    )
+
     validation_harness_code: Union[str, None] = Field(
-        description="Dedicated query validation harness code used for validate_source_query/validate_target_query tool calls. Plain code only. Keep separate from translated_query_code."
+        description=(
+            "Target query validation harness code only. Place validator-only setup/wiring here (template/bootstrap/count) while "
+            "keeping translated_query_code focused on the production query method."
+        )
+        + """
+<example framework="MongoDb">
+import java.util.Date;
+import java.util.Map;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+
+class QueryValidationHarness {
+   static Map<String, Object> build(MongoTemplate mongoTemplate) {
+      Date from = new Date(2014, 12, 20);
+      Date to = new Date(2014, 12, 31);
+      Query query = Query.query(Criteria.where("pickingCompletedWhen").gte(from).lte(to));
+      Query countQuery = Query.of(query).limit(-1).skip(-1);
+      return Map.of(
+         "query", query,
+         "countQuery", countQuery,
+         "collection", "orderLines"
+      );
+   }
+}
+</example>"""
     )
 
     validation_sort_by_field: Union[str, None] = Field(
@@ -121,7 +203,30 @@ class TranslationOutput(BaseModel):
 
     source_validation_harness_code: Union[str, None] = Field(
         default=None,
-        description="Dedicated validation harness code for the source query, keeping original logic but wrapped in a static method returning IQueryable or similar. Required if query is translated.",
+        description="Dedicated validation harness code for the source query, keeping original logic but wrapped in a static method returning IQueryable or similar. Required if query is translated."
+        + """
+<example orm="EfCore">
+using System;
+using Microsoft.EntityFrameworkCore;
+
+namespace Sandbox;
+
+public static class QueryEntrypoint
+{
+    public static IQueryable<OrderLine> Build(WideWorldImportersContext context, bool ascending)
+    {
+        var from = new DateTime(2014, 12, 20);
+        var to = new DateTime(2014, 12, 31);
+
+        var query = context.OrderLines
+            .Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);
+
+        var sorted = ascending ? query.OrderBy(ol => ol.OrderLineID) : query.OrderByDescending(ol => ol.OrderLineID);
+
+        return sorted;
+    }
+}
+</example>"""
     )
 
 
@@ -467,7 +572,7 @@ async def validate_schema_node(
     from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
     from react_agent.custom_tools.java_validator import validate_java_code
 
-    code = state.translated_schema_code
+    code = state.validation_schema_code or state.translated_schema_code
     if not code:
         return {}
 
@@ -507,7 +612,7 @@ async def validate_query_node(
 
     src_task = validate_source_query.ainvoke(
         {
-            "validation_schema_code": state.source_schema_code,
+            "validation_schema_code": state.source_validation_schema_code or state.source_schema_code or "",
             "validation_harness_code": state.source_validation_harness_code or "",
             "framework": state.source_target,
             "sort_by_field": state.validation_sort_by_field or "id",
@@ -518,7 +623,7 @@ async def validate_query_node(
 
     tgt_task = validate_target_query.ainvoke(
         {
-            "validation_schema_code": state.translated_schema_code,
+            "validation_schema_code": state.validation_schema_code or state.translated_schema_code or "",
             "validation_harness_code": state.validation_harness_code or "",
             "framework": state.destination_target,
             "sort_by_field": state.validation_sort_by_field or "id",
@@ -564,32 +669,6 @@ async def validate_query_node(
     return {"translation_messages": msgs}
 
 
-async def evaluate_translation_node(
-    state: State, config: RunnableConfig, runtime: Runtime[Context]
-) -> dict[str, Any]:
-    """Evaluate structural output and validation results to provide feedback if needed."""
-    issues, schema_ok, query_ok = _deterministic_translation_issues(
-        state,
-        state.translated_schema_code,
-        state.translated_query_code,
-        state.validation_harness_code,
-        list(state.translation_messages),
-    )
-
-    updates: dict[str, Any] = {}
-    if issues:
-        feedback = _deterministic_feedback_message(issues)
-        updates["translation_messages"] = [feedback]
-
-        if not schema_ok:
-            updates["translated_schema_code"] = None
-        if not query_ok:
-            updates["translated_query_code"] = None
-            updates["validation_harness_code"] = None
-
-    return updates
-
-
 def should_extract_input(state: State) -> Literal["schema_inspection", "extract_input"]:
     """Route execution to extraction until mandatory input fields are present."""
     if is_input_extracted(state):
@@ -601,47 +680,42 @@ def should_extract_input(state: State) -> Literal["schema_inspection", "extract_
 def route_post_translation(
     state: State,
 ) -> Literal[
-    "validate_schema_node", "validate_query_node", "evaluate_translation_node"
+    "validate_schema_node", "validate_query_node"
 ]:
-    """Route from translation_agent to the first applicable validation node."""
+    """Route from translation generator to the first applicable validation node."""
     if state.translation_type in {TranslationType.SCHEMA, TranslationType.BOTH}:
         return "validate_schema_node"
-    if state.translation_type == TranslationType.QUERY:
-        return "validate_query_node"
-    return "evaluate_translation_node"
+    return "validate_query_node"
 
 
 def route_post_schema_validation(
     state: State,
-) -> Literal["validate_query_node", "evaluate_translation_node"]:
-    """Route from validate_schema to validate_query or deterministic evaluation."""
+) -> Literal["validate_query_node", "generate_translation_node", "human_intervention_node", "__end__"]:
+    """Route from validate_schema to validate_query or handle validation failure."""
+    last_msg = state.translation_messages[-1].content if state.translation_messages else ""
+    if "Failed]" in last_msg:
+        if state.translation_loop_count >= 3:
+            return "human_intervention_node"
+        return "generate_translation_node"
+    
     if state.translation_type == TranslationType.BOTH:
         return "validate_query_node"
-    return "evaluate_translation_node"
+    return "__end__"
 
 
-def should_continue_translation(
+def route_post_query_validation(
     state: State,
 ) -> Literal["generate_translation_node", "human_intervention_node", "__end__"]:
-    """Route back to translation until deterministic completion criteria are met."""
-    if state.translation_type is None:
+    """Route after query validation. Either finish or loop back on failure."""
+    # Check the latest messages for query validation results
+    last_msgs = [msg.content for msg in state.translation_messages[-3:]] if state.translation_messages else []
+    has_failure = any("Failed]" in msg for msg in last_msgs)
+    
+    if has_failure:
+        if state.translation_loop_count >= 3:
+            return "human_intervention_node"
         return "generate_translation_node"
-
-    issues, _, _ = _deterministic_translation_issues(
-        state,
-        state.translated_schema_code,
-        state.translated_query_code,
-        state.validation_harness_code,
-        list(state.translation_messages),
-    )
-
-    if len(issues) == 0:
-        return "__end__"
-
-    if state.translation_loop_count >= 3:
-        return "human_intervention_node"
-
-    return "generate_translation_node"
+    return "__end__"
 
 
 langfuse = get_client()
@@ -684,9 +758,6 @@ builder.add_node(human_intervention_node)
 
 builder.add_node(validate_schema_node, retry_policy=RetryPolicy(max_attempts=3))
 builder.add_node(validate_query_node, retry_policy=RetryPolicy(max_attempts=3))
-builder.add_node(
-    evaluate_translation_node,
-)
 
 builder.add_conditional_edges(START, should_extract_input)
 builder.add_conditional_edges("extract_input", should_extract_input)
@@ -694,8 +765,7 @@ builder.add_edge("schema_inspection", "generate_translation_node")
 
 builder.add_conditional_edges("generate_translation_node", route_post_translation)
 builder.add_conditional_edges("validate_schema_node", route_post_schema_validation)
-builder.add_edge("validate_query_node", "evaluate_translation_node")
-builder.add_conditional_edges("evaluate_translation_node", should_continue_translation)
+builder.add_conditional_edges("validate_query_node", route_post_query_validation)
 builder.add_edge("human_intervention_node", "generate_translation_node")
 
 graph = builder.compile(

@@ -1,6 +1,7 @@
 import os
 
-from react_agent.context import AvailableModel, Context
+from react_agent.constants import AvailableModel
+from react_agent.context import Context
 
 
 def test_context_init_with_passed_kwargs() -> None:
