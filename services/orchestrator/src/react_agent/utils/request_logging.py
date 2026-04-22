@@ -20,30 +20,28 @@ if TYPE_CHECKING:
     from langchain_core.outputs import LLMResult
 
 
-timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-
+TIMESTAMP = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+LOGS_DIR = "logs"
 
 class LoggingCallbackHandler(BaseCallbackHandler):
-    """Callback handler for streaming.
-
-    !!! warning "Only works with LLMs that support streaming."
-    """
+    """Callback Handler that logs all events to a file in JSON format."""
     
     out: dict[str, TextIOWrapper] = {}
-    timestamp = timestamp
+    timestamp = TIMESTAMP
     
-    def __init__(self) -> None:
+    def __init__(self, logs_dir: str = LOGS_DIR, log_string_max_length: int = 50) -> None:
         """Initialize the callback handler."""
         super().__init__()
+        self.log_string_max_length = log_string_max_length
         self.logger = logging.getLogger(self.__class__.__name__)
-        os.makedirs(f"logs/{self.timestamp}", exist_ok=True)
-        handler = logging.FileHandler(f"logs/{self.timestamp}/langgraph_logging_{self.timestamp}.log")
+        os.makedirs(f"{logs_dir}/{self.timestamp}", exist_ok=True)
+        handler = logging.FileHandler(f"{logs_dir}/{self.timestamp}/langgraph_logging_{self.timestamp}.log")
         # handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s [%(name)s] %(message)s :: Exception: %(exc_info)s"))
         handler.setFormatter(JsonFormatter())
         handler.setLevel(logging.DEBUG)
         self.logger.addHandler(handler)
         self.logger.setLevel(logging.DEBUG)
-        self.logger.debug(f"Initialized {self.logger.name}.")
+        logging.debug(f"Initialized {self.logger.name}.")
 
     def on_llm_start(
         self, serialized: dict[str, Any], prompts: list[str], **kwargs: Any
@@ -94,7 +92,8 @@ class LoggingCallbackHandler(BaseCallbackHandler):
             response: The response from the LLM.
             **kwargs: Additional keyword arguments.
         """
-        self.logger.debug("LLM end", extra={"response": response, "kwargs": kwargs})
+        response_dump = response.model_dump(exclude={"generations"})
+        self.logger.debug("LLM end", extra={"response": response_dump, "kwargs": kwargs})
         # out = self.out.get(kwargs.get("run_id", "default"))
         # if out and not out.closed:
         #     out.close()
@@ -132,6 +131,10 @@ class LoggingCallbackHandler(BaseCallbackHandler):
             outputs: The outputs of the chain.
             **kwargs: Additional keyword arguments.
         """
+        for key, value in outputs.items():
+            if isinstance(value, str):
+                value = value if len(value) <= self.log_string_max_length else f"{value[:self.log_string_max_length]}... [truncated]"
+                outputs[key] = value
         self.logger.debug("Chain end", extra={"outputs": outputs, "kwargs": kwargs})
         # for out in self.out.values():
         #     if not out.closed:
@@ -177,6 +180,8 @@ class LoggingCallbackHandler(BaseCallbackHandler):
             output: The output of the tool.
             **kwargs: Additional keyword arguments.
         """
+        output = str(output)
+        output = output if len(output) <= self.log_string_max_length else f"{output[:self.log_string_max_length]}... [truncated]"
         self.logger.debug("Tool end", extra={"output": output, "kwargs": kwargs})
 
     def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
@@ -209,7 +214,7 @@ class LoggingCallbackHandler(BaseCallbackHandler):
 
 class LLMRequestLogger():
     
-    timestamp = timestamp
+    timestamp = TIMESTAMP
     logger = logging.getLogger("LLMRequestLogger")
     
     def __init__(self):

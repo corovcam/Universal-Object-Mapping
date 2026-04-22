@@ -1,8 +1,10 @@
 """Core utility & helper functions."""
+
 import json
 import logging
 import os
-from typing import Literal
+import re
+from typing import Literal, cast
 
 import aiofiles
 import httpx
@@ -16,12 +18,50 @@ from langchain_openai import ChatOpenAI
 from langgraph.runtime import get_runtime
 from openai import DefaultAsyncHttpxClient, DefaultHttpxClient
 
+from react_agent.constants import (
+    FRAMEWORK_TO_NORMALIZED_NAME,
+    AvailableModel,
+    DotnetFramework,
+    FrameworkType,
+    JavaFramework,
+    SourceFramework,
+    TargetFramework,
+)
 from react_agent.context import Context
-from react_agent.state import FrameworkType
 from react_agent.utils.request_logging import LLMRequestLogger
 
 logger = logging.getLogger(__name__)
 llm_request_logger = LLMRequestLogger()
+
+
+def get_model_creator_map() -> dict[AvailableModel, str]:
+    creator_map = {}
+    for provider_model in AvailableModel:
+        _, model = provider_model.value.split("/", maxsplit=1)
+        if re.search("kimi", model, re.IGNORECASE):
+            creator_map[model] = "moonshotai"
+        elif re.search("qwen", model, re.IGNORECASE):
+            creator_map[model] = "alibaba"
+        elif re.search("glm", model, re.IGNORECASE):
+            creator_map[model] = "zai"
+        elif re.search("deepseek", model, re.IGNORECASE):
+            creator_map[model] = "deepseek"
+        elif re.search("mistral", model, re.IGNORECASE):
+            creator_map[model] = "mistral"
+        elif re.search("llama", model, re.IGNORECASE):
+            creator_map[model] = "meta"
+    return creator_map
+
+
+def get_normalized_framework_name(
+    framework: DotnetFramework
+    | JavaFramework
+    | SourceFramework
+    | TargetFramework
+    | FrameworkType,
+) -> str:
+    return FRAMEWORK_TO_NORMALIZED_NAME[cast(FrameworkType, framework)]
+
 
 def get_message_text(msg: BaseMessage) -> str:
     """Get the text content of a message."""
@@ -33,6 +73,7 @@ def get_message_text(msg: BaseMessage) -> str:
     else:
         txts = [c if isinstance(c, str) else (c.get("text") or "") for c in content]
         return "".join(txts).strip()
+
 
 async def load_chat_model(
     fully_specified_name: str, config: dict | None = None
@@ -48,20 +89,32 @@ async def load_chat_model(
     debugging = True if os.getenv("DEVELOPMENT") else False
     # log_http_transport = llm_request_logger.LogTransport(httpx.HTTPTransport())
     # async_log_http_transport = llm_request_logger.AsyncLogTransport(httpx.AsyncHTTPTransport())
-    
+
     if provider == "openai" or provider == "einfra":
         debug_kwargs = {}
         if debugging:
             debug_kwargs = {
-                "http_client": DefaultHttpxClient(timeout=120, event_hooks={"request": [llm_request_logger.log_request], "response": [llm_request_logger.log_response]}),
-                "http_async_client": DefaultAsyncHttpxClient(timeout=120, event_hooks={"request": [llm_request_logger.log_request], "response": [llm_request_logger.log_response]}),
+                "http_client": DefaultHttpxClient(
+                    timeout=120,
+                    event_hooks={
+                        "request": [llm_request_logger.log_request],
+                        "response": [llm_request_logger.log_response],
+                    },
+                ),
+                "http_async_client": DefaultAsyncHttpxClient(
+                    timeout=120,
+                    event_hooks={
+                        "request": [llm_request_logger.log_request],
+                        "response": [llm_request_logger.log_response],
+                    },
+                ),
             }
         model_client = ChatOpenAI(
             model=model,  # type: ignore
             base_url=config.get("openai_api_url"),  # type: ignore
             api_key=config.get("openai_api_key"),  # type: ignore
             max_retries=10,
-            request_timeout=120, # type: ignore
+            request_timeout=120,  # type: ignore
             stream_usage=True,
             # **debug_kwargs,  # ty:ignore[invalid-argument-type]
         )
@@ -70,11 +123,17 @@ async def load_chat_model(
         if debugging:
             debug_kwargs = {
                 "sync_client_kwargs": {
-                    "event_hooks": {"request": [llm_request_logger.log_request], "response": [llm_request_logger.log_response]},
+                    "event_hooks": {
+                        "request": [llm_request_logger.log_request],
+                        "response": [llm_request_logger.log_response],
+                    },
                     # "transport": log_http_transport
                 },
                 "async_client_kwargs": {
-                    "event_hooks": {"request": [llm_request_logger.log_request], "response": [llm_request_logger.log_response]},
+                    "event_hooks": {
+                        "request": [llm_request_logger.log_request],
+                        "response": [llm_request_logger.log_response],
+                    },
                     # "transport": async_log_http_transport
                 },
             }
@@ -98,13 +157,29 @@ async def load_chat_model(
                 max_retries=10,
                 timeout=120,
                 configurable_fields="any",
-                http_client=httpx.Client(event_hooks={"request": [llm_request_logger.log_request], "response": [llm_request_logger.log_response]}),
-                http_async_client=httpx.AsyncClient(event_hooks={"request": [llm_request_logger.log_request], "response": [llm_request_logger.log_response]}),
+                http_client=httpx.Client(
+                    event_hooks={
+                        "request": [llm_request_logger.log_request],
+                        "response": [llm_request_logger.log_response],
+                    }
+                ),
+                http_async_client=httpx.AsyncClient(
+                    event_hooks={
+                        "request": [llm_request_logger.log_request],
+                        "response": [llm_request_logger.log_response],
+                    }
+                ),
                 sync_client_kwargs={
-                    "event_hooks": {"request": [llm_request_logger.log_request], "response": [llm_request_logger.log_response]},
+                    "event_hooks": {
+                        "request": [llm_request_logger.log_request],
+                        "response": [llm_request_logger.log_response],
+                    },
                 },
                 async_client_kwargs={
-                    "event_hooks": {"request": [llm_request_logger.log_request], "response": [llm_request_logger.log_response]},
+                    "event_hooks": {
+                        "request": [llm_request_logger.log_request],
+                        "response": [llm_request_logger.log_response],
+                    },
                 },
             )
         else:
@@ -231,21 +306,8 @@ async def load_chat_model(
                 or not p_kwargs.get("max_output_tokens")
                 or "reasoning_output" not in p_kwargs
             ):
-                creator_map = {
-                    "kimi-k2.5": "moonshotai",
-                    "qwen3-coder": "qwen",
-                    "qwen3-coder-next": "qwen",
-                    "qwen3-coder-30b": "qwen",
-                    "qwen3.5": "qwen",
-                    "qwen3.5-122b": "qwen",
-                    "glm-4.7": "zhipu",
-                    "glm-5": "zhipu",
-                    "deepseek-v3.2": "deepseek",
-                    "deepseek-v3.2-thinking": "deepseek",
-                    "mistral-large": "mistralai",
-                    "llama-4-scout-17b-16e-instruct": "meta",
-                }
-                creator = creator_map.get(model)
+                creator_map = get_model_creator_map()
+                creator = creator_map.get(AvailableModel(model))
                 if creator:
                     gateway_url = (
                         f"https://ai-gateway.vercel.sh/v1/models/{creator}/{model}"
@@ -288,9 +350,9 @@ async def load_chat_model(
             logger.warning(f"Failed to fetch model profile for {provider}/{model}: {e}")
 
         if profile is not None:
-            model_client.profile = profile # type: ignore
+            model_client.profile = profile  # type: ignore
 
-    return model_client # type: ignore
+    return model_client  # type: ignore
 
 
 async def get_model(
@@ -325,17 +387,19 @@ def get_ssh_host_and_port(service_name: str) -> tuple[str, int]:
     return host, int(port)
 
 
-async def get_database_mapping_json(target_framework: FrameworkType) -> dict[Literal["source", "destination", "mapping"], str | object] | None:
+async def get_database_mapping_json(
+    target_framework: FrameworkType,
+) -> dict[Literal["source", "destination", "mapping"], str | object] | None:
     """Load the database mapping JSON for the given target framework."""
     try:
-        if target_framework == FrameworkType.SPRING_DATA_MONGODB:
+        if target_framework == FrameworkType.JAVA_SPRING_DATA_MONGODB:
             async with aiofiles.open("src/context/mappings/mssql_mongodb.json") as f:
                 return {
                     "source": "Microsoft SQL Server",
                     "destination": "MongoDB",
                     "mapping": json.loads(await f.read()),
                 }
-        elif target_framework == FrameworkType.SPRING_DATA_NEO4J:
+        elif target_framework == FrameworkType.JAVA_SPRING_DATA_NEO4J:
             async with aiofiles.open("src/context/mappings/mssql_neo4j.json") as f:
                 return {
                     "source": "Microsoft SQL Server",
