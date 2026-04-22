@@ -12,9 +12,10 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.runtime import Runtime
 
-from react_agent.context import AvailableModel, Context
+from react_agent.constants import AvailableModel, FrameworkType, TranslationType
+from react_agent.context import Context
 from react_agent.graph import graph as default_graph
-from react_agent.state import FrameworkType, State, TranslationType
+from react_agent.state import State
 
 
 @pytest.fixture(scope="session")
@@ -110,8 +111,8 @@ def sample_state() -> State:
             )
         ],
         translation_type=TranslationType.BOTH,
-        source_target=FrameworkType.EFCORE_LINQ,
-        destination_target=FrameworkType.SPRING_DATA_MONGODB,
+        source_target=FrameworkType.DOTNET_EFCORE,
+        destination_target=FrameworkType.JAVA_SPRING_DATA_MONGODB,
     )
 
 

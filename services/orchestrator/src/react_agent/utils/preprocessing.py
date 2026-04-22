@@ -2,7 +2,7 @@
 
 from typing import Any, Literal, cast
 
-from react_agent.state import FrameworkType
+from react_agent.constants import FrameworkType
 from react_agent.utils.utils import get_database_mapping_json
 
 
@@ -444,7 +444,9 @@ def _extract_relationship_type(mapping_entries: list[Any]) -> str | None:
         if not isinstance(field, dict) or field.get("type") != "RelationshipType":
             continue
 
-        relationship_columns = _extract_column_names_in_order(mapping_entry.get("column"))
+        relationship_columns = _extract_column_names_in_order(
+            mapping_entry.get("column")
+        )
         if relationship_columns:
             return relationship_columns[0].upper()
 
@@ -559,10 +561,14 @@ def _extract_neo4j_standalone_mapping(
             deduped: dict[tuple[str, str], dict[str, Any]] = {}
             for property_mapping in merged_property_mappings:
                 source_column = _normalize_text(property_mapping.get("sourceColumn"))
-                target_property = _normalize_text(property_mapping.get("targetProperty"))
+                target_property = _normalize_text(
+                    property_mapping.get("targetProperty")
+                )
                 if not source_column or not target_property:
                     continue
-                deduped[(source_column.lower(), target_property.lower())] = property_mapping
+                deduped[(source_column.lower(), target_property.lower())] = (
+                    property_mapping
+                )
 
             existing_node_mapping["propertyMappings"] = sorted(
                 deduped.values(),
@@ -643,11 +649,16 @@ def _extract_neo4j_standalone_mapping(
     }
 
 
-async def get_neo4j_standalone_mapping(
-) -> dict[Literal["nodes", "relationships"], dict[str, Any]] | None:
+async def get_neo4j_standalone_mapping() -> (
+    dict[Literal["nodes", "relationships"], dict[str, Any]] | None
+):
     """Load standalone SQL-to-Neo4j mapping grouped into nodes and relationships."""
-    raw_database_mapping = await get_database_mapping_json(FrameworkType.SPRING_DATA_NEO4J)
-    database_mapping = _extract_neo4j_standalone_mapping(raw_database_mapping.get("mapping") if raw_database_mapping else None)
+    raw_database_mapping = await get_database_mapping_json(
+        FrameworkType.JAVA_SPRING_DATA_NEO4J
+    )
+    database_mapping = _extract_neo4j_standalone_mapping(
+        raw_database_mapping.get("mapping") if raw_database_mapping else None
+    )
     if not database_mapping:
         return None
 
@@ -662,14 +673,19 @@ async def get_neo4j_standalone_mapping(
     }
 
 
-async def get_mongodb_standalone_mapping(
-) -> dict[Literal["collections"], dict[str, Any]] | None:
+async def get_mongodb_standalone_mapping() -> (
+    dict[Literal["collections"], dict[str, Any]] | None
+):
     """Load standalone SQL-to-MongoDB mapping grouped into collections."""
-    raw_database_mapping = await get_database_mapping_json(FrameworkType.SPRING_DATA_MONGODB)
-    database_mapping = _extract_mongodb_standalone_mapping(raw_database_mapping.get("mapping") if raw_database_mapping else None)
+    raw_database_mapping = await get_database_mapping_json(
+        FrameworkType.JAVA_SPRING_DATA_MONGODB
+    )
+    database_mapping = _extract_mongodb_standalone_mapping(
+        raw_database_mapping.get("mapping") if raw_database_mapping else None
+    )
     if not database_mapping:
         return None
-  
+
     collections = database_mapping.get("collections")
     if not isinstance(collections, dict):
         return None
