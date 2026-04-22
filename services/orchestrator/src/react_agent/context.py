@@ -124,6 +124,11 @@ class Context:
         metadata={"description": "SSH URI of the Java service."},
     )
 
+    max_loop_count: int = field(
+        default=int(os.environ.get("MAX_LOOP_COUNT", "3")),
+        metadata={"description": "The threshold for maximum translation validation loop backs before pausing execution."},
+    )
+
     def __post_init__(self) -> None:
         """Fetch env vars for attributes that were not passed as args."""
         for f in fields(self):

@@ -110,3 +110,4 @@ class State(InputState, OutputState):
     translation_messages: Annotated[Sequence[AnyMessage], add_messages] = field(
         default_factory=list
     )
+    loop_count: int = field(default=0)

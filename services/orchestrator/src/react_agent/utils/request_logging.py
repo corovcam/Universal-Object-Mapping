@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import sys
 from datetime import datetime
 from io import TextIOWrapper
 from typing import TYPE_CHECKING, Any
@@ -13,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from langchain_core.callbacks.base import BaseCallbackHandler
 from pythonjsonlogger.orjson import OrjsonFormatter as JsonFormatter
-from typing_extensions import override
 
 if TYPE_CHECKING:
     from langchain_core.agents import AgentAction, AgentFinish
@@ -208,7 +205,7 @@ class LoggingCallbackHandler(BaseCallbackHandler):
         self.logger.debug("Agent finish", extra={"finish": finish, "kwargs": kwargs})
 
 
-class LLMRequestLogger():
+class LLMRequestLogger:
     
     timestamp = timestamp
     logger = logging.getLogger("LLMRequestLogger")

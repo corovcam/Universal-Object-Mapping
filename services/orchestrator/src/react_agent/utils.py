@@ -8,7 +8,6 @@ from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_litellm import ChatLiteLLM
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 from langgraph.runtime import get_runtime
@@ -279,6 +278,7 @@ def get_ssh_host_and_port(service_name: str) -> tuple[str, int]:
 
 
 async def get_database_mapping_json(target_framework: FrameworkType):
+    """Get database mapping file."""
     if target_framework == FrameworkType.SPRING_DATA_MONGODB:
         async with aiofiles.open("src/context/mappings/mssql_mongodb.relmig") as f:
             return {

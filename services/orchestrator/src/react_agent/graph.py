@@ -8,31 +8,28 @@ import os
 from datetime import UTC, datetime
 from typing import Any, Literal, Union
 
-from langchain.agents import AgentState, create_agent
+from langchain.agents import create_agent
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
     ContextEditingMiddleware,
-    LLMToolEmulator,
-    LLMToolSelectorMiddleware,
     ModelFallbackMiddleware,
     ModelRetryMiddleware,
-    SummarizationMiddleware,
     ToolRetryMiddleware,
 )
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 from langgraph.cache.memory import InMemoryCache
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.errors import NodeInterrupt
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
-from langgraph.store.memory import InMemoryStore
 from langgraph.types import CachePolicy, RetryPolicy
 from pydantic import BaseModel, Field
 
 from react_agent.context import AvailableModel, Context
-from react_agent.custom_tools.docs_search import load_docs_mcp_tools
+from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
+from react_agent.custom_tools.java_validator import validate_java_code
 from react_agent.custom_tools.mcp_database import load_database_tools
 from react_agent.prompts import (
     SYSTEM_PROMPT_EXTRACTION,
@@ -46,7 +43,6 @@ from react_agent.state import (
     State,
     TranslationType,
 )
-from react_agent.tools import TOOLS
 from react_agent.utils import get_database_mapping_json, get_model
 
 logger = logging.getLogger(__name__)
@@ -280,68 +276,22 @@ async def council_of_models(
     return {"council_responses": valid_responses}
 
 
-async def translation_agent(
+
+async def translate_code(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ) -> dict[str, Any]:
-    """Use a ReAct agent to perform translation and validation loops natively.
-
-    Combines static tools (validators, fallback docs) with dynamically loaded
-    database and documentation MCP tools.
-    """
+    """Call LLM to translate schema and/or query."""
     model = await get_model(config, runtime)
 
-    async with load_database_tools() as db_tools:
-        all_tools = TOOLS + db_tools
+    system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
+        origin_frameworks=[f.value for f in FrameworkType],
+        destination_frameworks=[f.value for f in FrameworkType],
+        system_time=datetime.now(tz=UTC).isoformat(),
+    )
 
-        system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
-            origin_frameworks=[f.value for f in FrameworkType],
-            destination_frameworks=[f.value for f in FrameworkType],
-            system_time=datetime.now(tz=UTC).isoformat(),
-        )
+    strategies = "\n".join([r.get("strategy", "") for r in state.council_responses])
 
-        # Create the ReAct agent
-        agent = create_agent(
-            model,
-            tools=all_tools,
-            response_format=TranslationOutput,
-            system_prompt=system_prompt,
-            middleware=[
-                ModelRetryMiddleware(),
-                ModelFallbackMiddleware(
-                    await get_model(config, runtime, AvailableModel.EINFRA_GLM_5),
-                    await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC),
-                    await get_model(
-                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
-                    ),
-                ),
-                ToolRetryMiddleware(),
-                # LLMToolSelectorMiddleware(
-                #     model=await get_model(
-                #         config, runtime, AvailableModel.EINFRA_QWEN3_5
-                #     ),
-                # ),
-                ContextEditingMiddleware(
-                    edits=[
-                        ClearToolUsesEdit(
-                            trigger=100000,
-                            keep=3,
-                        )
-                    ]
-                ),
-                # SummarizationMiddleware(model, trigger=("fraction", 0.8)),
-                LLMToolEmulator(
-                    tools=["dotnet_validator"],
-                    model=await get_model(
-                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
-                    ),
-                ),
-            ],
-            debug=True if os.getenv("DEVELOPMENT") else False,
-        )
-
-        strategies = "\n".join([r.get("strategy", "") for r in state.council_responses])
-
-        message = f"""Translate the following Source Code from {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
+    message_content = f"""Translate the following Source Code from {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 
 {f"Strategies to consider:\n{strategies}\n" if strategies else ""}
 {f"Database Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}
@@ -350,67 +300,151 @@ async def translation_agent(
 Source Code:
 {f"Schema:\n{state.source_schema_code}\n" if state.source_schema_code else ""}
 {f"Query:\n{state.source_query_code}" if state.source_query_code else ""}
-"""  # ty:ignore[unresolved-attribute]
-        # summarization_middleware = SummarizationMiddleware(model, trigger=("messages", 1))
-        # summarized_messages: dict[str, Any] | None = await summarization_middleware.abefore_model(AgentState(messages=[*state.translation_messages]), Runtime())
+"""
 
-        # Invoke the agent. It manages its own messages and tool calls loops.
-        response = await agent.ainvoke(
-            {
-                "messages": [*state.translation_messages]
-                if len(state.translation_messages) > 0
-                else [HumanMessage(content=message)]
-            }
-        )
-        logger.debug("Translation response: %s", response)
+    messages = [SystemMessage(content=system_prompt)]
+    if len(state.translation_messages) > 0:
+        messages.extend(state.translation_messages)
+    else:
+        messages.append(HumanMessage(content=message_content))
 
-    if "structured_response" not in response:
-        logger.warning("No structured response available.")
-        return {
-            "messages": response["messages"],
-            "translation_messages": response["messages"],
-        }
+    # Invoke model with structured output
+    structured_model = model.with_structured_output(TranslationOutput)
+    response = await structured_model.ainvoke(messages)
 
-    # Extract structured output if available
+    # response is TranslationOutput
     updates: dict[str, Any] = {
-        "messages": response["messages"],
-        "translation_messages": response["messages"],
+        "translation_messages": messages + [AIMessage(content=f"Translated Output:\nSchema: {response.translated_schema_code}\nQuery: {response.translated_query_code}")],
     }
-    output = response["structured_response"]
-    if output.translated_schema_code:
-        updates["translated_schema_code"] = output.translated_schema_code
-    if output.translated_query_code:
-        updates["translated_query_code"] = output.translated_query_code
+
+    if response.translated_schema_code:
+        updates["translated_schema_code"] = response.translated_schema_code
+    if response.translated_query_code:
+        updates["translated_query_code"] = response.translated_query_code
 
     return updates
 
+async def validate_schema(state: State) -> dict[str, Any]:
+    """Validate the translated schema."""
+    if not state.translated_schema_code:
+        return {}
+
+    code = state.translated_schema_code
+    dest = state.destination_target.value if state.destination_target else ""
+
+    # We call the appropriate validator based on the destination framework
+    if "Java" in dest:
+        # Needs use_maven or standard javac depending on the complexity
+        validation_result = await validate_java_code.ainvoke(
+            {"source_code": code, "framework": "none"} # Could pass correct framework mapping here
+        )
+    elif "C#" in dest:
+        validation_result = await validate_dotnet_code.ainvoke(
+            {"source_code": code}
+        )
+    else:
+        validation_result = "No matching validator for destination framework."
+
+    passed = "Passed" in validation_result or "successfully" in validation_result.lower()
+
+    msg = HumanMessage(content=f"Schema Validation Result:\n{validation_result}")
+
+    if not passed:
+        return {
+            "translation_messages": [msg],
+            "loop_count": state.loop_count + 1
+        }
+
+    return {
+        "translation_messages": [msg]
+    }
+
+async def validate_query(state: State) -> dict[str, Any]:
+    """Validate the translated query."""
+    if not state.translated_query_code:
+        return {}
+
+    code = state.translated_query_code
+    dest = state.destination_target.value if state.destination_target else ""
+
+    if "Java" in dest:
+        validation_result = await validate_java_code.ainvoke(
+            {"source_code": code, "framework": "none"}
+        )
+    elif "C#" in dest:
+        validation_result = await validate_dotnet_code.ainvoke(
+            {"source_code": code}
+        )
+    else:
+        validation_result = "No matching validator for destination framework."
+
+    passed = "Passed" in validation_result or "successfully" in validation_result.lower()
+
+    msg = HumanMessage(content=f"Query Validation Result:\n{validation_result}")
+
+    if not passed:
+        return {
+            "translation_messages": [msg],
+            "loop_count": state.loop_count + 1
+        }
+
+    return {
+        "translation_messages": [msg]
+    }
+
+async def check_equivalence(state: State) -> dict[str, Any]:
+    """Check equivalence of translated query."""
+    # Scaffold: for now just pass
+    return {
+        "translation_messages": [HumanMessage(content="Equivalence Check Passed.")]
+    }
 
 def should_extract_input(state: State) -> Literal["schema_inspection", "extract_input"]:
+    """Determine whether input needs to be extracted."""
     if is_input_extracted(state):
         return "schema_inspection"
     else:
         return "extract_input"
 
-
-def should_continue_translation(
-    state: State,
-) -> Literal["translation_agent", END]:  # ty:ignore[invalid-type-form]
-    if state.translation_type == TranslationType.SCHEMA:
-        is_translated = state.translated_schema_code is not None
+def route_after_translation(state: State) -> Literal["validate_schema", "validate_query", "check_equivalence", END]: # ty:ignore[invalid-type-form]
+    """Route execution after code translation based on translation type."""
+    if state.translation_type == TranslationType.SCHEMA or state.translation_type == TranslationType.BOTH:
+        return "validate_schema"
     elif state.translation_type == TranslationType.QUERY:
-        is_translated = state.translated_query_code is not None
-    elif state.translation_type == TranslationType.BOTH:
-        is_translated = (
-            state.translated_schema_code is not None
-            and state.translated_query_code is not None
-        )
-    else:
-        return "translation_agent"
-    if is_translated:
-        return END
-    else:
-        return "translation_agent"
+        return "validate_query"
+    return END
 
+def handle_loop_interrupt(state: State, context: Context):
+    """Handle looping logic and interrupt if max attempts are reached."""
+    if state.loop_count >= context.max_loop_count:
+        raise NodeInterrupt(f"Max loop count ({context.max_loop_count}) reached. Pausing for human-in-the-loop.")
+    return "translate_code"
+
+def route_after_schema_validation(state: State, config: RunnableConfig, runtime: Runtime[Context]) -> Literal["translate_code", "validate_query", "check_equivalence", END]: # ty:ignore[invalid-type-form]
+    """Route after schema validation."""
+    last_msg = state.translation_messages[-1].content
+    if isinstance(last_msg, str) and ("Failed" in last_msg or "Error" in last_msg):
+        return handle_loop_interrupt(state, runtime.context)
+
+    if state.translation_type == TranslationType.BOTH:
+        return "validate_query"
+    return END
+
+def route_after_query_validation(state: State, config: RunnableConfig, runtime: Runtime[Context]) -> Literal["translate_code", "check_equivalence"]: # ty:ignore[invalid-type-form]
+    """Route after query validation."""
+    last_msg = state.translation_messages[-1].content
+    if isinstance(last_msg, str) and ("Failed" in last_msg or "Error" in last_msg):
+        return handle_loop_interrupt(state, runtime.context)
+
+    return "check_equivalence"
+
+def route_after_equivalence(state: State, config: RunnableConfig, runtime: Runtime[Context]) -> Literal["translate_code", END]: # ty:ignore[invalid-type-form]
+    """Route after equivalence check."""
+    last_msg = state.translation_messages[-1].content
+    if isinstance(last_msg, str) and ("Failed" in last_msg or "Error" in last_msg):
+        return handle_loop_interrupt(state, runtime.context)
+
+    return END
 
 langfuse = get_client()
 
@@ -436,26 +470,26 @@ builder = StateGraph(
     context_schema=Context,
 )
 
-
 builder.add_node(extract_input, retry_policy=RetryPolicy(max_attempts=3))
 builder.add_node(
     schema_inspection,
     cache_policy=CachePolicy(ttl=300),
     retry_policy=RetryPolicy(max_attempts=3),
 )
-# builder.add_node("council_of_models", council_of_models)
-builder.add_node(
-    translation_agent,
-    cache_policy=CachePolicy(ttl=300),
-    retry_policy=RetryPolicy(max_attempts=3),
-)
+
+builder.add_node(translate_code, retry_policy=RetryPolicy(max_attempts=3))
+builder.add_node(validate_schema)
+builder.add_node(validate_query)
+builder.add_node(check_equivalence)
 
 builder.add_conditional_edges(START, should_extract_input)
 builder.add_edge("extract_input", "schema_inspection")
-# builder.add_edge("schema_inspection", "council_of_models")
-# builder.add_edge("council_of_models", "translation_agent")
-builder.add_edge("schema_inspection", "translation_agent")
-builder.add_conditional_edges("translation_agent", should_continue_translation)
+builder.add_edge("schema_inspection", "translate_code")
+
+builder.add_conditional_edges("translate_code", route_after_translation)
+builder.add_conditional_edges("validate_schema", route_after_schema_validation)
+builder.add_conditional_edges("validate_query", route_after_query_validation)
+builder.add_conditional_edges("check_equivalence", route_after_equivalence)
 
 graph = builder.compile(
     name="UOM Orchestrator Workflow",

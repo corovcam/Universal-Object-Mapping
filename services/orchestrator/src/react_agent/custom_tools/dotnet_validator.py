@@ -22,6 +22,7 @@ async def validate_dotnet_code(
     source_code: str, orm: str = "efcore", validate_ast: bool = True
 ) -> str:
     """Validates C# source code dynamically.
+
     Attempts to use Serena MCP (if available and validate_ast=True) to check semantics.
     Falls back to `dotnet build` or Roslyn diagnostics.
     """

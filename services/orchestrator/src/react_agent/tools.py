@@ -11,11 +11,10 @@ from langchain_tavily import TavilySearch
 from langgraph.runtime import get_runtime
 
 from react_agent.context import Context
-from react_agent.custom_tools.docs_search import fetch_web_docs, load_docs_mcp_tools
+from react_agent.custom_tools.docs_search import load_docs_mcp_tools
 from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
 from react_agent.custom_tools.java_validator import validate_java_code
 from react_agent.custom_tools.mcp_database import load_database_tools
-from react_agent.custom_tools.ssh_tools import execute_in_sandbox
 
 
 async def search(query: str) -> Optional[dict[str, Any]]:
