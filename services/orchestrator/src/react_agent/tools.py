@@ -15,6 +15,11 @@ from react_agent.custom_tools.docs_search import fetch_web_docs, load_docs_mcp_t
 from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
 from react_agent.custom_tools.java_validator import validate_java_code
 from react_agent.custom_tools.mcp_database import load_database_tools
+from react_agent.custom_tools.query_validator import (
+    check_query_equivalence,
+    validate_source_query,
+    validate_target_query,
+)
 from react_agent.custom_tools.ssh_tools import execute_in_sandbox
 
 
@@ -36,6 +41,9 @@ TOOLS: List[Any] = [
     # search,
     validate_java_code,
     validate_dotnet_code,
+    validate_source_query,
+    validate_target_query,
+    check_query_equivalence,
     # fetch_web_docs,
     # execute_in_sandbox,
 ]

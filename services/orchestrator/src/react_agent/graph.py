@@ -6,31 +6,33 @@ import json
 import logging
 import os
 from datetime import UTC, datetime
-from typing import Any, Literal, Union
+from typing import Any, Literal, Union, cast
 
-from langchain.agents import AgentState, create_agent
+from langchain.agents import create_agent
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
     ContextEditingMiddleware,
-    LLMToolEmulator,
-    LLMToolSelectorMiddleware,
     ModelFallbackMiddleware,
     ModelRetryMiddleware,
-    SummarizationMiddleware,
     ToolRetryMiddleware,
 )
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 from langgraph.cache.memory import InMemoryCache
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import START, StateGraph
 from langgraph.runtime import Runtime
-from langgraph.store.memory import InMemoryStore
 from langgraph.types import CachePolicy, RetryPolicy
 from pydantic import BaseModel, Field
 
-from react_agent.context import AvailableModel, Context
+from react_agent.constants import (
+    AvailableModel,
+    FrameworkType,
+    JavaFramework,
+    TranslationType,
+)
+from react_agent.context import Context
 from react_agent.custom_tools.mcp_database import load_database_tools
 from react_agent.prompts import (
     SYSTEM_PROMPT_EXTRACTION,
@@ -38,18 +40,20 @@ from react_agent.prompts import (
     SYSTEM_PROMPT_TRANSLATOR,
 )
 from react_agent.state import (
-    FrameworkType,
     InputState,
     OutputState,
     State,
-    TranslationType,
 )
 from react_agent.tools import TOOLS
 from react_agent.utils import (
     LoggingCallbackHandler,
     get_database_mapping_json,
-    get_message_text,
     get_model,
+)
+from react_agent.utils.deterministic_checks import (
+    _deterministic_feedback_message,
+    _deterministic_translation_issues,
+    _latest_validation_outcome,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,11 +61,7 @@ logger = logging.getLogger(__name__)
 
 class ExtractionOutput(BaseModel):
     """Structured output for identifying user intent from messages."""
-    
-    # source_code: str = Field(
-    #     description="The source code snippet and/or query mapped by the user.",
-    #     min_length=1,
-    # )
+
     source_schema_code: Union[str, None] = Field(
         description="The source schema code.",
         min_length=1,
@@ -89,11 +89,39 @@ class TranslationOutput(BaseModel):
     """Structured output for the translated schema and/or queries."""
 
     translated_schema_code: Union[str, None] = Field(
-        description="The precise translated schema definitions (Entities/Models). Do not include any usage queries here."
+        description="The precise translated schema definitions (entities/models). Plain code only. Do not include usage queries."
     )
 
     translated_query_code: Union[str, None] = Field(
-        description="The precise translated queries. Do not include schema definitions here."
+        description=(
+            "The precise translated production queries only. Keep query semantics and method shape equivalent to source query "
+            "code. Plain code only. Do not include schema definitions, validation harness helpers, or synthetic validator-only "
+            "parameters unless they already exist in source query code."
+        )
+    )
+
+    validation_harness_code: Union[str, None] = Field(
+        description="Dedicated query validation harness code used for validate_source_query/validate_target_query tool calls. Plain code only. Keep separate from translated_query_code."
+    )
+
+    validation_sort_by_field: Union[str, None] = Field(
+        default=None,
+        description="Deterministic sort field for query validation (e.g. 'Id' or 'pickingCompletedWhen'). Required if query is translated.",
+    )
+
+    validation_entry_type_name: Union[str, None] = Field(
+        default=None,
+        description="Name of the class in validation_harness_code (e.g. 'QueryValidationHarness'). Required if query is translated.",
+    )
+
+    validation_entry_method_name: Union[str, None] = Field(
+        default=None,
+        description="Name of the method in validation_harness_code (e.g. 'build' or 'Build'). Required if query is translated.",
+    )
+
+    source_validation_harness_code: Union[str, None] = Field(
+        default=None,
+        description="Dedicated validation harness code for the source query, keeping original logic but wrapped in a static method returning IQueryable or similar. Required if query is translated.",
     )
 
 
@@ -131,7 +159,7 @@ async def extract_input(
         origin_frameworks=[f.value for f in FrameworkType],
         destination_frameworks=[f.value for f in FrameworkType],
     )
-    
+
     extraction_agent = create_agent(
         await get_model(config, runtime, AvailableModel.EINFRA_QWEN3_CODER_30B),
         system_prompt=system_prompt,
@@ -165,22 +193,13 @@ Conversation:
     response = await extraction_agent.ainvoke(
         {"messages": [HumanMessage(content=prompt)]}
     )
-    
+
     if "structured_response" not in response:
         logger.warning("Extraction agent did not return structured response.")
         return {}
-    
-    extraction: ExtractionOutput = response["structured_response"]
 
-    return {
-        "source_schema_code": extraction.source_schema_code,
-        "source_query_code": extraction.source_query_code,
-        "translation_type": extraction.translation_type,
-        "source_target": extraction.source_target,
-        "source_target_version": extraction.source_target_version,
-        "destination_target": extraction.destination_target,
-        "destination_target_version": extraction.destination_target_version,
-    }
+    extraction: ExtractionOutput = response["structured_response"]
+    return extraction.model_dump(warnings="error", exclude_unset=True)
 
 
 async def schema_inspection(
@@ -263,46 +282,6 @@ Source code being translated:
             }
 
 
-async def _generate_council_strategy(
-    model_name: str,
-    state: State,
-    config: RunnableConfig,
-    runtime: Runtime[Context],
-) -> dict:
-    """Helper to generate a single strategy asynchronously."""
-    llm = await get_model(config, runtime, model_name_override=model_name)
-
-    prompt = f"""Brainstorm a translation strategy for:
-{f"Schema:\n{state.source_schema_code}\n" if state.source_schema_code else ""}
-{f"Query:\n{state.source_query_code}\n" if state.source_query_code else ""}
-From {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
-
-Database schema context:
-{state.schema_context}"""  # ty:ignore[unresolved-attribute]
-
-    response = await llm.ainvoke([HumanMessage(content=prompt)])
-    return {"model": model_name, "strategy": str(response.content)}
-
-
-async def council_of_models(
-    state: State, config: RunnableConfig, runtime: Runtime[Context]
-) -> dict[str, Any]:
-    """Generate advice from multiple LLMs leveraging asyncio for parallel execution."""
-    council_targets = [
-        AvailableModel.EINFRA_GLM_5,
-        AvailableModel.OLLAMA_QWEN3_CODER_30B,
-    ]
-
-    tasks = [
-        _generate_council_strategy(t, state, config, runtime) for t in council_targets
-    ]
-    responses = await asyncio.gather(*tasks, return_exceptions=True)
-
-    valid_responses = [r for r in responses if isinstance(r, dict)]
-
-    return {"council_responses": valid_responses}
-
-
 async def translation_agent(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ) -> dict[str, Any]:
@@ -310,6 +289,8 @@ async def translation_agent(
 
     Combines static tools (validators, fallback docs) with dynamically loaded
     database and documentation MCP tools.
+
+    !! DEPRECATED
     """
     model = await get_model(config, runtime)
 
@@ -332,9 +313,7 @@ async def translation_agent(
             ModelFallbackMiddleware(
                 await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_5),
                 await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC),
-                await get_model(
-                    config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B
-                ),
+                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B),
             ),
             ToolRetryMiddleware(),
             # LLMToolSelectorMiddleware(
@@ -363,12 +342,9 @@ async def translation_agent(
 
     message = f"""Translate the following Source Code ({"schema/query" if state.translation_type.value == TranslationType.BOTH else state.translation_type.value}) from {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 {f"\nStrategies to consider:\n{strategies}\n" if strategies else ""}{f"\nDatabase Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}---
-
 Source Code:
 {f"<source_schema_code>\n{state.source_schema_code.strip()}\n</source_schema_code>" if state.source_schema_code else ""}{f"\n<source_query_code>\n{state.source_query_code.strip()}\n</source_query_code>" if state.source_query_code else ""}
 """  # ty:ignore[unresolved-attribute]
-    # summarization_middleware = SummarizationMiddleware(model, trigger=("messages", 1))
-    # summarized_messages: dict[str, Any] | None = await summarization_middleware.abefore_model(AgentState(messages=[*state.translation_messages]), Runtime())
 
     # Invoke the agent. It manages its own messages and tool calls loops.
     response = await agent.ainvoke(
@@ -381,22 +357,235 @@ Source Code:
     logger.debug("Translation response: %s", response)
 
     if "structured_response" not in response:
+        source_validation = _latest_validation_outcome(
+            list(response["messages"]),
+            "[Source Query Validation Passed]",
+            "[Source Query Validation Failed]",
+        )
+        if (
+            state.translation_type in {TranslationType.QUERY, TranslationType.BOTH}
+            and source_validation == "failed"
+        ):
+            return {
+                "messages": response["messages"],
+                "translation_messages": response["messages"],
+                "translated_schema_code": None,
+                "translated_query_code": None,
+                "validation_harness_code": None,
+            }
+
         logger.warning("No structured response available.")
+        feedback = HumanMessage(
+            content=(
+                "Return a structured_response with translated_schema_code and/or translated_query_code. "
+                "If translation_type includes query, run validate_source_query, validate_target_query, "
+                "and check_query_equivalence before finalizing."
+            )
+        )
+        updated_messages = [*response["messages"], feedback]
         return {
-            "messages": response["messages"],
-            "translation_messages": response["messages"],
+            "messages": updated_messages,
+            "translation_messages": updated_messages,
+            "translated_schema_code": None,
+            "translated_query_code": None,
+            "validation_harness_code": None,
         }
 
     # Extract structured output if available
+    output = cast(TranslationOutput, response["structured_response"])
     updates: dict[str, Any] = {
         "messages": response["messages"],
         "translation_messages": response["messages"],
     }
-    output = response["structured_response"]
-    if output.translated_schema_code:
-        updates["translated_schema_code"] = output.translated_schema_code
-    if output.translated_query_code:
-        updates["translated_query_code"] = output.translated_query_code
+    updates.update(output.model_dump(exclude_unset=True, exclude_defaults=True))
+
+    return updates
+
+
+async def generate_translation_node(
+    state: State, config: RunnableConfig, runtime: Runtime[Context]
+) -> dict[str, Any]:
+    """Deterministically generate the translation using structured LLM output."""
+    model = await get_model(config, runtime)
+    structured_llm = model.with_structured_output(TranslationOutput)
+
+    system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
+        origin_frameworks=[f.value for f in FrameworkType],
+        target_frameworks=[f.value for f in FrameworkType],
+        system_time=datetime.now(tz=UTC).isoformat(),
+    )
+
+    message = f"""Translate the following Source Code ({"schema/query" if state.translation_type and state.translation_type.value == TranslationType.BOTH else (state.translation_type.value if state.translation_type else "schema")}) from {state.source_target.value if state.source_target else "Unknown"}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value if state.destination_target else "Unknown"}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
+{f"\nDatabase Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}---
+Source Code:
+{f"<source_schema_code>\n{state.source_schema_code}\n</source_schema_code>" if state.source_schema_code else ""}{f"\n<source_query_code>\n{state.source_query_code}\n</source_query_code>" if state.source_query_code else ""}
+"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        *state.translation_messages,
+    ]
+    if len(state.translation_messages) == 0:
+        messages.append(HumanMessage(content=message))
+
+    # Invoke LLM
+    response = await structured_llm.ainvoke(messages)
+
+    updates: dict[str, Any] = {
+        "translation_loop_count": state.translation_loop_count + 1,
+    }
+
+    if not isinstance(response, TranslationOutput):
+        logger.warning("LLM did not return TranslationOutput properly.")
+        return updates
+
+    updates.update(response.model_dump(exclude_unset=True, exclude_none=True))
+
+    # Add AI response to the history so next iterations have the context
+    from langchain_core.messages import AIMessage
+
+    updates["translation_messages"] = [
+        AIMessage(
+            content="Generated translation. Commencing deterministic validation..."
+        )
+    ]
+
+    return updates
+
+
+async def human_intervention_node(
+    state: State, config: RunnableConfig, runtime: Runtime[Context]
+) -> dict[str, Any]:
+    """A dummy node that acts as a pausing point when loop threshold is reached."""
+    return {}
+
+
+async def validate_schema_node(
+    state: State, config: RunnableConfig, runtime: Runtime[Context]
+) -> dict[str, Any]:
+    """Execute schema validation deterministically outside the LLM."""
+    from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
+    from react_agent.custom_tools.java_validator import validate_java_code
+
+    code = state.translated_schema_code
+    if not code:
+        return {}
+
+    target = state.destination_target
+    if not target:
+        return {}
+
+    if target in JavaFramework:
+        res = await validate_java_code.ainvoke(
+            {"source_code": code, "framework": target, "validate_schema": True}
+        )
+    else:
+        res = await validate_dotnet_code.ainvoke(
+            {"source_code": code, "framework": target}
+        )
+
+    return {"translation_messages": [HumanMessage(content=str(res))]}
+
+
+async def validate_query_node(
+    state: State, config: RunnableConfig, runtime: Runtime[Context]
+) -> dict[str, Any]:
+    """Execute query validation tools in parallel deterministically outside the LLM."""
+    from react_agent.custom_tools.query_validator import (
+        check_query_equivalence,
+        validate_source_query,
+        validate_target_query,
+    )
+
+    msgs = []
+
+    if not state.translated_query_code:
+        return {}
+
+    if not state.source_target or not state.destination_target:
+        return {}
+
+    src_task = validate_source_query.ainvoke(
+        {
+            "validation_schema_code": state.source_schema_code,
+            "validation_harness_code": state.source_validation_harness_code or "",
+            "framework": state.source_target,
+            "sort_by_field": state.validation_sort_by_field or "id",
+            "entry_type_name": state.validation_entry_type_name or "QueryEntrypoint",
+            "entry_method_name": state.validation_entry_method_name or "Build",
+        }
+    )
+
+    tgt_task = validate_target_query.ainvoke(
+        {
+            "validation_schema_code": state.translated_schema_code,
+            "validation_harness_code": state.validation_harness_code or "",
+            "framework": state.destination_target,
+            "sort_by_field": state.validation_sort_by_field or "id",
+            "entry_type_name": state.validation_entry_type_name
+            or "QueryValidationHarness",
+            "entry_method_name": state.validation_entry_method_name or "build",
+        }
+    )
+
+    src_res, tgt_res = await asyncio.gather(src_task, tgt_task, return_exceptions=True)
+
+    src_str = (
+        str(src_res)
+        if not isinstance(src_res, Exception)
+        else f"[Source Query Validation Failed] {src_res}"
+    )
+    tgt_str = (
+        str(tgt_res)
+        if not isinstance(tgt_res, Exception)
+        else f"[Target Query Validation Failed] {tgt_res}"
+    )
+
+    msgs.append(HumanMessage(content=src_str))
+    msgs.append(HumanMessage(content=tgt_str))
+
+    if (
+        "[Source Query Validation Passed]" in src_str
+        and "[Target Query Validation Passed]" in tgt_str
+    ):
+        equiv_res = await check_query_equivalence.ainvoke(
+            {
+                "source_orm": state.source_target.value,
+                "target_framework": state.destination_target.value,
+            }
+        )
+        equiv_str = (
+            str(equiv_res)
+            if not isinstance(equiv_res, Exception)
+            else f"Error: {equiv_res}"
+        )
+        msgs.append(HumanMessage(content=equiv_str))
+
+    return {"translation_messages": msgs}
+
+
+async def evaluate_translation_node(
+    state: State, config: RunnableConfig, runtime: Runtime[Context]
+) -> dict[str, Any]:
+    """Evaluate structural output and validation results to provide feedback if needed."""
+    issues, schema_ok, query_ok = _deterministic_translation_issues(
+        state,
+        state.translated_schema_code,
+        state.translated_query_code,
+        state.validation_harness_code,
+        list(state.translation_messages),
+    )
+
+    updates: dict[str, Any] = {}
+    if issues:
+        feedback = _deterministic_feedback_message(issues)
+        updates["translation_messages"] = [feedback]
+
+        if not schema_ok:
+            updates["translated_schema_code"] = None
+        if not query_ok:
+            updates["translated_query_code"] = None
+            updates["validation_harness_code"] = None
 
     return updates
 
@@ -409,24 +598,50 @@ def should_extract_input(state: State) -> Literal["schema_inspection", "extract_
         return "extract_input"
 
 
+def route_post_translation(
+    state: State,
+) -> Literal[
+    "validate_schema_node", "validate_query_node", "evaluate_translation_node"
+]:
+    """Route from translation_agent to the first applicable validation node."""
+    if state.translation_type in {TranslationType.SCHEMA, TranslationType.BOTH}:
+        return "validate_schema_node"
+    if state.translation_type == TranslationType.QUERY:
+        return "validate_query_node"
+    return "evaluate_translation_node"
+
+
+def route_post_schema_validation(
+    state: State,
+) -> Literal["validate_query_node", "evaluate_translation_node"]:
+    """Route from validate_schema to validate_query or deterministic evaluation."""
+    if state.translation_type == TranslationType.BOTH:
+        return "validate_query_node"
+    return "evaluate_translation_node"
+
+
 def should_continue_translation(
     state: State,
-) -> Literal["translation_agent", END]:  # ty:ignore[invalid-type-form]
-    if state.translation_type == TranslationType.SCHEMA:
-        is_translated = state.translated_schema_code is not None
-    elif state.translation_type == TranslationType.QUERY:
-        is_translated = state.translated_query_code is not None
-    elif state.translation_type == TranslationType.BOTH:
-        is_translated = (
-            state.translated_schema_code is not None
-            and state.translated_query_code is not None
-        )
-    else:
-        return "translation_agent"
-    if is_translated:
-        return END
-    else:
-        return "translation_agent"
+) -> Literal["generate_translation_node", "human_intervention_node", "__end__"]:
+    """Route back to translation until deterministic completion criteria are met."""
+    if state.translation_type is None:
+        return "generate_translation_node"
+
+    issues, _, _ = _deterministic_translation_issues(
+        state,
+        state.translated_schema_code,
+        state.translated_query_code,
+        state.validation_harness_code,
+        list(state.translation_messages),
+    )
+
+    if len(issues) == 0:
+        return "__end__"
+
+    if state.translation_loop_count >= 3:
+        return "human_intervention_node"
+
+    return "generate_translation_node"
 
 
 langfuse = get_client()
@@ -454,28 +669,38 @@ builder = StateGraph(
 )
 
 
-builder.add_node(extract_input, retry_policy=RetryPolicy(max_attempts=3)) # type: ignore
+builder.add_node(extract_input, retry_policy=RetryPolicy(max_attempts=3))  # type: ignore
 builder.add_node(
-    schema_inspection, # type: ignore
+    schema_inspection,  # type: ignore
     cache_policy=CachePolicy(ttl=300),
     retry_policy=RetryPolicy(max_attempts=3),
 )
-# builder.add_node("council_of_models", council_of_models)
 builder.add_node(
-    translation_agent, # type: ignore
+    generate_translation_node,
     cache_policy=CachePolicy(ttl=300),
     retry_policy=RetryPolicy(max_attempts=3),
+)
+builder.add_node(human_intervention_node)
+
+builder.add_node(validate_schema_node, retry_policy=RetryPolicy(max_attempts=3))
+builder.add_node(validate_query_node, retry_policy=RetryPolicy(max_attempts=3))
+builder.add_node(
+    evaluate_translation_node,
 )
 
 builder.add_conditional_edges(START, should_extract_input)
 builder.add_conditional_edges("extract_input", should_extract_input)
-# builder.add_edge("schema_inspection", "council_of_models")
-# builder.add_edge("council_of_models", "translation_agent")
-builder.add_edge("schema_inspection", "translation_agent")
-builder.add_conditional_edges("translation_agent", should_continue_translation)
+builder.add_edge("schema_inspection", "generate_translation_node")
+
+builder.add_conditional_edges("generate_translation_node", route_post_translation)
+builder.add_conditional_edges("validate_schema_node", route_post_schema_validation)
+builder.add_edge("validate_query_node", "evaluate_translation_node")
+builder.add_conditional_edges("evaluate_translation_node", should_continue_translation)
+builder.add_edge("human_intervention_node", "generate_translation_node")
 
 graph = builder.compile(
     name="UOM Orchestrator Workflow",
+    interrupt_before=["human_intervention_node"],
     # checkpointer=checkpointer,
     # store=store,
     cache=cache,
@@ -483,5 +708,5 @@ graph = builder.compile(
 ).with_config({"callbacks": [langfuse_handler, LoggingCallbackHandler()]})
 
 # logger.info(graph.get_graph().draw_mermaid())
-if (os.getenv("DEVELOPMENT")):
+if os.getenv("DEVELOPMENT"):
     logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
