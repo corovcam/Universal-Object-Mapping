@@ -3,3 +3,4 @@ gha-creds-*.json
 .env
 /.idea/
 *.dump
+.serena/
