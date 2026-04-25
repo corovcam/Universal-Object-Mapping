@@ -2,6 +2,13 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "type": "java",
+      "name": "Neo4jQueryEntrypoint",
+      "request": "launch",
+      "mainClass": "uom.services.benchmarks.Neo4jQueryEntrypoint",
+      "projectName": "benchmarks"
+    },
+    {
       "name": "[orchestrator] Python Debugger: Remote Attach",
       "type": "debugpy",
       "request": "attach",

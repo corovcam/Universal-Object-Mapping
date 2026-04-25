@@ -55,6 +55,52 @@ public class WideWorldImportersContext : DbContext
 
     public DbSet<OrderLine> OrderLines => Set<OrderLine>();
 }
+</example>
+
+<example orm=\"Dapper\">
+using System;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace Sandbox;
+
+[Table(\"OrderLines\", Schema = \"Sales\")]
+public class OrderLine
+{
+    [Key]
+    public int OrderLineID { get; set; }
+
+    public DateTime? PickingCompletedWhen { get; set; }
+
+    public string Description { get; set; } = string.Empty;
+}
+</example>
+
+<example orm=\"NHibernate\">
+using System;
+using NHibernate.Mapping.ByCode;
+using NHibernate.Mapping.ByCode.Conformist;
+
+namespace Sandbox;
+
+public class OrderLine
+{
+    public virtual int OrderLineID { get; set; }
+    public virtual DateTime? PickingCompletedWhen { get; set; }
+    public virtual string Description { get; set; } = string.Empty;
+}
+
+public class OrderLineMap : ClassMapping<OrderLine>
+{
+    public OrderLineMap()
+    {
+        Schema(\"Sales\");
+        Table(\"OrderLines\");
+        Id(x => x.OrderLineID, m => m.Column(\"OrderLineID\"));
+        Property(x => x.PickingCompletedWhen);
+        Property(x => x.Description);
+    }
+}
 </example>""",
     )
     validation_harness_code: str = Field(
@@ -63,6 +109,7 @@ public class WideWorldImportersContext : DbContext
         + """
 <example orm=\"EfCore\">
 using System;
+using System.Linq;
 using Microsoft.EntityFrameworkCore;
 
 namespace Sandbox;
@@ -80,6 +127,43 @@ public static class QueryEntrypoint
         var sorted = ascending ? query.OrderBy(ol => ol.OrderLineID) : query.OrderByDescending(ol => ol.OrderLineID);
 
         return sorted;
+    }
+}
+</example>
+
+<example orm=\"Dapper\">
+using System;
+
+namespace Sandbox;
+
+public static class QueryEntrypoint
+{
+    public static (string Sql, object? Parameters) Build(bool ascending)
+    {
+        var sql = @\"SELECT OrderLineID, PickingCompletedWhen, Description
+                    FROM Sales.OrderLines
+                    WHERE PickingCompletedWhen >= @From AND PickingCompletedWhen <= @To
+                    ORDER BY OrderLineID \" + (ascending ? \"ASC\" : \"DESC\");
+        var parameters = new { From = new DateTime(2014, 12, 20), To = new DateTime(2014, 12, 31) };
+        return (sql, parameters);
+    }
+}
+</example>
+
+<example orm=\"NHibernate\">
+using System;
+using NHibernate;
+
+namespace Sandbox;
+
+public static class QueryEntrypoint
+{
+    public static IQuery Build(ISession session, bool ascending)
+    {
+        var hql = \"FROM OrderLine ol WHERE ol.PickingCompletedWhen >= :from AND ol.PickingCompletedWhen <= :to ORDER BY ol.OrderLineID \" + (ascending ? \"asc\" : \"desc\");
+        return session.CreateQuery(hql)
+            .SetParameter(\"from\", new DateTime(2014, 12, 20))
+            .SetParameter(\"to\", new DateTime(2014, 12, 31));
     }
 }
 </example>""",
@@ -106,7 +190,7 @@ class TargetQueryInput(BaseModel):
 
     validation_schema_code: str = Field(
         min_length=1,
-        description="Java schema code only with ."
+        description="Java schema code only."
         + """
 <example framework="MongoDb">
 import org.springframework.data.annotation.Id;
@@ -122,6 +206,24 @@ class Customer {
     private Integer customerId;
     
     @Field("customerName")
+    private String customerName;
+}
+</example>
+
+<example framework="Neo4j">
+import org.springframework.data.neo4j.core.schema.Id;
+import org.springframework.data.neo4j.core.schema.Node;
+import org.springframework.data.neo4j.core.schema.Property;
+
+@Node("Customer")
+class Customer {
+    @Id
+    private Long id;
+
+    @Property("customerId")
+    private Integer customerId;
+
+    @Property("customerName")
     private String customerName;
 }
 </example>""",
@@ -150,6 +252,35 @@ class QueryValidationHarness {
          "query", query,
          "countQuery", countQuery,
          "collection", "orderLines"
+      );
+   }
+}
+</example>
+
+<example framework="Neo4j">
+import java.util.Map;
+import org.neo4j.cypherdsl.core.Cypher;
+import org.neo4j.cypherdsl.core.Statement;
+import org.springframework.data.neo4j.core.Neo4jTemplate;
+
+class QueryValidationHarness {
+   static Map<String, Object> build(Neo4jTemplate neo4jTemplate, String sortByField, boolean ascending) {
+      var customer = Cypher.node("Customer").named("c");
+      var sortProperty = customer.property(sortByField);
+      Statement statement = Cypher.match(customer)
+               .returning(customer)
+               .orderBy(ascending ? sortProperty.ascending() : sortProperty.descending())
+               .limit(Cypher.literalOf(1))
+               .build();
+
+      Statement countStatement = Cypher.match(customer)
+               .returning(Cypher.count(customer).as("cnt"))
+               .build();
+
+      return Map.of(
+               "statement", statement,
+               "countStatement", countStatement,
+               "params", Map.of()
       );
    }
 }
@@ -358,7 +489,7 @@ async def validate_target_query(
 
     if response.is_success and result.get("success", False):
         summary = {
-            "estimatedResultCount": result.get("estimatedResultCount"),
+            "estimatedRowCount": result.get("estimatedRowCount"),
             "errors": result.get(
                 "errors", []
             ),  # TODO: just return the whole error stream from dotnet/java services, dont't try to parse it in the services, it is too error prone.
@@ -548,12 +679,8 @@ def _compare_count(
     target_info: dict[str, Any],
 ) -> tuple[bool, str]:
     source_count = source_info.get("estimatedRowCount")
-    if source_count is None:
-        source_count = source_info.get("estimatedResultCount")
 
-    target_count = target_info.get("estimatedResultCount")
-    if target_count is None:
-        target_count = target_info.get("estimatedRowCount")
+    target_count = target_info.get("estimatedRowCount")
 
     if source_count is None or target_count is None:
         return False, "count missing in source or target payload"

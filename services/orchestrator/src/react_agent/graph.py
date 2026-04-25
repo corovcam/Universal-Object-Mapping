@@ -1,4 +1,6 @@
+# pyright: ignore[reportArgumentType]
 # ty:ignore[invalid-argument-type]
+
 """Define the Universal Object Mapping orchestrator graph."""
 
 import asyncio
@@ -37,6 +39,7 @@ from react_agent.custom_tools.mcp_database import load_database_tools
 from react_agent.prompts import (
     SYSTEM_PROMPT_EXTRACTION,
     SYSTEM_PROMPT_SCHEMA_INSPECTOR,
+    SYSTEM_PROMPT_TRANSLATION_NODE,
     SYSTEM_PROMPT_TRANSLATOR,
 )
 from react_agent.state import (
@@ -118,6 +121,24 @@ class Customer {
     @Field("customerName")
     private String customerName;
 }
+</example>
+
+<example framework="Neo4j">
+import org.springframework.data.neo4j.core.schema.Id;
+import org.springframework.data.neo4j.core.schema.Node;
+import org.springframework.data.neo4j.core.schema.Property;
+
+@Node("Customer")
+class Customer {
+    @Id
+    private Long id;
+
+    @Property("customerId")
+    private Integer customerId;
+
+    @Property("customerName")
+    private String customerName;
+}
 </example>"""
     )
 
@@ -127,8 +148,10 @@ class Customer {
         "the core source schema mapping equivalent to the original source_schema_code. Should be fully valid C# code. Do not include query-related code here."
         + """
 <example orm="EfCore">
+</example>
+
+<example orm="Dapper">
 using System;
-using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -144,15 +167,32 @@ public class OrderLine
 
     public string Description { get; set; } = string.Empty;
 }
+</example>
 
-public class WideWorldImportersContext : DbContext
+<example orm="NHibernate">
+using System;
+using NHibernate.Mapping.ByCode;
+using NHibernate.Mapping.ByCode.Conformist;
+
+namespace Sandbox;
+
+public class OrderLine
 {
-    public WideWorldImportersContext(DbContextOptions<WideWorldImportersContext> options)
-        : base(options)
-    {
-    }
+    public virtual int OrderLineID { get; set; }
+    public virtual DateTime? PickingCompletedWhen { get; set; }
+    public virtual string Description { get; set; } = string.Empty;
+}
 
-    public DbSet<OrderLine> OrderLines => Set<OrderLine>();
+public class OrderLineMap : ClassMapping<OrderLine>
+{
+    public OrderLineMap()
+    {
+        Schema("Sales");
+        Table("OrderLines");
+        Id(x => x.OrderLineID, m => m.Column("OrderLineID"));
+        Property(x => x.PickingCompletedWhen);
+        Property(x => x.Description);
+    }
 }
 </example>"""
     )
@@ -183,6 +223,35 @@ class QueryValidationHarness {
       );
    }
 }
+</example>
+
+<example framework="Neo4j">
+import java.util.Map;
+import org.neo4j.cypherdsl.core.Cypher;
+import org.neo4j.cypherdsl.core.Statement;
+import org.springframework.data.neo4j.core.Neo4jTemplate;
+
+class QueryValidationHarness {
+   static Map<String, Object> build(Neo4jTemplate neo4jTemplate, String sortByField, boolean ascending) {
+      var customer = Cypher.node("Customer").named("c");
+      var sortProperty = customer.property(sortByField);
+      Statement statement = Cypher.match(customer)
+               .returning(customer)
+               .orderBy(ascending ? sortProperty.ascending() : sortProperty.descending())
+               .limit(Cypher.literalOf(1))
+               .build();
+
+      Statement countStatement = Cypher.match(customer)
+               .returning(Cypher.count(customer).as("cnt"))
+               .build();
+
+      return Map.of(
+               "samples": List<>,
+               "schema": query.exectute()
+               "count": 
+      );
+   }
+}
 </example>"""
     )
 
@@ -207,13 +276,37 @@ class QueryValidationHarness {
         + """
 <example orm="EfCore">
 using System;
+using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Sandbox;
 
+[Table("OrderLines", Schema = "Sales")]
+public class OrderLine
+{
+    [Key]
+    public int OrderLineID { get; set; }
+
+    public DateTime? PickingCompletedWhen { get; set; }
+
+    public string Description { get; set; } = string.Empty;
+}
+
+public class SandboxDatabaseContext : DbContext
+{
+    public SandboxDatabaseContext(DbContextOptions<SandboxDatabaseContext> options)
+        : base(options)
+    {
+    }
+
+    public DbSet<OrderLine> OrderLines => Set<OrderLine>();
+}
+
 public static class QueryEntrypoint
 {
-    public static IQueryable<OrderLine> Build(WideWorldImportersContext context, bool ascending)
+    public static IQueryable<OrderLine> main()
     {
         var from = new DateTime(2014, 12, 20);
         var to = new DateTime(2014, 12, 31);
@@ -221,9 +314,47 @@ public static class QueryEntrypoint
         var query = context.OrderLines
             .Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);
 
-        var sorted = ascending ? query.OrderBy(ol => ol.OrderLineID) : query.OrderByDescending(ol => ol.OrderLineID);
+        var queryAscending = query.OrderBy(ol => ol.OrderLineID);
+        var queryDescending = query.OrderByDescending(ol => ol.OrderLineID);
 
         return sorted;
+    }
+}
+</example>
+
+<example orm="Dapper">
+using System;
+
+namespace Sandbox;
+
+public static class QueryEntrypoint
+{
+    public static (string Sql, object? Parameters) Build(bool ascending)
+    {
+        var sql = @"SELECT OrderLineID, PickingCompletedWhen, Description
+                    FROM Sales.OrderLines
+                    WHERE PickingCompletedWhen >= @From AND PickingCompletedWhen <= @To
+                    ORDER BY OrderLineID " + (ascending ? "ASC" : "DESC");
+        var parameters = new { From = new DateTime(2014, 12, 20), To = new DateTime(2014, 12, 31) };
+        return (sql, parameters);
+    }
+}
+</example>
+
+<example orm="NHibernate">
+using System;
+using NHibernate;
+
+namespace Sandbox;
+
+public static class QueryEntrypoint
+{
+    public static IQuery Build(ISession session, bool ascending)
+    {
+        var hql = "FROM OrderLine ol WHERE ol.PickingCompletedWhen >= :from AND ol.PickingCompletedWhen <= :to ORDER BY ol.OrderLineID " + (ascending ? "asc" : "desc");
+        return session.CreateQuery(hql)
+            .SetParameter("from", new DateTime(2014, 12, 20))
+            .SetParameter("to", new DateTime(2014, 12, 31));
     }
 }
 </example>"""
@@ -514,9 +645,9 @@ async def generate_translation_node(
     model = await get_model(config, runtime)
     structured_llm = model.with_structured_output(TranslationOutput)
 
-    system_prompt = SYSTEM_PROMPT_TRANSLATOR.format(
+    system_prompt = SYSTEM_PROMPT_TRANSLATION_NODE.format(
         origin_frameworks=[f.value for f in FrameworkType],
-        target_frameworks=[f.value for f in FrameworkType],
+        destination_frameworks=[f.value for f in FrameworkType],
         system_time=datetime.now(tz=UTC).isoformat(),
     )
 
@@ -743,21 +874,21 @@ builder = StateGraph(
 )
 
 
-builder.add_node(extract_input, retry_policy=RetryPolicy(max_attempts=3))  # type: ignore
+builder.add_node(extract_input, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
 builder.add_node(
-    schema_inspection,  # type: ignore
+    schema_inspection,
     cache_policy=CachePolicy(ttl=300),
     retry_policy=RetryPolicy(max_attempts=3),
 )
 builder.add_node(
-    generate_translation_node,
+    generate_translation_node, # type: ignore
     cache_policy=CachePolicy(ttl=300),
     retry_policy=RetryPolicy(max_attempts=3),
 )
-builder.add_node(human_intervention_node)
+builder.add_node(human_intervention_node) # type: ignore
 
-builder.add_node(validate_schema_node, retry_policy=RetryPolicy(max_attempts=3))
-builder.add_node(validate_query_node, retry_policy=RetryPolicy(max_attempts=3))
+builder.add_node(validate_schema_node, retry_policy=RetryPolicy(max_attempts=3)) # type: ignore
+builder.add_node(validate_query_node, retry_policy=RetryPolicy(max_attempts=3))  
 
 builder.add_conditional_edges(START, should_extract_input)
 builder.add_conditional_edges("extract_input", should_extract_input)
