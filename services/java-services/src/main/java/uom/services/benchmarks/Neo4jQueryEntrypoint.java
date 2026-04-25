@@ -380,15 +380,21 @@ class StockItem {
 
 public class Neo4jQueryEntrypoint {
     
-    public static BuildableStatement<ResultStatement> query() {
+    public static BuildableStatement<ResultStatement> query(boolean returnCount) {
         ZonedDateTime from = ZonedDateTime.of(2014, 12, 20, 0, 0, 0, 0, ZoneOffset.UTC);
         ZonedDateTime to = ZonedDateTime.of(2014, 12, 31, 0, 0, 0, 0, ZoneOffset.UTC);
         
         var orderLine = Cypher.node("OrderLine").named("ol");
-        var buildStatement = Cypher.match(orderLine)
+        var partialStatement = Cypher.match(orderLine)
             .where(orderLine.property("pickingCompletedWhen").gte(Cypher.parameter("from", from)))
-            .and(orderLine.property("pickingCompletedWhen").lte(Cypher.parameter("to", to)))
-            .returning(orderLine);
+            .and(orderLine.property("pickingCompletedWhen").lte(Cypher.parameter("to", to)));
+        
+        BuildableStatement<ResultStatement> buildStatement;
+        if (returnCount) {
+            buildStatement = partialStatement.returning(Cypher.count(orderLine));
+        } else {
+            buildStatement = partialStatement.returning(orderLine);
+        }
         
         return buildStatement;
     }
@@ -401,20 +407,17 @@ public class Neo4jQueryEntrypoint {
         try (Driver driver = GraphDatabase.driver(uri, AuthTokens.basic(user, pass))) {
             Neo4jTemplate template = QueryRuntimeSupport.createNeo4jTemplate(driver);
 
-            var ascQuery = ((OngoingReadingAndReturn)query()).orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.ASC)).limit(1).build();
-            var descQuery = ((OngoingReadingAndReturn)query()).orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.DESC)).limit(1).build();
+            var ascQuery = ((OngoingReadingAndReturn)query(false)).orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.ASC)).limit(1).build();
+            var descQuery = ((OngoingReadingAndReturn)query(false)).orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.DESC)).limit(1).build();
         
             OrderLine firstSample = template.findOne(ascQuery, ascQuery.getCatalog().getParameters(), OrderLine.class).orElse(null);
             OrderLine lastSample = template.findOne(descQuery, descQuery.getCatalog().getParameters(), OrderLine.class).orElse(null);
+            long rowCount = template.count(query(true).build());
 
-            var explainStatement = query().explain();
-            var estimatedRowCount = driver.executableQuery(explainStatement.getCypher())
-                .withParameters(explainStatement.getCatalog().getParameters()).execute().summary().plan()
-                .arguments().getOrDefault("EstimatedRows", null);
-            var statement = query().build();
+            var statement = query(false).build();
             var resultMap = Map.of(
                 "cypher", Map.of("cypherString", statement.getCypher(), "parameters", statement.getCatalog().getParameters()),
-                "estimatedRowCount", estimatedRowCount != null ? estimatedRowCount.asDouble() : null,
+                "rowCount", rowCount,
                 "firstSample", firstSample,
                 "lastSample", lastSample
             );
