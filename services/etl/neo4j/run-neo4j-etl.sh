@@ -85,3 +85,8 @@ echo "[$(date +"%Y-%m-%d %T")] Restarting Neo4j database..." |& tee -a "$log_fil
 docker exec -u 0 -it "$container_name" neo4j start 2>&1 | tee -a "$log_file" ||
   docker exec -u 0 -it "$container_name" neo4j restart 2>&1 | tee -a "$log_file" ||
   echo "[$(date +"%Y-%m-%d %T")] Note: Neo4j database could not be re/started. Please restart it manually."
+
+# Step 6: Configure the database
+echo "[$(date +"%Y-%m-%d %T")] Running database configuration script..." |& tee -a "$log_file"
+docker exec -u 0 -it "$container_name" /bin/bash -c $(cat ./configure-db.sh) 2>&1 | tee -a "$log_file"
+echo "[$(date +"%Y-%m-%d %T")] Database configuration script completed" |& tee -a "$log_file"

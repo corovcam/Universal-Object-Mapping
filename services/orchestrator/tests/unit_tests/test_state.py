@@ -1,4 +1,5 @@
-from react_agent.state import FrameworkType, State
+from react_agent.constants import FrameworkType
+from react_agent.state import State
 
 
 def test_state_initialization() -> None:

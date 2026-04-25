@@ -1,6 +1,7 @@
 import pytest
 
-from react_agent.context import AvailableModel, Context
+from react_agent.constants import AvailableModel
+from react_agent.context import Context
 from react_agent.utils import (
     get_mongodb_standalone_mapping,
     get_neo4j_standalone_mapping,
