@@ -163,5 +163,7 @@ cython_debug/
 
 .langgraph_api
 
+.local-validation-logs/
+
 misc/
 .env.dev
