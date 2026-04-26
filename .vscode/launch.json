@@ -3,10 +3,19 @@
   "configurations": [
     {
       "type": "java",
+      "name": "MongoQueryEntrypoint",
+      "request": "launch",
+      "mainClass": "uom.services.benchmarks.MongoQueryEntrypoint",
+      "projectName": "benchmarks",
+      "envFile": "${workspaceFolder}/services/java-services/.env.dev"
+    },
+    {
+      "type": "java",
       "name": "Neo4jQueryEntrypoint",
       "request": "launch",
       "mainClass": "uom.services.benchmarks.Neo4jQueryEntrypoint",
-      "projectName": "benchmarks"
+      "projectName": "benchmarks",
+      "envFile": "${workspaceFolder}/services/java-services/.env.dev"
     },
     {
       "name": "[orchestrator] Python Debugger: Remote Attach",
@@ -22,6 +31,15 @@
           "remoteRoot": "."
         }
       ]
+    },
+    {
+      "name": "C#: Debug Active File",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${file}",
+      "linux": {
+        "args": ["Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"]
+      }
     }
   ]
 }

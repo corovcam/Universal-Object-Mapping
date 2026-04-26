@@ -490,4 +490,6 @@ $RECYCLE.BIN/
 *.dll
 .vs/
 
+.env
+.env.dev
 sandbox/

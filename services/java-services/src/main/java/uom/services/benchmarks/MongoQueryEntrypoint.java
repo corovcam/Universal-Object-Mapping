@@ -77,7 +77,7 @@ class CustomJsonSerializer extends StdSerializer<Object> {
 }
 
 final class QueryRuntimeSupport {
-    private static final String DEFAULT_MONGO_URI = "mongodb://uom_readonly:uom_readonly@localhost:27027/uom";
+    private static final String DEFAULT_MONGO_URI = "mongodb://uom_readonly:uom_readonly@mongodb:27017/uom";
     private static final String DEFAULT_MONGO_DATABASE = "uom";
 
     private QueryRuntimeSupport() {
@@ -108,11 +108,11 @@ final class QueryRuntimeSupport {
     }
 
     static String defaultMongoUri() {
-        return DEFAULT_MONGO_URI;
+        return System.getenv("MONGODB_URI") != null ? System.getenv("MONGODB_URI") : DEFAULT_MONGO_URI;
     }
 
     static String defaultMongoDatabase() {
-        return DEFAULT_MONGO_DATABASE;
+        return System.getenv("MONGODB_DATABASE") != null ? System.getenv("MONGODB_DATABASE") : DEFAULT_MONGO_DATABASE;
     }
 }
 
@@ -179,19 +179,14 @@ class Order {
     // Getters and Setters
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
-
     public Integer getOrderId() { return orderId; }
     public void setOrderId(Integer orderId) { this.orderId = orderId; }
-
     public Integer getCustomerId() { return customerId; }
     public void setCustomerId(Integer customerId) { this.customerId = customerId; }
-
     public LocalDateTime getOrderDate() { return orderDate; }
     public void setOrderDate(LocalDateTime orderDate) { this.orderDate = orderDate; }
-
     public LocalDate getExpectedDeliveryDate() { return expectedDeliveryDate; }
     public void setExpectedDeliveryDate(LocalDate expectedDeliveryDate) { this.expectedDeliveryDate = expectedDeliveryDate; }
-
     public Customer getCustomer() { return customer; }
     public void setCustomer(Customer customer) { this.customer = customer; }
 }
@@ -220,16 +215,12 @@ class Customer {
     // Getters and Setters
     public Integer getCustomerId() { return customerId; }
     public void setCustomerId(Integer customerId) { this.customerId = customerId; }
-
     public String getCustomerName() { return customerName; }
     public void setCustomerName(String customerName) { this.customerName = customerName; }
-
     public LocalDate getAccountOpenedDate() { return accountOpenedDate; }
     public void setAccountOpenedDate(LocalDate accountOpenedDate) { this.accountOpenedDate = accountOpenedDate; }
-
     public BigDecimal getCreditLimit() { return creditLimit; }
     public void setCreditLimit(BigDecimal creditLimit) { this.creditLimit = creditLimit; }
-
     public List<CustomerTransaction> getCustomerTransactions() { return customerTransactions; }
     public void setCustomerTransactions(List<CustomerTransaction> customerTransactions) { this.customerTransactions = customerTransactions; }
 }
@@ -261,25 +252,18 @@ class CustomerTransaction {
     // Getters and Setters
     public Integer getCustomerTransactionId() { return customerTransactionId; }
     public void setCustomerTransactionId(Integer customerTransactionId) { this.customerTransactionId = customerTransactionId; }
-
     public Integer getCustomerId() { return customerId; }
     public void setCustomerId(Integer customerId) { this.customerId = customerId; }
-
     public LocalDate getTransactionDate() { return transactionDate; }
     public void setTransactionDate(LocalDate transactionDate) { this.transactionDate = transactionDate; }
-
     public BigDecimal getTransactionAmount() { return transactionAmount; }
     public void setTransactionAmount(BigDecimal transactionAmount) { this.transactionAmount = transactionAmount; }
-
     public BigDecimal getAmountExcludingTax() { return amountExcludingTax; }
     public void setAmountExcludingTax(BigDecimal amountExcludingTax) { this.amountExcludingTax = amountExcludingTax; }
-
     public BigDecimal getTaxAmount() { return taxAmount; }
     public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
-
     public BigDecimal getOutstandingBalance() { return outstandingBalance; }
     public void setOutstandingBalance(BigDecimal outstandingBalance) { this.outstandingBalance = outstandingBalance; }
-
     public Boolean getIsFinalized() { return isFinalized; }
     public void setIsFinalized(Boolean isFinalized) { this.isFinalized = isFinalized; }
 }
@@ -339,43 +323,30 @@ class OrderLine {
     // Getters and Setters
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
-
     public Integer getOrderLineId() { return orderLineId; }
     public void setOrderLineId(Integer orderLineId) { this.orderLineId = orderLineId; }
-
     public Integer getOrderId() { return orderId; }
     public void setOrderId(Integer orderId) { this.orderId = orderId; }
-
     public Integer getStockItemId() { return stockItemId; }
     public void setStockItemId(Integer stockItemId) { this.stockItemId = stockItemId; }
-
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
-
     public Integer getPackageTypeId() { return packageTypeId; }
     public void setPackageTypeId(Integer packageTypeId) { this.packageTypeId = packageTypeId; }
-
     public Integer getQuantity() { return quantity; }
     public void setQuantity(Integer quantity) { this.quantity = quantity; }
-
     public BigDecimal getUnitPrice() { return unitPrice; }
     public void setUnitPrice(BigDecimal unitPrice) { this.unitPrice = unitPrice; }
-
     public BigDecimal getTaxRate() { return taxRate; }
     public void setTaxRate(BigDecimal taxRate) { this.taxRate = taxRate; }
-
     public Integer getPickedQuantity() { return pickedQuantity; }
     public void setPickedQuantity(Integer pickedQuantity) { this.pickedQuantity = pickedQuantity; }
-
     public LocalDateTime getPickingCompletedWhen() { return pickingCompletedWhen; }
     public void setPickingCompletedWhen(LocalDateTime pickingCompletedWhen) { this.pickingCompletedWhen = pickingCompletedWhen; }
-
     public Integer getLastEditedBy() { return lastEditedBy; }
     public void setLastEditedBy(Integer lastEditedBy) { this.lastEditedBy = lastEditedBy; }
-
     public LocalDateTime getLastEditedWhen() { return lastEditedWhen; }
     public void setLastEditedWhen(LocalDateTime lastEditedWhen) { this.lastEditedWhen = lastEditedWhen; }
-
     public StockItem getStockItem() { return stockItem; }
     public void setStockItem(StockItem stockItem) { this.stockItem = stockItem; }
 }
@@ -399,7 +370,7 @@ class StockItem {
 
 public class MongoQueryEntrypoint {
 
-    public static Query query() {
+    public static Query query1() {
         LocalDate from = LocalDate.of(2014, 12, 20);
         LocalDate to = LocalDate.of(2014, 12, 31);
 
@@ -416,13 +387,13 @@ public class MongoQueryEntrypoint {
         MongoTemplate mongoTemplate = QueryRuntimeSupport.createMongoTemplate(mongoUri, mongoDatabase);
 
         // Deterministic sorting
-        Query ascQuery = query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1);
-        Query descQuery = query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1);
+        Query ascQuery = query1().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1);
+        Query descQuery = query1().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1);
 
         OrderLine firstSample = mongoTemplate.findOne(ascQuery, OrderLine.class);
         OrderLine lastSample = mongoTemplate.findOne(descQuery, OrderLine.class);
 
-        var query = query();
+        var query = query1();
         var mongoQuery = Map.of(
             "collection", mongoTemplate.getCollectionName(OrderLine.class),
             "filter", query.getQueryObject(),
