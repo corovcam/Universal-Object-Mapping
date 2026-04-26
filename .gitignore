@@ -1,6 +1,7 @@
 *.bkp
 gha-creds-*.json
 .env
+.env.dev
 /.idea/
 *.dump
 .serena/
