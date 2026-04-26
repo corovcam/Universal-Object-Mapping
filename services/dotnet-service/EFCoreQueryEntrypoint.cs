@@ -177,12 +177,12 @@ public class SandboxDbContext(DbContextOptions<SandboxDbContext> options) : DbCo
 
 public static class EFCoreQueryEntrypoint
 {   
-    public static IQueryable<OrderLine> Query(SandboxDbContext context)
+    public static IEnumerable<OrderLine> Query1(SandboxDbContext ctx)
     {
         var from = new DateTime(2014, 12, 20);
         var to = new DateTime(2014, 12, 31);
 
-        var query = context.OrderLines
+        var query = ctx.OrderLines
             .Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);
         
         return query;
@@ -201,7 +201,7 @@ public static class EFCoreQueryEntrypoint
         );
 
         // Non-materialized query
-        var query = Query(context);
+        var query = Query1(context);
 
         // Deterministic sorting
         var firstSample = query.OrderBy(ol => ol.OrderLineID).FirstOrDefault();
@@ -210,7 +210,7 @@ public static class EFCoreQueryEntrypoint
         // Collect results and serialize
         var result = new SortedDictionary<string, object?>
         {
-            { "sqlString", query.ToQueryString() },
+            { "sqlString", query.AsQueryable().ToQueryString() },
             { "estimatedRowCount", query.Count() },
             { "firstSample", firstSample },
             { "lastSample", lastSample }

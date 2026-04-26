@@ -150,7 +150,7 @@ public class OrderLine
 
 public static class DapperQueryEntrypoint
 {   
-    public static IQueryable<OrderLine> Query(SqlConnection connection)
+    public static IEnumerable<OrderLine> Query1(SqlConnection conn)
     {
         var from = new DateTime(2014, 12, 20);
         var to = new DateTime(2014, 12, 31);
@@ -159,7 +159,29 @@ public static class DapperQueryEntrypoint
                        WHERE PickingCompletedWhen >= @From 
                        AND PickingCompletedWhen <= @To";
         
-        return connection.Query<OrderLine>(sql, new { From = from, To = to }).AsQueryable();
+        return conn.Query<OrderLine>(sql, new { From = from, To = to });
+    }
+    
+    public static (OrderLine?, OrderLine?, int) Query1Harness(SqlConnection conn)
+    {
+        var from = new DateTime(2014, 12, 20);
+        var to = new DateTime(2014, 12, 31);
+        var sql = @"SELECT TOP 1 * FROM Sales.OrderLines 
+                    WHERE PickingCompletedWhen >= @From 
+                    AND PickingCompletedWhen <= @To
+                    ORDER BY OrderLineID ASC;
+                    SELECT TOP 1 * FROM Sales.OrderLines 
+                    WHERE PickingCompletedWhen >= @From 
+                    AND PickingCompletedWhen <= @To
+                    ORDER BY OrderLineID DESC;
+                    SELECT COUNT(*) FROM Sales.OrderLines 
+                    WHERE PickingCompletedWhen >= @From 
+                    AND PickingCompletedWhen <= @To;";
+        using var multi = conn.QueryMultiple(sql, new { From = from, To = to });
+        var firstSample = multi.ReadFirstOrDefault<OrderLine>();
+        var lastSample = multi.ReadFirstOrDefault<OrderLine>();
+        var rowCount = multi.ReadFirst<int>();
+        return (firstSample, lastSample, rowCount);
     }
 
     public static void Main(string[] args)
@@ -171,19 +193,14 @@ public static class DapperQueryEntrypoint
         using var conn = new SqlConnection(connectionString);
         conn.Open();
 
-        var query = Query(conn);
-
-        // Deterministic sorting
-        var firstSample = query.OrderBy(ol => ol.OrderLineID).Take(1).FirstOrDefault();
-        var lastSample = query.OrderByDescending(ol => ol.OrderLineID).Take(1).FirstOrDefault();
-
+        var (firstSample, lastSample, rowCount) = Query1Harness(conn);
+        
         var result = new SortedDictionary<string, object?>
         {
-            { "estimatedRowCount", query.Count() },
+            { "estimatedRowCount", rowCount },
             { "firstSample", firstSample },
             { "lastSample", lastSample }
         };
-
         Console.WriteLine(CustomJsonSerializer.Serialize(result));
     }
 }

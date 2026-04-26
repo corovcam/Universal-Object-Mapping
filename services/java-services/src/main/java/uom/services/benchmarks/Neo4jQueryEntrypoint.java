@@ -78,7 +78,7 @@ class CustomJsonSerializer extends StdSerializer<Object> {
 }
 
 final class QueryRuntimeSupport {
-    private static final String DEFAULT_NEO4J_URI = "neo4j://localhost:7687";
+    private static final String DEFAULT_NEO4J_URI = "neo4j://neo4j:7687";
     private static final String DEFAULT_NEO4J_USER = "neo4j";
     private static final String DEFAULT_NEO4J_PASS = "password";
 
@@ -204,7 +204,6 @@ class Customer {
     @Property("creditLimit")
     private Double creditLimit;
 
-    // Based on schema, CustomerTransaction has CUSTOMERS out. So we map the incoming relationship.
     @Relationship(type = "CUSTOMERS", direction = Relationship.Direction.INCOMING)
     private List<CustomerTransaction> customerTransactions = new ArrayList<>();
 
@@ -362,8 +361,6 @@ class StockItem {
     
     @Property("stockItemName")
     private String stockItemName;
-    
-    // Additional properties can map here based on schema...
 
     public StockItem() {
     }
@@ -400,9 +397,9 @@ public class Neo4jQueryEntrypoint {
     }
 
     public static void main(String[] args) throws Exception {
-        String uri = "neo4j://localhost:7697";
-        String user = "neo4j";
-        String pass = "password";
+        String uri = args.length > 0 ? args[0] : QueryRuntimeSupport.getNeo4jUri();
+        String user = args.length > 1 ? args[1] : QueryRuntimeSupport.getNeo4jUsername();
+        String pass = args.length > 2 ? args[2] : QueryRuntimeSupport.getNeo4jPassword();
 
         try (Driver driver = GraphDatabase.driver(uri, AuthTokens.basic(user, pass))) {
             Neo4jTemplate template = QueryRuntimeSupport.createNeo4jTemplate(driver);
