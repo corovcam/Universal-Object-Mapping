@@ -9,8 +9,9 @@ using System.Text.Encodings.Web;
 using System.Globalization;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
 
-namespace EFCoreSandbox;
+namespace efcore_sandbox;
 
 // --- Harness and Utilities ---
 
