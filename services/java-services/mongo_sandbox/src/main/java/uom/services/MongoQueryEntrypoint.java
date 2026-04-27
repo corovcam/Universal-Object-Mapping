@@ -1,4 +1,4 @@
-package uom.services.benchmarks;
+package uom.services;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -18,7 +18,6 @@ import java.util.function.Supplier;
 
 import org.slf4j.LoggerFactory;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.annotation.ReadOnlyProperty;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
 import org.springframework.data.mongodb.core.ExecutableFindOperation;
@@ -31,7 +30,6 @@ import org.springframework.data.mongodb.core.convert.DefaultMongoTypeMapper;
 import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
 import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
 import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.mapping.DocumentReference;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.mapping.MongoMappingContext;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -161,6 +159,7 @@ final class MongoTemplateFactory {
 
 /**
  * Order document with embedded Customer and CustomerTransactions.
+ * Maps to the 'orders' collection in MongoDB.
  * 
  * TRANSLATED FROM: C# EFCore Customer, CustomerTransaction entities
  * ARCHITECTURAL SHIFT: Denormalized - Customers no longer a root collection.
@@ -178,12 +177,14 @@ class Order {
     @Field("customerId")
     private Integer customerId;
 
+    @Field("orderDate")
+    private LocalDateTime orderDate;
+
+    @Field("expectedDeliveryDate")
+    private LocalDate expectedDeliveryDate;
+
     // Embedded Customer document (denormalized from Sales.Customers table)
     private Customer customer;
-
-    @ReadOnlyProperty
-    @DocumentReference(lazy = true, lookup = "{ 'orderId': ?#{#self.orderId} }")
-    private List<OrderLine> orderLines = new ArrayList<>();
 
     // Constructors
     public Order() {
@@ -196,10 +197,12 @@ class Order {
     public void setOrderId(Integer orderId) { this.orderId = orderId; }
     public Integer getCustomerId() { return customerId; }
     public void setCustomerId(Integer customerId) { this.customerId = customerId; }
+    public LocalDateTime getOrderDate() { return orderDate; }
+    public void setOrderDate(LocalDateTime orderDate) { this.orderDate = orderDate; }
+    public LocalDate getExpectedDeliveryDate() { return expectedDeliveryDate; }
+    public void setExpectedDeliveryDate(LocalDate expectedDeliveryDate) { this.expectedDeliveryDate = expectedDeliveryDate; }
     public Customer getCustomer() { return customer; }
     public void setCustomer(Customer customer) { this.customer = customer; }
-    public List<OrderLine> getOrderLines() { return orderLines; }
-    public void setOrderLines(List<OrderLine> orderLines) { this.orderLines = orderLines; }
 }
 
 /**
@@ -219,10 +222,6 @@ class Customer {
     // Embedded CustomerTransactions array (denormalized from Sales.CustomerTransactions table)
     private List<CustomerTransaction> customerTransactions = new ArrayList<>();
 
-    @ReadOnlyProperty
-    @DocumentReference(lazy = true, lookup = "{ 'customerId': ?#{#self.customerId} }")
-    private List<Order> orders = new ArrayList<>();
-
     // Constructors
     public Customer() {
     }
@@ -238,8 +237,6 @@ class Customer {
     public void setCreditLimit(BigDecimal creditLimit) { this.creditLimit = creditLimit; }
     public List<CustomerTransaction> getCustomerTransactions() { return customerTransactions; }
     public void setCustomerTransactions(List<CustomerTransaction> customerTransactions) { this.customerTransactions = customerTransactions; }
-    public List<Order> getOrders() { return orders; }
-    public void setOrders(List<Order> orders) { this.orders = orders; }
 }
 
 /**
@@ -256,6 +253,12 @@ class CustomerTransaction {
     private LocalDate transactionDate;
     private BigDecimal transactionAmount;
 
+    // Additional transaction fields from Sales.CustomerTransactions
+    private BigDecimal amountExcludingTax;
+    private BigDecimal taxAmount;
+    private BigDecimal outstandingBalance;
+    private Boolean isFinalized;
+
     // Constructors
     public CustomerTransaction() {
     }
@@ -269,10 +272,18 @@ class CustomerTransaction {
     public void setTransactionDate(LocalDate transactionDate) { this.transactionDate = transactionDate; }
     public BigDecimal getTransactionAmount() { return transactionAmount; }
     public void setTransactionAmount(BigDecimal transactionAmount) { this.transactionAmount = transactionAmount; }
+    public BigDecimal getAmountExcludingTax() { return amountExcludingTax; }
+    public void setAmountExcludingTax(BigDecimal amountExcludingTax) { this.amountExcludingTax = amountExcludingTax; }
+    public BigDecimal getTaxAmount() { return taxAmount; }
+    public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
+    public BigDecimal getOutstandingBalance() { return outstandingBalance; }
+    public void setOutstandingBalance(BigDecimal outstandingBalance) { this.outstandingBalance = outstandingBalance; }
+    public Boolean getIsFinalized() { return isFinalized; }
+    public void setIsFinalized(Boolean isFinalized) { this.isFinalized = isFinalized; }
 }
 
 /**
- * OrderLine document.
+ * OrderLine document with embedded StockItem.
  * Maps to the 'orderLines' collection in MongoDB.
  * 
  * TRANSLATED FROM: C# OrderLine entity
@@ -316,6 +327,9 @@ class OrderLine {
     @Field("lastEditedWhen")
     private LocalDateTime lastEditedWhen;
 
+    // Embedded StockItem document (denormalized reference data)
+    private StockItem stockItem;
+
     // Constructors
     public OrderLine() {
     }
@@ -347,6 +361,23 @@ class OrderLine {
     public void setLastEditedBy(Integer lastEditedBy) { this.lastEditedBy = lastEditedBy; }
     public LocalDateTime getLastEditedWhen() { return lastEditedWhen; }
     public void setLastEditedWhen(LocalDateTime lastEditedWhen) { this.lastEditedWhen = lastEditedWhen; }
+    public StockItem getStockItem() { return stockItem; }
+    public void setStockItem(StockItem stockItem) { this.stockItem = stockItem; }
+}
+
+/**
+ * Embedded StockItem document within OrderLine.
+ * Represents denormalized stock item reference data.
+ * 
+ * NOTE: No @Document annotation - this is a value object embedded in OrderLine
+ */
+class StockItem {
+
+    private Integer stockItemId;
+
+    // Getters and Setters
+    public Integer getStockItemId() { return stockItemId; }
+    public void setStockItemId(Integer stockItemId) { this.stockItemId = stockItemId; }
 }
 
 interface CountProjection {
