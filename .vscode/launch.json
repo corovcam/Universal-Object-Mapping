@@ -6,13 +6,6 @@
       "name": "MongoQueryEntrypoint",
       "request": "launch",
       "mainClass": "uom.services.MongoQueryEntrypoint",
-      "projectName": "benchmarks"
-    },
-    {
-      "type": "java",
-      "name": "MongoQueryEntrypoint",
-      "request": "launch",
-      "mainClass": "uom.services.MongoQueryEntrypoint",
       "projectName": "mongo_sandbox",
       "envFile": "${workspaceFolder}/services/java-services/.env.dev"
     },

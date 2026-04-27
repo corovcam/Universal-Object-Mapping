@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using Dapper;
 using Microsoft.Data.SqlClient;
 
-namespace DapperSandbox;
+namespace dapper_sandbox;
 
 // --- Harness and Utilities ---
 

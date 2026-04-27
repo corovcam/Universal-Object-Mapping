@@ -36,6 +36,12 @@
         "${workspaceFolder}/services/dotnet-service/dotnet-service.sln"
       ],
       "problemMatcher": "$msCompile"
-    }
+    },
+    {
+      "label": "fix /run/user/1000",
+      "type": "shell",
+      "command": "sudo mkdir /run/user/1000 && sudo chown -R $USER:$USER /run/user/1000",
+      "problemMatcher": []
+    },
   ]
 }
