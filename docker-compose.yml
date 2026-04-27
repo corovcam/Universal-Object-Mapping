@@ -121,7 +121,7 @@ services:
       retries: 5
 
   mongodb-relational-migrator:
-    image: public.ecr.aws/v4d7k6c9/relational-migrator:1.15.3
+    image: public.ecr.aws/v4d7k6c9/relational-migrator:latest
     ports:
       - "${MONGODB_MIGRATOR_PORT}:8080"
     volumes:
