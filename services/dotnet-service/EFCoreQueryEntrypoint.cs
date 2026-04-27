@@ -46,6 +46,32 @@ public static class CustomJsonSerializer
         }
     }
 
+    public class FixedDecimalConverter : JsonConverter<decimal>
+    {
+        public override decimal Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.GetDecimal();
+        }
+
+        public override void Write(Utf8JsonWriter writer, decimal value, JsonSerializerOptions options)
+        {
+            writer.WriteRawValue(value.ToString("0.000", CultureInfo.InvariantCulture));
+        }
+    }
+
+    public class FixedDoubleConverter : JsonConverter<double>
+    {
+        public override double Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.GetDouble();
+        }
+
+        public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options)
+        {
+            writer.WriteRawValue(value.ToString("0.000", CultureInfo.InvariantCulture));
+        }
+    }
+
     public class CustomCamelCaseNamingPolicy : JsonNamingPolicy
     {
         public override string ConvertName(string name)
@@ -91,7 +117,9 @@ public static class CustomJsonSerializer
         },
         Converters = { 
             new StrictIsoDateTimeConverter(), 
-            new StrictIsoDateTimeOffsetConverter(), 
+            new StrictIsoDateTimeOffsetConverter(),
+            new FixedDecimalConverter(),
+            new FixedDoubleConverter(),
             new JsonStringEnumConverter(new CustomCamelCaseNamingPolicy()) 
         }
     };
@@ -118,8 +146,8 @@ public class Customer
     [Column(TypeName="decimal")]
     [Precision(18, 2)]
     public decimal? CreditLimit { get; set; }
+
     public List<CustomerTransaction> CustomerTransactions { get; set; } = [];
-    public List<Order> Orders { get; set; } = [];
 }
 
 [Table("CustomerTransactions", Schema = "Sales")]
@@ -144,7 +172,7 @@ public class Order
     [ForeignKey(nameof(Customer))]
     [JsonPropertyName("customerId")]
     public int CustomerID { get; set; }
-    [JsonIgnore]
+
     public Customer Customer { get; set; } = null!;
     public List<OrderLine> OrderLines { get; set; } = [];
 }
@@ -158,8 +186,6 @@ public class OrderLine
     [ForeignKey(nameof(Order))]
     [JsonPropertyName("orderId")]
     public int OrderID { get; set; }
-    [JsonIgnore]
-    public Order Order { get; set; } = null!;
     [JsonPropertyName("stockItemId")]
     public int StockItemID { get; set; }
     public required string Description { get; set; }
@@ -193,17 +219,17 @@ public static class EFCoreQueryEntrypoint
         return ctx.OrderLines.Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);
     }
 
-    public static IQueryable<Customer> Query2(SandboxDbContext ctx)
+    public static IQueryable<Order> Query2(SandboxDbContext ctx)
     {
-        return ctx.Customers
-            .Include(c => c.CustomerTransactions)
-            .Include(c => c.Orders)
-                .ThenInclude(o => o.OrderLines)
+        return ctx.Orders
+            .Include(o => o.Customer)
+                .ThenInclude(c => c.CustomerTransactions)
+            .Include(o => o.OrderLines)
             .AsSplitQuery()
             .Where(c => c.CustomerID == 1);
     }
 
-    public static IQueryable<object> Query3(SandboxDbContext ctx)
+    public static IQueryable<dynamic> Query3(SandboxDbContext ctx)
     {
         return ctx.OrderLines.GroupBy(ol => ol.TaxRate).Select(g => new { TaxRate = g.Key, Count = g.Count() }).OrderByDescending(x => x.Count);
     }
@@ -218,11 +244,13 @@ public static class EFCoreQueryEntrypoint
         return ctx.OrderLines.Select(ol => new { ol.OrderLineID, ol.Quantity });
     }
 
-    private static object RunQuery<T>(IQueryable<T> q, Func<T, object>? orderBySelector = null)
+    private static object RunQuery<T>(Func<IQueryable<T>> q, Func<T, object>? orderBySelector = null)
     {
-        var sortedQuery = orderBySelector != null ? q.OrderBy(orderBySelector).AsQueryable() : q;
-        var count = sortedQuery.Count();
-        return new { sqlString = q.ToQueryString(), count, firstSample = count > 0 ? sortedQuery.FirstOrDefault() : default, lastSample = count > 1 ? sortedQuery.LastOrDefault() : default };
+        var query = q();
+        var count = query.Count();
+        return new { sqlString = query.ToQueryString(), count, 
+            firstSample = count > 0 ? (orderBySelector != null ? q().OrderBy(orderBySelector).FirstOrDefault() : query.FirstOrDefault()) : default, 
+            lastSample = count > 1 ? (orderBySelector != null ? q().OrderByDescending(orderBySelector).FirstOrDefault() : query.LastOrDefault()) : default };
     }
 
     public static void Main(string[] args)
@@ -234,22 +262,29 @@ public static class EFCoreQueryEntrypoint
                         ?? "Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
                 )
                 .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
+                .EnableSensitiveDataLogging()
                 .LogTo(Console.WriteLine, [DbLoggerCategory.Database.Command.Name, DbLoggerCategory.Query.Name], minimumLevel: LogLevel.Information, options: DbContextLoggerOptions.SingleLine).Options
         );
-
+        
+        var data = Query1(context).OrderBy(ol => ol.OrderLineID).FirstOrDefault();
         var results = new Dictionary<string, object?>();
         var harnesses = new Func<object>[] {
-            () => RunQuery(Query1(context), ol => ol.OrderLineID),
-            () => RunQuery(Query2(context), c => c.CustomerID),
-            () => RunQuery(Query3(context)), // No order by for Query3, as it already has a deterministic order by clause
-            () => RunQuery(Query4(context)), // Same as Query3, Query4 already has an order by clause
-            () => RunQuery(Query5(context), ol => ol.OrderLineID)
+            () => RunQuery(() => Query1(context), ol => ol.OrderLineID),
+            () => RunQuery(() => Query2(context), o => o.OrderID),
+            () => RunQuery(() => Query3(context), x => x.TaxRate), // sorting by TaxRate, since it's unique in a groupBy result
+            () => RunQuery(() => Query4(context)), // sorting by non-unique column with limiting (.Take) is present; top results may not be consistent accross DBMSs; sorting by unique-column is not possible 
+            () => RunQuery(() => Query5(context), ol => ol.OrderLineID)
         };
 
         for (int i = 0; i < harnesses.Length; i++) {
-            results[$"query{i+1}"] = harnesses[i]();
+            var qid = i+1;
+            Console.WriteLine($"Running Query {qid}...");
+            try {
+                results[$"query{qid}"] = harnesses[i]();
+            } catch (Exception ex) {
+                Console.WriteLine($"Error occurred while running Query{qid}: {ex}");
+            }
         }
-
         File.WriteAllText($"efcore_results_{DateTime.Now:yyyyMMdd_HHmmss}.json", CustomJsonSerializer.Serialize(results));
     }
 }

@@ -5,16 +5,23 @@
       "type": "java",
       "name": "MongoQueryEntrypoint",
       "request": "launch",
-      "mainClass": "uom.services.benchmarks.MongoQueryEntrypoint",
-      "projectName": "benchmarks",
+      "mainClass": "uom.services.MongoQueryEntrypoint",
+      "projectName": "benchmarks"
+    },
+    {
+      "type": "java",
+      "name": "MongoQueryEntrypoint",
+      "request": "launch",
+      "mainClass": "uom.services.MongoQueryEntrypoint",
+      "projectName": "mongo_sandbox",
       "envFile": "${workspaceFolder}/services/java-services/.env.dev"
     },
     {
       "type": "java",
       "name": "Neo4jQueryEntrypoint",
       "request": "launch",
-      "mainClass": "uom.services.benchmarks.Neo4jQueryEntrypoint",
-      "projectName": "benchmarks",
+      "mainClass": "uom.services.Neo4jQueryEntrypoint",
+      "projectName": "neo4j_sandbox",
       "envFile": "${workspaceFolder}/services/java-services/.env.dev"
     },
     {
@@ -38,7 +45,9 @@
       "request": "launch",
       "projectPath": "${file}",
       "linux": {
-        "args": ["Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"]
+        "args": [
+          "Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
+        ]
       }
     }
   ]

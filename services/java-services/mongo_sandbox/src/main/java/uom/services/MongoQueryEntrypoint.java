@@ -1,6 +1,7 @@
 package uom.services;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -18,6 +19,7 @@ import java.util.function.Supplier;
 
 import org.slf4j.LoggerFactory;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.ReadOnlyProperty;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
 import org.springframework.data.mongodb.core.ExecutableFindOperation;
@@ -30,6 +32,7 @@ import org.springframework.data.mongodb.core.convert.DefaultMongoTypeMapper;
 import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
 import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.DocumentReference;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.mapping.MongoMappingContext;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -57,9 +60,6 @@ class CustomJsonSerializer extends StdSerializer<Object> {
     private static final DateTimeFormatter DATETIME_FORMATTER = 
         DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
 
-    private static final DateTimeFormatter DATE_FORMATTER = 
-        DateTimeFormatter.ofPattern("yyyy-MM-dd");
-
     public CustomJsonSerializer() {
         super(Object.class);
     }
@@ -69,9 +69,13 @@ class CustomJsonSerializer extends StdSerializer<Object> {
         if (value == null) {
             gen.writeNull();
         } else if (value instanceof BigDecimal) {
-            gen.writeNumber(((BigDecimal) value).stripTrailingZeros().toPlainString());
+            gen.writeNumber(((BigDecimal) value).setScale(3, RoundingMode.HALF_UP).toPlainString());
+        } else if (value instanceof Double) {
+            gen.writeNumber(BigDecimal.valueOf((Double) value).setScale(3, RoundingMode.HALF_UP).toPlainString());
+        } else if (value instanceof Float) {
+            gen.writeNumber(BigDecimal.valueOf((Float) value).setScale(3, RoundingMode.HALF_UP).toPlainString());
         } else if (value instanceof LocalDate) {
-            gen.writeString(DATE_FORMATTER.format((LocalDate) value));
+            gen.writeString(DATETIME_FORMATTER.format(((LocalDate) value).atStartOfDay()));
         } else if (value instanceof LocalDateTime) {
             gen.writeString(DATETIME_FORMATTER.format((LocalDateTime) value));
         } else if (value instanceof Date) {
@@ -159,7 +163,6 @@ final class MongoTemplateFactory {
 
 /**
  * Order document with embedded Customer and CustomerTransactions.
- * Maps to the 'orders' collection in MongoDB.
  * 
  * TRANSLATED FROM: C# EFCore Customer, CustomerTransaction entities
  * ARCHITECTURAL SHIFT: Denormalized - Customers no longer a root collection.
@@ -177,14 +180,12 @@ class Order {
     @Field("customerId")
     private Integer customerId;
 
-    @Field("orderDate")
-    private LocalDateTime orderDate;
-
-    @Field("expectedDeliveryDate")
-    private LocalDate expectedDeliveryDate;
-
     // Embedded Customer document (denormalized from Sales.Customers table)
     private Customer customer;
+
+    @ReadOnlyProperty
+    @DocumentReference(lazy = true, lookup = "{ 'orderId': ?#{#self.orderId} }", sort = "{ 'orderLineId': 1 }")
+    private List<OrderLine> orderLines;
 
     // Constructors
     public Order() {
@@ -197,12 +198,10 @@ class Order {
     public void setOrderId(Integer orderId) { this.orderId = orderId; }
     public Integer getCustomerId() { return customerId; }
     public void setCustomerId(Integer customerId) { this.customerId = customerId; }
-    public LocalDateTime getOrderDate() { return orderDate; }
-    public void setOrderDate(LocalDateTime orderDate) { this.orderDate = orderDate; }
-    public LocalDate getExpectedDeliveryDate() { return expectedDeliveryDate; }
-    public void setExpectedDeliveryDate(LocalDate expectedDeliveryDate) { this.expectedDeliveryDate = expectedDeliveryDate; }
     public Customer getCustomer() { return customer; }
     public void setCustomer(Customer customer) { this.customer = customer; }
+    public List<OrderLine> getOrderLines() { return orderLines; }
+    public void setOrderLines(List<OrderLine> orderLines) { this.orderLines = orderLines; }
 }
 
 /**
@@ -253,12 +252,6 @@ class CustomerTransaction {
     private LocalDate transactionDate;
     private BigDecimal transactionAmount;
 
-    // Additional transaction fields from Sales.CustomerTransactions
-    private BigDecimal amountExcludingTax;
-    private BigDecimal taxAmount;
-    private BigDecimal outstandingBalance;
-    private Boolean isFinalized;
-
     // Constructors
     public CustomerTransaction() {
     }
@@ -272,18 +265,10 @@ class CustomerTransaction {
     public void setTransactionDate(LocalDate transactionDate) { this.transactionDate = transactionDate; }
     public BigDecimal getTransactionAmount() { return transactionAmount; }
     public void setTransactionAmount(BigDecimal transactionAmount) { this.transactionAmount = transactionAmount; }
-    public BigDecimal getAmountExcludingTax() { return amountExcludingTax; }
-    public void setAmountExcludingTax(BigDecimal amountExcludingTax) { this.amountExcludingTax = amountExcludingTax; }
-    public BigDecimal getTaxAmount() { return taxAmount; }
-    public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
-    public BigDecimal getOutstandingBalance() { return outstandingBalance; }
-    public void setOutstandingBalance(BigDecimal outstandingBalance) { this.outstandingBalance = outstandingBalance; }
-    public Boolean getIsFinalized() { return isFinalized; }
-    public void setIsFinalized(Boolean isFinalized) { this.isFinalized = isFinalized; }
 }
 
 /**
- * OrderLine document with embedded StockItem.
+ * OrderLine document.
  * Maps to the 'orderLines' collection in MongoDB.
  * 
  * TRANSLATED FROM: C# OrderLine entity
@@ -327,9 +312,6 @@ class OrderLine {
     @Field("lastEditedWhen")
     private LocalDateTime lastEditedWhen;
 
-    // Embedded StockItem document (denormalized reference data)
-    private StockItem stockItem;
-
     // Constructors
     public OrderLine() {
     }
@@ -361,27 +343,18 @@ class OrderLine {
     public void setLastEditedBy(Integer lastEditedBy) { this.lastEditedBy = lastEditedBy; }
     public LocalDateTime getLastEditedWhen() { return lastEditedWhen; }
     public void setLastEditedWhen(LocalDateTime lastEditedWhen) { this.lastEditedWhen = lastEditedWhen; }
-    public StockItem getStockItem() { return stockItem; }
-    public void setStockItem(StockItem stockItem) { this.stockItem = stockItem; }
 }
 
-/**
- * Embedded StockItem document within OrderLine.
- * Represents denormalized stock item reference data.
- * 
- * NOTE: No @Document annotation - this is a value object embedded in OrderLine
- */
-class StockItem {
+class CountProjection {
+    private Long count;
 
-    private Integer stockItemId;
-
-    // Getters and Setters
-    public Integer getStockItemId() { return stockItemId; }
-    public void setStockItemId(Integer stockItemId) { this.stockItemId = stockItemId; }
+    public Long getCount() { return count; }
+    public void setCount(Long count) { this.count = count; }
 }
 
-interface CountProjection {
-    long getCount();
+interface Query3Projection {
+    BigDecimal getTaxRate();
+    Long getCount();
 }
 
 interface Query5Projection {
@@ -399,18 +372,15 @@ public class MongoQueryEntrypoint {
         return new Query(Criteria.where("pickingCompletedWhen").gte(from).lte(to));
     }
 
-    public static TypedAggregation<Order> query2() {
-        return Aggregation.newAggregation(
-            Order.class,
-            Aggregation.match(Criteria.where("customerId").is(1)),
-            Aggregation.lookup("orderLines", "orderId", "orderId", "orderLines")
-        );
+    public static Query query2() {
+        return new Query(Criteria.where("customerId").is(1));
     }
 
     public static TypedAggregation<OrderLine> query3() {
         return Aggregation.newAggregation(
             OrderLine.class,
             Aggregation.group("taxRate").count().as("count"),
+            Aggregation.project("count").and("taxRate").previousOperation(),
             Aggregation.sort(Sort.Direction.DESC, "count")
         );
     }
@@ -426,56 +396,70 @@ public class MongoQueryEntrypoint {
     public static Map<String, Object> query1Harness(MongoTemplate template) {
         Query q = query1();
         long count = template.count(q, OrderLine.class);
-        var first = template.findOne(query1().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1), OrderLine.class);
+        OrderLine first = null;
+        if (count > 0) {
+            first = template.findOne(q.with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1), OrderLine.class);
+        }
         OrderLine last = null;
-        if (count > 1) last = template.findOne(query1().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1), OrderLine.class);
-        return Map.of("mongoQuery", Map.of("collection", "orderLines", "filter", q.getQueryObject()), "count", count, "firstSample", first, "lastSample", last);
+        if (count > 1) {
+            last = template.findOne(q.with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1), OrderLine.class);
+        }
+        return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject()), "count", count, "firstSample", first, "lastSample", last);
     }
 
     public static Map<String, Object> query2Harness(MongoTemplate template) {
-        var count = template.aggregate(Aggregation.newAggregation(Order.class, query2().count().as("count")), CountProjection.class).getUniqueMappedResult().getCount();
+        Query q = query2();
+        var count = template.count(q, Order.class);
         Object first = null;
         if (count > 0) {
-            var asc = Aggregation.newAggregation(query2().getPipeline().add(Aggregation.sort(Sort.Direction.ASC, "orderId")).add(Aggregation.limit(1)).getOperations());
-            first = template.aggregate(asc, template.getCollectionName(Order.class), Object.class).getUniqueMappedResult();
+            first = template.findOne(q.with(Sort.by(Sort.Direction.ASC, "orderId")).limit(1), Order.class);
         }
         Object last = null;
         if (count > 1) {
-            var desc = Aggregation.newAggregation(query2().getPipeline().add(Aggregation.sort(Sort.Direction.DESC, "orderId")).add(Aggregation.limit(1)).getOperations());
-            last = template.aggregate(desc, template.getCollectionName(Order.class), Object.class).getUniqueMappedResult();
+            last = template.findOne(q.with(Sort.by(Sort.Direction.DESC, "orderId")).limit(1), Order.class);
         }
-        return Map.of("mongoAggregation", query2().toDocument(template.getCollectionName(Order.class), Aggregation.DEFAULT_CONTEXT).toBsonDocument(), "count", count, "firstSample", first, "lastSample", last);
+        return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(Order.class), "filter", q.getQueryObject()), "count", count, "firstSample", first, "lastSample", last);
     }
 
     public static Map<String, Object> query3Harness(MongoTemplate template) {
-        var count = template.aggregate(Aggregation.newAggregation(OrderLine.class, query3().count().as("count")), CountProjection.class).getUniqueMappedResult().getCount();
+        long count = template.aggregate(query3(), OrderLine.class, Query3Projection.class).getMappedResults().size();
         Object first = null;
         if (count > 0) {
-            var agg = Aggregation.newAggregation(query3().getPipeline().add(Aggregation.limit(1)).getOperations());
+            var agg = Aggregation.newAggregation(query3().getPipeline().add(Aggregation.sort(Sort.Direction.ASC, "taxRate")).add(Aggregation.limit(1)).getOperations());
             first = template.aggregate(agg, template.getCollectionName(OrderLine.class), Object.class).getUniqueMappedResult();
         }
         Object last = null;
         if (count > 1) {
-            var desc = Aggregation.newAggregation(query3().getPipeline().add(Aggregation.skip(count - 1)).getOperations());
+            var desc = Aggregation.newAggregation(query3().getPipeline().add(Aggregation.sort(Sort.Direction.DESC, "taxRate")).add(Aggregation.limit(1)).getOperations());
             last = template.aggregate(desc, template.getCollectionName(OrderLine.class), Object.class).getUniqueMappedResult();
         }
-        return Map.of("mongoAggregation", query3().toString(), "count", count, "firstSample", first, "lastSample", last);
+        return Map.of("mongoAggregation", Map.of("collection", template.getCollectionName(OrderLine.class), "pipeline", query3().toString()), "count", count, "firstSample", first, "lastSample", last);
     }
 
     public static Map<String, Object> query4Harness(MongoTemplate template) {
         Query q = query4();
         var count = template.count(q, OrderLine.class);
-        var first = template.findOne(query4().limit(1), OrderLine.class);
+        OrderLine first = null;
+        if (count > 0) {
+            first = template.findOne(q.limit(1), OrderLine.class);
+        }
         OrderLine last = null;
-        if (count > 1) last = template.findOne(query4().limit(1), OrderLine.class);
-        return Map.of("mongoQuery", Map.of("collection", "orderLines", "filter", q.getQueryObject(), "sort", q.getSortObject()), "count", count, "firstSample", first, "lastSample", last);
+        if (count > 1) {
+            last = template.findOne(q.skip(count-1), OrderLine.class);
+        }
+        return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject(), "sort", q.getSortObject()), "count", count, "firstSample", first, "lastSample", last);
     }
 
     public static Map<String, Object> query5Harness(MongoTemplate template) {
         long count = query5(template).count();
-        Query5Projection first = query5(template).matching(new Query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1)).firstValue();
+        Query5Projection first = null;
+        if (count > 0) {
+            first = query5(template).matching(new Query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1)).firstValue();
+        }
         Query5Projection last = null;
-        if (count > 1) last = query5(template).matching(new Query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1)).firstValue();
+        if (count > 1) {
+            last = query5(template).matching(new Query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1)).firstValue();
+        }
         return Map.of("count", count, "firstSample", first, "lastSample", last);
     }
 
@@ -496,10 +480,14 @@ public class MongoQueryEntrypoint {
 
         int idx = 0;
         for (var harness : harnesses) {
+            idx += 1;
+            System.out.println("Executing query" + idx + "...");
             try {
-                results.put("query" + (++idx), harness.get());
+                results.put("query" + idx, harness.get());
             } catch (Exception e) {
-                System.err.println("Error occurred while executing query " + idx + ": " + e.getMessage());
+                System.err.println("Error occurred while executing query" + idx);
+                e.printStackTrace();
+                results.put("query" + idx, Map.of("error", e.toString()));
             }
         }
         QueryRuntimeSupport.createJsonMapper().writeValue(new java.io.File("mongo_results_" + System.currentTimeMillis() + ".json"), results);
