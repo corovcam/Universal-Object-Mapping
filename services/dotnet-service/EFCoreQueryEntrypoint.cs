@@ -263,7 +263,7 @@ public static class EFCoreQueryEntrypoint
                 )
                 .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
                 .EnableSensitiveDataLogging()
-                .LogTo(Console.WriteLine, [DbLoggerCategory.Database.Command.Name, DbLoggerCategory.Query.Name], minimumLevel: LogLevel.Information, options: DbContextLoggerOptions.SingleLine).Options
+                .LogTo(Console.WriteLine, [DbLoggerCategory.Database.Command.Name], minimumLevel: LogLevel.Information, options: DbContextLoggerOptions.SingleLine).Options
         );
         
         var data = Query1(context).OrderBy(ol => ol.OrderLineID).FirstOrDefault();

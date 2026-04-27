@@ -214,8 +214,6 @@ class Customer {
 
     @Relationship(type = "CUSTOMERS", direction = Relationship.Direction.INCOMING)
     private List<Order> orders = new ArrayList<>();
-    public List<Order> getOrders() { return orders; }
-    public void setOrders(List<Order> orders) { this.orders = orders; }
 
     public Customer() {
     }
@@ -232,6 +230,8 @@ class Customer {
     public void setCreditLimit(Double creditLimit) { this.creditLimit = creditLimit; }
     public List<CustomerTransaction> getCustomerTransactions() { return customerTransactions; }
     public void setCustomerTransactions(List<CustomerTransaction> customerTransactions) { this.customerTransactions = customerTransactions; }
+    public List<Order> getOrders() { return orders; }
+    public void setOrders(List<Order> orders) { this.orders = orders; }
 }
 
 @Node("CustomerTransaction")
@@ -272,8 +272,6 @@ class CustomerTransaction {
 
     @Relationship(type = "ORDERS", direction = Relationship.Direction.INCOMING)
     private List<OrderLine> orderLines = new ArrayList<>();
-    public List<OrderLine> getOrderLines() { return orderLines; }
-    public void setOrderLines(List<OrderLine> orderLines) { this.orderLines = orderLines; }
 
     public CustomerTransaction() {
     }
@@ -300,6 +298,8 @@ class CustomerTransaction {
     public void setLastEditedWhen(ZonedDateTime lastEditedWhen) { this.lastEditedWhen = lastEditedWhen; }
     public Customer getCustomer() { return customer; }
     public void setCustomer(Customer customer) { this.customer = customer; }
+    public List<OrderLine> getOrderLines() { return orderLines; }
+    public void setOrderLines(List<OrderLine> orderLines) { this.orderLines = orderLines; }
 }
 
 @Node("OrderLine")
