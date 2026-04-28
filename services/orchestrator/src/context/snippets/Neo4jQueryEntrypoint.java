@@ -1,14 +1,15 @@
-package uom.services.benchmarks;
+package uom.services;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAccessor;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -22,9 +23,11 @@ import org.neo4j.cypherdsl.core.StatementBuilder.OngoingReadingAndReturn;
 import org.neo4j.driver.AuthTokens;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.GraphDatabase;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.neo4j.core.Neo4jClient;
 import org.springframework.data.neo4j.core.Neo4jTemplate;
 import org.springframework.data.neo4j.core.mapping.Neo4jMappingContext;
+import org.springframework.data.neo4j.core.schema.GeneratedValue;
 import org.springframework.data.neo4j.core.schema.Id;
 import org.springframework.data.neo4j.core.schema.Node;
 import org.springframework.data.neo4j.core.schema.Property;
@@ -33,6 +36,7 @@ import org.springframework.data.neo4j.core.transaction.Neo4jTransactionManager;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 
+import ch.qos.logback.classic.LoggerContext;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.databind.MapperFeature;
@@ -50,9 +54,6 @@ class CustomJsonSerializer extends StdSerializer<Object> {
     private static final DateTimeFormatter DATETIME_FORMATTER = 
         DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
 
-    private static final DateTimeFormatter DATE_FORMATTER = 
-        DateTimeFormatter.ofPattern("yyyy-MM-dd");
-
     public CustomJsonSerializer() {
         super(Object.class);
     }
@@ -62,11 +63,15 @@ class CustomJsonSerializer extends StdSerializer<Object> {
         if (value == null) {
             gen.writeNull();
         } else if (value instanceof BigDecimal) {
-            gen.writeNumber(((BigDecimal) value).stripTrailingZeros().toPlainString());
+            gen.writeNumber(((BigDecimal) value).setScale(3, RoundingMode.HALF_UP).toPlainString());
+        } else if (value instanceof Double) {
+            gen.writeNumber(BigDecimal.valueOf((Double) value).setScale(3, RoundingMode.HALF_UP).toPlainString());
+        } else if (value instanceof Float) {
+            gen.writeNumber(BigDecimal.valueOf((Float) value).setScale(3, RoundingMode.HALF_UP).toPlainString());
         } else if (value instanceof LocalDate) {
-            gen.writeString(DATE_FORMATTER.format((LocalDate) value));
-        } else if (value instanceof ZonedDateTime) {
-            gen.writeString(DATETIME_FORMATTER.format((ZonedDateTime) value));
+            gen.writeString(DATETIME_FORMATTER.format(((LocalDate) value).atStartOfDay()));
+        } else if (value instanceof LocalDateTime) {
+            gen.writeString(DATETIME_FORMATTER.format((LocalDateTime) value));
         } else if (value instanceof Date) {
             gen.writeString(DATETIME_FORMATTER.format(((Date) value).toInstant()));
         } else if (value instanceof TemporalAccessor) {
@@ -78,7 +83,7 @@ class CustomJsonSerializer extends StdSerializer<Object> {
 }
 
 final class QueryRuntimeSupport {
-    private static final String DEFAULT_NEO4J_URI = "neo4j://localhost:7687";
+    private static final String DEFAULT_NEO4J_URI = "neo4j://neo4j:7687";
     private static final String DEFAULT_NEO4J_USER = "neo4j";
     private static final String DEFAULT_NEO4J_PASS = "password";
 
@@ -89,12 +94,14 @@ final class QueryRuntimeSupport {
         SimpleModule customModule = new SimpleModule();
         CustomJsonSerializer customJsonSerializer = new CustomJsonSerializer();
         customModule.addSerializer(LocalDate.class, customJsonSerializer);
-        customModule.addSerializer(ZonedDateTime.class, customJsonSerializer);
+        customModule.addSerializer(LocalDateTime.class, customJsonSerializer);
         customModule.addSerializer(ZonedDateTime.class, customJsonSerializer);
         customModule.addSerializer(OffsetDateTime.class, customJsonSerializer);
         customModule.addSerializer(Instant.class, customJsonSerializer);
         customModule.addSerializer(Date.class, customJsonSerializer);
         customModule.addSerializer(BigDecimal.class, customJsonSerializer);
+        customModule.addSerializer(Double.class, customJsonSerializer);
+        customModule.addSerializer(Float.class, customJsonSerializer);
         return JsonMapper.builder()
                 .changeDefaultPropertyInclusion(incl -> incl.withValueInclusion(Include.ALWAYS))
                 .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
@@ -108,11 +115,17 @@ final class QueryRuntimeSupport {
     static Neo4jTemplate createNeo4jTemplate(Driver driver) {
         Neo4jClient client = Neo4jClient.create(driver);
         var mappingContext = new Neo4jMappingContext();
-        mappingContext.setInitialEntitySet(Set.of(Order.class, Customer.class, CustomerTransaction.class, OrderLine.class, StockItem.class));
+        mappingContext.setInitialEntitySet(Set.of(Order.class, Customer.class, CustomerTransaction.class, OrderLine.class));
         mappingContext.afterPropertiesSet();
     
         Neo4jTransactionManager transactionManager = new Neo4jTransactionManager(driver);
         return new Neo4jTemplate(client, mappingContext, transactionManager);
+    }
+
+    static void configureLogger() {
+        var loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
+        var mongoLogger = loggerContext.getLogger("org.springframework.data.neo4j.cypher");
+        mongoLogger.setLevel(ch.qos.logback.classic.Level.DEBUG);
     }
 
     static String getNeo4jUri() {
@@ -136,32 +149,17 @@ final class QueryRuntimeSupport {
 @Node("Order")
 class Order {
 
-    @Id
+    @Id @GeneratedValue
     private String id;
 
     @Property("orderId")
     private Integer orderId;
-    
-    @Property("orderDate")
-    private ZonedDateTime orderDate;
-
-    @Property("expectedDeliveryDate")
-    private LocalDate expectedDeliveryDate;
-    
-    @Property("customerPurchaseOrderNumber")
-    private String customerPurchaseOrderNumber;
-    
-    @Property("isUndersupplyBackordered")
-    private Integer isUndersupplyBackordered;
-    
-    @Property("pickingCompletedWhen")
-    private ZonedDateTime pickingCompletedWhen;
-    
-    @Property("lastEditedWhen")
-    private ZonedDateTime lastEditedWhen;
 
     @Relationship(type = "CUSTOMERS", direction = Relationship.Direction.OUTGOING)
     private Customer customer;
+
+    @Relationship(type = "ORDERS", direction = Relationship.Direction.INCOMING)
+    private List<OrderLine> orderLines;
 
     public Order() {
     }
@@ -170,26 +168,16 @@ class Order {
     public void setId(String id) { this.id = id; }
     public Integer getOrderId() { return orderId; }
     public void setOrderId(Integer orderId) { this.orderId = orderId; }
-    public ZonedDateTime getOrderDate() { return orderDate; }
-    public void setOrderDate(ZonedDateTime orderDate) { this.orderDate = orderDate; }
-    public LocalDate getExpectedDeliveryDate() { return expectedDeliveryDate; }
-    public void setExpectedDeliveryDate(LocalDate expectedDeliveryDate) { this.expectedDeliveryDate = expectedDeliveryDate; }
-    public String getCustomerPurchaseOrderNumber() { return customerPurchaseOrderNumber; }
-    public void setCustomerPurchaseOrderNumber(String customerPurchaseOrderNumber) { this.customerPurchaseOrderNumber = customerPurchaseOrderNumber; }
-    public Integer getIsUndersupplyBackordered() { return isUndersupplyBackordered; }
-    public void setIsUndersupplyBackordered(Integer isUndersupplyBackordered) { this.isUndersupplyBackordered = isUndersupplyBackordered; }
-    public ZonedDateTime getPickingCompletedWhen() { return pickingCompletedWhen; }
-    public void setPickingCompletedWhen(ZonedDateTime pickingCompletedWhen) { this.pickingCompletedWhen = pickingCompletedWhen; }
-    public ZonedDateTime getLastEditedWhen() { return lastEditedWhen; }
-    public void setLastEditedWhen(ZonedDateTime lastEditedWhen) { this.lastEditedWhen = lastEditedWhen; }
     public Customer getCustomer() { return customer; }
     public void setCustomer(Customer customer) { this.customer = customer; }
+    public List<OrderLine> getOrderLines() { return orderLines; }
+    public void setOrderLines(List<OrderLine> orderLines) { this.orderLines = orderLines; }
 }
 
 @Node("Customer")
 class Customer {
 
-    @Id
+    @Id @GeneratedValue
     private String id;
 
     @Property("customerId")
@@ -204,9 +192,8 @@ class Customer {
     @Property("creditLimit")
     private Double creditLimit;
 
-    // Based on schema, CustomerTransaction has CUSTOMERS out. So we map the incoming relationship.
     @Relationship(type = "CUSTOMERS", direction = Relationship.Direction.INCOMING)
-    private List<CustomerTransaction> customerTransactions = new ArrayList<>();
+    private List<CustomerTransaction> customerTransactions;
 
     public Customer() {
     }
@@ -228,38 +215,17 @@ class Customer {
 @Node("CustomerTransaction")
 class CustomerTransaction {
 
-    @Id
+    @Id @GeneratedValue
     private String id;
 
     @Property("customerTransactionId")
     private Integer customerTransactionId;
 
     @Property("transactionDate")
-    private ZonedDateTime transactionDate;
+    private LocalDate transactionDate;
 
     @Property("transactionAmount")
     private Double transactionAmount;
-    
-    @Property("amountExcludingTax")
-    private Double amountExcludingTax;
-    
-    @Property("taxAmount")
-    private Double taxAmount;
-    
-    @Property("outstandingBalance")
-    private Double outstandingBalance;
-    
-    @Property("finalizationDate")
-    private ZonedDateTime finalizationDate;
-    
-    @Property("isFinalized")
-    private Integer isFinalized;
-    
-    @Property("lastEditedWhen")
-    private ZonedDateTime lastEditedWhen;
-
-    @Relationship(type = "CUSTOMERS", direction = Relationship.Direction.OUTGOING)
-    private Customer customer;
 
     public CustomerTransaction() {
     }
@@ -268,30 +234,16 @@ class CustomerTransaction {
     public void setId(String id) { this.id = id; }
     public Integer getCustomerTransactionId() { return customerTransactionId; }
     public void setCustomerTransactionId(Integer customerTransactionId) { this.customerTransactionId = customerTransactionId; }
-    public ZonedDateTime getTransactionDate() { return transactionDate; }
-    public void setTransactionDate(ZonedDateTime transactionDate) { this.transactionDate = transactionDate; }
+    public LocalDate getTransactionDate() { return transactionDate; }
+    public void setTransactionDate(LocalDate transactionDate) { this.transactionDate = transactionDate; }
     public Double getTransactionAmount() { return transactionAmount; }
     public void setTransactionAmount(Double transactionAmount) { this.transactionAmount = transactionAmount; }
-    public Double getAmountExcludingTax() { return amountExcludingTax; }
-    public void setAmountExcludingTax(Double amountExcludingTax) { this.amountExcludingTax = amountExcludingTax; }
-    public Double getTaxAmount() { return taxAmount; }
-    public void setTaxAmount(Double taxAmount) { this.taxAmount = taxAmount; }
-    public Double getOutstandingBalance() { return outstandingBalance; }
-    public void setOutstandingBalance(Double outstandingBalance) { this.outstandingBalance = outstandingBalance; }
-    public ZonedDateTime getFinalizationDate() { return finalizationDate; }
-    public void setFinalizationDate(ZonedDateTime finalizationDate) { this.finalizationDate = finalizationDate; }
-    public Integer getIsFinalized() { return isFinalized; }
-    public void setIsFinalized(Integer isFinalized) { this.isFinalized = isFinalized; }
-    public ZonedDateTime getLastEditedWhen() { return lastEditedWhen; }
-    public void setLastEditedWhen(ZonedDateTime lastEditedWhen) { this.lastEditedWhen = lastEditedWhen; }
-    public Customer getCustomer() { return customer; }
-    public void setCustomer(Customer customer) { this.customer = customer; }
 }
 
 @Node("OrderLine")
 class OrderLine {
 
-    @Id
+    @Id @GeneratedValue
     private String id;
 
     @Property("orderLineId")
@@ -318,12 +270,6 @@ class OrderLine {
     @Property("lastEditedWhen")
     private ZonedDateTime lastEditedWhen;
 
-    @Relationship(type = "STOCK_ITEMS", direction = Relationship.Direction.OUTGOING)
-    private StockItem stockItem;
-    
-    @Relationship(type = "ORDERS", direction = Relationship.Direction.OUTGOING)
-    private Order order;
-
     public OrderLine() {
     }
 
@@ -345,84 +291,227 @@ class OrderLine {
     public void setPickingCompletedWhen(ZonedDateTime pickingCompletedWhen) { this.pickingCompletedWhen = pickingCompletedWhen; }
     public ZonedDateTime getLastEditedWhen() { return lastEditedWhen; }
     public void setLastEditedWhen(ZonedDateTime lastEditedWhen) { this.lastEditedWhen = lastEditedWhen; }
-    public StockItem getStockItem() { return stockItem; }
-    public void setStockItem(StockItem stockItem) { this.stockItem = stockItem; }
-    public Order getOrder() { return order; }
-    public void setOrder(Order order) { this.order = order; }
 }
 
-@Node("StockItem")
-class StockItem {
+record Query3Projection(Double taxRate, Long count) {
+}
 
-    @Id
-    private String id;
+record Query5Projection(Integer orderLineId, Integer quantity) {
+}
 
-    @Property("stockItemId")
-    private Integer stockItemId;
-    
-    @Property("stockItemName")
-    private String stockItemName;
-    
-    // Additional properties can map here based on schema...
+// --- Queries ---
 
-    public StockItem() {
+final class Query1 {
+    public static BuildableStatement<ResultStatement> query(boolean returnCount) {
+        ZonedDateTime from = ZonedDateTime.of(2014, 12, 20, 0, 0, 0, 0, ZoneOffset.UTC);
+        ZonedDateTime to = ZonedDateTime.of(2014, 12, 31, 0, 0, 0, 0, ZoneOffset.UTC);
+        var orderLine = Cypher.node("OrderLine").named("ol");
+        var partialStatement = Cypher.match(orderLine)
+            .where(orderLine.property("pickingCompletedWhen").gte(Cypher.parameter("from", from)))
+            .and(orderLine.property("pickingCompletedWhen").lte(Cypher.parameter("to", to)));
+        if (returnCount) return partialStatement.returning(Cypher.count(orderLine));
+        return partialStatement.returning(orderLine);
     }
 
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
-    public Integer getStockItemId() { return stockItemId; }
-    public void setStockItemId(Integer stockItemId) { this.stockItemId = stockItemId; }
-    public String getStockItemName() { return stockItemName; }
-    public void setStockItemName(String stockItemName) { this.stockItemName = stockItemName; }
+    public static Map<String, Object> harness(Neo4jTemplate template) {
+        long count = template.count(query(true).build());
+        var q = query(false);
+        Object first = null;
+        if (count > 0) {
+            var asc = ((OngoingReadingAndReturn)q).orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.ASC)).limit(1).build();
+            first = template.findOne(asc, asc.getCatalog().getParameters(), OrderLine.class).orElse(null);
+        }
+        Object last = null;
+        if (count > 1) {
+            var desc = ((OngoingReadingAndReturn)q).orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.DESC)).limit(1).build();
+            last = template.findOne(desc, desc.getCatalog().getParameters(), OrderLine.class).orElse(null);
+        }
+        var stmt = q.build();
+        return Map.of("cypher", Map.of("query", stmt.getCypher(), "parameters", stmt.getCatalog().getParameters()), "count", count, "firstSample", first, "lastSample", last);
+    }
+}
+
+final class Query2 {
+    // Note: Avoid cartesian products, collect nodes and relationships and their properties into SDN aggregate roots/projections, see https://docs.spring.io/spring-data/neo4j/reference/appendix/custom-queries.html
+    public static BuildableStatement<ResultStatement> query(boolean returnCount) {
+        var order = Cypher.node("Order").named("o");
+        var customer = Cypher.node("Customer").named("c");
+        var rel1 = order.relationshipTo(customer, "CUSTOMERS").named("r1");
+        var orderLine = Cypher.node("OrderLine").named("ol");
+        var rel2 = order.relationshipFrom(orderLine, "ORDERS").named("r2");
+        var transaction = Cypher.node("CustomerTransaction").named("ct");
+        var rel3 = customer.relationshipFrom(transaction, "CUSTOMERS").named("r3");
+
+        var orderLines = Cypher.name("orderLines");
+        var rel2List = Cypher.name("rel2List");
+        var customerTransactions = Cypher.name("customerTransactions");
+        var rel3List = Cypher.name("rel3List");
+
+        var partial = Cypher.match(rel2, rel1, rel3)
+            .where(customer.property("customerId").isEqualTo(Cypher.literalOf(1)))
+            .with(order, Cypher.collect(rel2).as(rel2List), Cypher.collect(orderLine).as(orderLines), rel1, customer, rel3, transaction)
+            .with(order, rel2List, orderLines, rel1, customer, Cypher.collect(rel3).as(rel3List), Cypher.collect(transaction).as(customerTransactions));
+
+        if (returnCount) return partial.returning(Cypher.count(order));
+        return partial.returning(order.getRequiredSymbolicName(), rel2List, orderLines, rel1.getRequiredSymbolicName(), customer.getRequiredSymbolicName(), rel3List, customerTransactions);
+    }
+
+    public static Map<String, Object> harness(Neo4jTemplate template) {
+        long count = template.count(query(true).build());
+        var q = query(false);
+        Object first = null;
+        if (count > 0) {
+            var asc = ((OngoingReadingAndReturn)query(false)).orderBy(Cypher.sort(Cypher.property("o", "orderId"), Direction.ASC)).limit(1).build();
+            first = template.findOne(asc, asc.getCatalog().getParameters(), Order.class).orElse(null);
+        }
+        Object last = null;
+        if (count > 1) {
+            var desc = ((OngoingReadingAndReturn)query(false)).orderBy(Cypher.sort(Cypher.property("o", "orderId"), Direction.DESC)).limit(1).build();
+            last = template.findOne(desc, desc.getCatalog().getParameters(), Order.class).orElse(null);
+        }
+        var stmt = q.build();
+        return Map.of("cypher", Map.of("query", stmt.getCypher(), "parameters", stmt.getCatalog().getParameters()), "count", count, "firstSample", first, "lastSample", last);
+    }
+}
+
+final class Query3 {
+    public static BuildableStatement<ResultStatement> query(boolean returnCount) {
+        var orderLine = Cypher.node("OrderLine").named("ol");
+        var withClause = Cypher.match(orderLine)
+            .with(orderLine.property("taxRate").as("taxRate"), Cypher.count(orderLine).as("count"));
+        if (returnCount) return withClause.returning(Cypher.count(Cypher.asterisk()));
+        return withClause.returning(Cypher.name("taxRate"), Cypher.name("count")).orderBy(Cypher.sort(Cypher.name("count"), Direction.DESC));
+    }
+
+    public static Map<String, Object> harness(Neo4jTemplate template, Neo4jClient client) {
+        long count = template.count(query(true).build());
+        Object first = null;
+        if (count > 0) {
+            var asc = Cypher.call(query(false).build()).returning(Cypher.asterisk()).orderBy(Cypher.sort(Cypher.name("taxRate"), Direction.ASC)).limit(1).build();
+            var firstMap = client.query(asc.getCypher()).bindAll(asc.getCatalog().getParameters()).fetch().one().orElse(null);
+            first = new Query3Projection((Double) firstMap.get("taxRate"), (Long) firstMap.get("count"));
+        }
+        Object last = null;
+        if (count > 1) {
+            var desc = Cypher.call(query(false).build()).returning(Cypher.asterisk()).orderBy(Cypher.sort(Cypher.name("taxRate"), Direction.DESC)).limit(1).build();
+            var lastMap = client.query(desc.getCypher()).bindAll(desc.getCatalog().getParameters()).fetch().one().orElse(null);
+            last = new Query3Projection((Double) lastMap.get("taxRate"), (Long) lastMap.get("count"));
+        }
+        var stmt = query(false).build();
+        return Map.of("cypher", Map.of("query", stmt.getCypher(), "parameters", stmt.getCatalog().getParameters()), "count", count, "firstSample", first, "lastSample", last);
+    }
+}
+
+final class Query4 {
+    public static BuildableStatement<ResultStatement> query(boolean returnCount) {
+        var orderLine = Cypher.node("OrderLine").named("ol");
+        var partial = Cypher.match(orderLine);
+        if (returnCount) return partial.returning(Cypher.count(orderLine));
+        return partial.returning(orderLine).orderBy(Cypher.sort(orderLine.property("quantity"), Direction.DESC)).limit(50);
+    }
+
+    public static Map<String, Object> harness(Neo4jTemplate template) {
+        long count = template.count(query(true).build());
+        long actualCount = Math.min(count, 50);
+
+        var q = query(false);
+        Object first = null;
+        if (actualCount > 0) {
+            var asc = ((OngoingReadingAndReturn)q).orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.ASC)).limit(1).build();
+            first = template.findOne(asc, asc.getCatalog().getParameters(), OrderLine.class).orElse(null);
+        }
+        Object last = null;
+        if (actualCount > 1) {
+            var desc = ((OngoingReadingAndReturn)q).orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.DESC)).limit(1).build();
+            last = template.findOne(desc, desc.getCatalog().getParameters(), OrderLine.class).orElse(null);
+        }
+        var stmt = q.build();
+        return Map.of("cypher", Map.of("query", stmt.getCypher(), "parameters", stmt.getCatalog().getParameters()), "count", actualCount, "firstSample", first, "lastSample", last);
+    }
+}
+
+final class Query5 {
+    public static BuildableStatement<ResultStatement> query(boolean returnCount) {
+        var orderLine = Cypher.node("OrderLine").named("ol");
+        if (returnCount) return Cypher.match(orderLine).returning(Cypher.count(orderLine));
+        return Cypher.match(orderLine).returning(
+            orderLine.property("orderLineId").as("orderLineId"),
+            orderLine.property("quantity").as("quantity")
+        );
+    }
+
+    public static Map<String, Object> harness(Neo4jTemplate template, Neo4jClient client) {
+        long count = template.count(query(true).build());
+
+        var q = query(false);
+        Object first = null;
+        if (count > 0) {
+            var asc = ((OngoingReadingAndReturn)q)
+                .orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.ASC))
+                .limit(1).build();
+            var firstMap = client.query(asc.getCypher())
+                                 .bindAll(asc.getCatalog().getParameters())
+                                 .fetch().one().orElse(null);
+            if (firstMap != null) {
+                Number id = (Number) firstMap.get("orderLineId");
+                Number quantity = (Number) firstMap.get("quantity");
+                first = new Query5Projection(id != null ? id.intValue() : null, quantity != null ? quantity.intValue() : null);
+            }
+        }
+        Object last = null;
+        if (count > 1) {
+            var desc = ((OngoingReadingAndReturn)q)
+                .orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.DESC))
+                .limit(1).build();
+            var lastMap = client.query(desc.getCypher())
+                                .bindAll(desc.getCatalog().getParameters())
+                                .fetch().one().orElse(null);
+            if (lastMap != null) {
+                Number id = (Number) lastMap.get("orderLineId");
+                Number quantity = (Number) lastMap.get("quantity");
+                last = new Query5Projection(id != null ? id.intValue() : null, quantity != null ? quantity.intValue() : null);
+            }
+        }
+        var stmt = q.build();
+        return Map.of("cypher", Map.of("query", stmt.getCypher(), "parameters", stmt.getCatalog().getParameters()), "count", count, "firstSample", first, "lastSample", last);
+    }
 }
 
 // --- Query Entrypoint ---
 
 public class Neo4jQueryEntrypoint {
-    
-    public static BuildableStatement<ResultStatement> query(boolean returnCount) {
-        ZonedDateTime from = ZonedDateTime.of(2014, 12, 20, 0, 0, 0, 0, ZoneOffset.UTC);
-        ZonedDateTime to = ZonedDateTime.of(2014, 12, 31, 0, 0, 0, 0, ZoneOffset.UTC);
-        
-        var orderLine = Cypher.node("OrderLine").named("ol");
-        var partialStatement = Cypher.match(orderLine)
-            .where(orderLine.property("pickingCompletedWhen").gte(Cypher.parameter("from", from)))
-            .and(orderLine.property("pickingCompletedWhen").lte(Cypher.parameter("to", to)));
-        
-        BuildableStatement<ResultStatement> buildStatement;
-        if (returnCount) {
-            buildStatement = partialStatement.returning(Cypher.count(orderLine));
-        } else {
-            buildStatement = partialStatement.returning(orderLine);
-        }
-        
-        return buildStatement;
-    }
-
     public static void main(String[] args) throws Exception {
-        String uri = "neo4j://localhost:7697";
-        String user = "neo4j";
-        String pass = "password";
+        String uri = args.length > 0 ? args[0] : QueryRuntimeSupport.getNeo4jUri();
+        String user = args.length > 1 ? args[1] : QueryRuntimeSupport.getNeo4jUsername();
+        String pass = args.length > 2 ? args[2] : QueryRuntimeSupport.getNeo4jPassword();
+        QueryRuntimeSupport.configureLogger();
 
         try (Driver driver = GraphDatabase.driver(uri, AuthTokens.basic(user, pass))) {
             Neo4jTemplate template = QueryRuntimeSupport.createNeo4jTemplate(driver);
+            Neo4jClient client = Neo4jClient.create(driver);
 
-            var ascQuery = ((OngoingReadingAndReturn)query(false)).orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.ASC)).limit(1).build();
-            var descQuery = ((OngoingReadingAndReturn)query(false)).orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.DESC)).limit(1).build();
-        
-            OrderLine firstSample = template.findOne(ascQuery, ascQuery.getCatalog().getParameters(), OrderLine.class).orElse(null);
-            OrderLine lastSample = template.findOne(descQuery, descQuery.getCatalog().getParameters(), OrderLine.class).orElse(null);
-            long rowCount = template.count(query(true).build());
-
-            var statement = query(false).build();
-            var resultMap = Map.of(
-                "cypher", Map.of("cypherString", statement.getCypher(), "parameters", statement.getCatalog().getParameters()),
-                "rowCount", rowCount,
-                "firstSample", firstSample,
-                "lastSample", lastSample
+            var results = new java.util.LinkedHashMap<String, Object>();
+            List<java.util.function.Supplier<Map<String, Object>>> harnesses = List.of(
+                () -> Query1.harness(template),
+                () -> Query2.harness(template),
+                () -> Query3.harness(template, client),
+                () -> Query4.harness(template),
+                () -> Query5.harness(template, client)
             );
 
-            System.out.println(QueryRuntimeSupport.createJsonMapper().writeValueAsString(resultMap));
+            int idx = 0;
+            for (var harness : harnesses) {
+                idx += 1;
+                System.out.println("Executing query" + idx + "...");
+                try {
+                    results.put("query" + idx, harness.get());
+                } catch (Exception e) {
+                    System.err.println("Error occurred while executing query" + idx);
+                    e.printStackTrace();
+                    results.put("query" + idx, Map.of("error", e.toString()));
+                }
+            }
+            QueryRuntimeSupport.createJsonMapper().writeValue(new java.io.File(System.getenv("NEO4J_RESULTS_PATH") + "/neo4j_results_" + System.currentTimeMillis() + ".json"), results);
         }
     }
 }

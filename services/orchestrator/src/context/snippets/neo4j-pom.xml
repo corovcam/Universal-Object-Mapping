@@ -4,19 +4,18 @@
           xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>uom.sandbox</groupId>
-    <artifactId>sandbox</artifactId>
-    <version>1.0.0</version>
+    <artifactId>neo4j_sandbox</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <description>
+        Minimal Maven project for Neo4j sandbox compilation of LLM-generated Java code.
+    </description>
     <properties>
         <java.version>25</java.version>
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
     <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-mongodb</artifactId>
-            <version>4.0.3</version>
-        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-neo4j</artifactId>
