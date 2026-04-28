@@ -49,11 +49,54 @@ public static class CustomJsonSerializer
         }
     }
 
+    public class FixedDecimalConverter : JsonConverter<decimal>
+    {
+        public override decimal Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.GetDecimal();
+        }
+
+        public override void Write(Utf8JsonWriter writer, decimal value, JsonSerializerOptions options)
+        {
+            writer.WriteRawValue(value.ToString("0.000", CultureInfo.InvariantCulture));
+        }
+    }
+
+    public class FixedDoubleConverter : JsonConverter<double>
+    {
+        public override double Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.GetDouble();
+        }
+
+        public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options)
+        {
+            writer.WriteRawValue(value.ToString("0.000", CultureInfo.InvariantCulture));
+        }
+    }
+
+    public class CustomCamelCaseNamingPolicy : JsonNamingPolicy
+    {
+        public override string ConvertName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return name;
+            string camelCased = CamelCase.ConvertName(name);
+            if (camelCased.EndsWith("ID"))
+            {
+                return camelCased[..^2] + "Id";
+            } else if (camelCased.EndsWith("URL"))
+            {
+                return camelCased[..^3] + "Url";
+            }
+            return camelCased;
+        }
+    }
+
     public static Action<JsonTypeInfo> AlphabetizeProperties()
     {
         return static typeInfo =>
         {
-            if (typeInfo.Kind != JsonTypeInfoKind.Object) return;
+            if (typeInfo.Kind!= JsonTypeInfoKind.Object) return;
             var properties = typeInfo.Properties.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
             typeInfo.Properties.Clear();
             for (int i = 0; i < properties.Count; i++)
@@ -66,8 +109,8 @@ public static class CustomJsonSerializer
 
     public static readonly JsonSerializerOptions Options = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DictionaryKeyPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNamingPolicy = new CustomCamelCaseNamingPolicy(),
+        DictionaryKeyPolicy = new CustomCamelCaseNamingPolicy(),
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         ReferenceHandler = ReferenceHandler.IgnoreCycles,
@@ -77,8 +120,10 @@ public static class CustomJsonSerializer
         },
         Converters = { 
             new StrictIsoDateTimeConverter(), 
-            new StrictIsoDateTimeOffsetConverter(), 
-            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) 
+            new StrictIsoDateTimeOffsetConverter(),
+            new FixedDecimalConverter(),
+            new FixedDoubleConverter(),
+            new JsonStringEnumConverter(new CustomCamelCaseNamingPolicy()) 
         }
     };
 
@@ -90,25 +135,21 @@ public static class CustomJsonSerializer
 
 // --- Schema and Related Settings ---
 
-public class StockItem
-{
-    public virtual int StockItemID { get; set; }
-    public virtual required string StockItemName { get; set; }
-}
-
 public class Customer
 {
+    [JsonPropertyName("customerId")]
     public virtual int CustomerID { get; set; }
     public virtual required string CustomerName { get; set; }
     public virtual DateTime AccountOpenedDate { get; set; }
     public virtual decimal? CreditLimit { get; set; }
-    public virtual IList<CustomerTransaction> Transactions { get; set; } = [];
-    public virtual IList<Order> Orders { get; set; } = [];
+    public virtual IList<CustomerTransaction> CustomerTransactions { get; set; } = [];
 }
 
 public class CustomerTransaction
 {
+    [JsonPropertyName("customerTransactionId")]
     public virtual int CustomerTransactionID { get; set; }
+    [JsonPropertyName("customerId")]
     public virtual int CustomerID { get; set; }
     public virtual DateTime TransactionDate { get; set; }
     public virtual decimal TransactionAmount { get; set; }
@@ -116,22 +157,24 @@ public class CustomerTransaction
 
 public class Order
 {
+    [JsonPropertyName("orderId")]
     public virtual int OrderID { get; set; }
+    [JsonPropertyName("customerId")]
     public virtual int CustomerID { get; set; }
-    [JsonIgnore]
     public virtual Customer Customer { get; set; } = null!;
     public virtual IList<OrderLine> OrderLines { get; set; } = [];
 }
 
 public class OrderLine
 {
+    [JsonPropertyName("orderLineId")]
     public virtual int OrderLineID { get; set; }
+    [JsonPropertyName("orderId")]
     public virtual int OrderID { get; set; }
-    [JsonIgnore]
-    public virtual Order Order { get; set; } = null!;
+    [JsonPropertyName("stockItemId")]
     public virtual int StockItemID { get; set; }
-    public virtual StockItem StockItem { get; set; } = null!;
     public virtual required string Description { get; set; }
+    [JsonPropertyName("packageTypeId")]
     public virtual int PackageTypeID { get; set; }
     public virtual int Quantity { get; set; }
     public virtual decimal? UnitPrice { get; set; }
@@ -149,15 +192,14 @@ public class CustomerMap : ClassMapping<Customer> {
         Property(x => x.CustomerName);
         Property(x => x.AccountOpenedDate);
         Property(x => x.CreditLimit);
-        Bag(x => x.Transactions, map => { map.Key(k => k.Column("CustomerID")); }, rel => rel.OneToMany());
-        Bag(x => x.Orders, map => { map.Key(k => k.Column("CustomerID")); }, rel => rel.OneToMany());
+        Bag(x => x.CustomerTransactions, map => { map.Key(k => k.Column("CustomerID")); map.Inverse(true); }, rel => rel.OneToMany());
     }
 }
 public class CustomerTransactionMap : ClassMapping<CustomerTransaction> {
     public CustomerTransactionMap() {
         Table("CustomerTransactions"); Schema("Sales");
         Id(x => x.CustomerTransactionID, m => m.Generator(Generators.Identity));
-        Property(x => x.CustomerID);
+        Property(x => x.CustomerID, m => { m.Insert(false); m.Update(false); });
         Property(x => x.TransactionDate);
         Property(x => x.TransactionAmount);
     }
@@ -168,7 +210,7 @@ public class OrderMap : ClassMapping<Order> {
         Id(x => x.OrderID, m => m.Generator(Generators.Identity));
         Property(x => x.CustomerID, m => { m.Insert(false); m.Update(false); });
         ManyToOne(x => x.Customer, m => m.Column("CustomerID"));
-        Bag(x => x.OrderLines, map => { map.Key(k => k.Column("OrderID")); }, rel => rel.OneToMany());
+        Bag(x => x.OrderLines, map => { map.Key(k => k.Column("OrderID")); map.Inverse(true); }, rel => rel.OneToMany());
     }
 }
 public class OrderLineMap : ClassMapping<OrderLine> {
@@ -176,9 +218,7 @@ public class OrderLineMap : ClassMapping<OrderLine> {
         Table("OrderLines"); Schema("Sales");
         Id(x => x.OrderLineID, m => m.Generator(Generators.Identity));
         Property(x => x.OrderID, m => { m.Insert(false); m.Update(false); });
-        ManyToOne(x => x.Order, m => m.Column("OrderID"));
-        Property(x => x.StockItemID, m => { m.Insert(false); m.Update(false); });
-        ManyToOne(x => x.StockItem, m => m.Column("StockItemID"));
+        Property(x => x.StockItemID);
         Property(x => x.Description);
         Property(x => x.PackageTypeID);
         Property(x => x.Quantity);
@@ -190,12 +230,17 @@ public class OrderLineMap : ClassMapping<OrderLine> {
         Property(x => x.LastEditedWhen);
     }
 }
-public class StockItemMap : ClassMapping<StockItem> {
-    public StockItemMap() {
-        Table("StockItems"); Schema("Warehouse");
-        Id(x => x.StockItemID, m => m.Generator(Generators.Identity));
-        Property(x => x.StockItemName);
-    }
+
+public record Query3Projection
+{
+    public decimal TaxRate { get; set; }
+    public long Count { get; set; }
+}
+
+public record Query5Projection
+{
+    public int OrderLineID { get; set; }
+    public int Quantity { get; set; }
 }
 
 // --- Query Entrypoint ---
@@ -209,19 +254,18 @@ public static class NHibernateQueryEntrypoint
         return session.Query<OrderLine>().Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);
     }
 
-    public static IQueryable<Customer> Query2(NHibernate.ISession session)
+    public static IQueryable<Order> Query2(NHibernate.ISession session)
     {
-        return session.Query<Customer>()
-            .FetchMany(c => c.Transactions)
-            .FetchMany(c => c.Orders)
-            .ThenFetchMany(o => o.OrderLines)
-            .ThenFetch(ol => ol.StockItem)
-            .Where(c => c.CustomerID == 1);
+        return session.Query<Order>()
+            .Fetch(o => o.Customer)
+                .ThenFetchMany(c => c.CustomerTransactions)
+            .FetchMany(o => o.OrderLines)
+            .Where(o => o.CustomerID == 1);
     }
 
-    public static IQueryable<object> Query3(NHibernate.ISession session)
+    public static IQueryable<Query3Projection> Query3(NHibernate.ISession session)
     {
-        return session.Query<OrderLine>().GroupBy(ol => ol.TaxRate).Select(g => new { TaxRate = g.Key, Count = g.Count() }).OrderByDescending(x => x.Count);
+        return session.Query<OrderLine>().GroupBy(ol => ol.TaxRate).Select(g => new Query3Projection { TaxRate = g.Key, Count = g.Count() }).OrderByDescending(x => x.Count);
     }
 
     public static IQueryable<OrderLine> Query4(NHibernate.ISession session)
@@ -229,16 +273,18 @@ public static class NHibernateQueryEntrypoint
         return session.Query<OrderLine>().OrderByDescending(ol => ol.Quantity).Take(50);
     }
 
-    public static IQueryable<dynamic> Query5(NHibernate.ISession session)
+    public static IQueryable<Query5Projection> Query5(NHibernate.ISession session)
     {
-        return session.Query<OrderLine>().Select(ol => new { ol.OrderLineID, ol.Quantity });
+        return session.Query<OrderLine>().Select(ol => new Query5Projection { OrderLineID = ol.OrderLineID, Quantity = ol.Quantity });
     }
 
-    private static object RunQuery<T>(IQueryable<T> q, Func<T, object>? orderBySelector = null)
+    private static object RunQuery<T>(Func<IEnumerable<T>> q, Func<T, object>? orderBySelector = null)
     {
-        var firstSample = orderBySelector != null ? q.OrderBy(orderBySelector).FirstOrDefault() : q.FirstOrDefault();
-        var lastSample = orderBySelector != null ? q.OrderByDescending(orderBySelector).FirstOrDefault() : q.LastOrDefault();
-        return new { estimatedRowCount = q.Count(), firstSample, lastSample };
+        var query = q();
+        var count = query.Count();
+        return new { sqlString = "logged in console", count, 
+            firstSample = count > 0 ? (orderBySelector != null ? query.OrderBy(orderBySelector).FirstOrDefault() : query.FirstOrDefault()) : default, 
+            lastSample = count > 1 ? (orderBySelector != null ? query.OrderByDescending(orderBySelector).FirstOrDefault() : query.LastOrDefault()) : default };
     }
 
     public static void Main(string[] args)
@@ -261,7 +307,6 @@ public static class NHibernateQueryEntrypoint
         mapper.AddMapping<CustomerTransactionMap>();
         mapper.AddMapping<OrderMap>();
         mapper.AddMapping<OrderLineMap>();
-        mapper.AddMapping<StockItemMap>();
         configuration.AddMapping(mapper.CompileMappingForAllExplicitlyAddedEntities());
 
         using var sessionFactory = configuration.BuildSessionFactory();
@@ -269,17 +314,23 @@ public static class NHibernateQueryEntrypoint
 
         var results = new Dictionary<string, object?>();
         var harnesses = new Func<object>[] {
-            () => RunQuery(Query1(session), ol => ol.OrderLineID),
-            () => RunQuery(Query2(session), c => c.CustomerID),
-            () => RunQuery(Query3(session)), // No order by for Query3, as it already has a deterministic order by clause
-            () => RunQuery(Query4(session)), // Same as Query3, Query4 already has an order by clause
-            () => RunQuery(Query5(session), ol => ol.OrderLineID)
+            () => RunQuery(() => Query1(session), ol => ol.OrderLineID),
+            () => RunQuery(() => Query2(session), o => o.OrderID),
+            () => RunQuery(() => Query3(session), x => x.TaxRate),
+            () => RunQuery(() => Query4(session)),
+            () => RunQuery(() => Query5(session), ol => ol.OrderLineID)
         };
 
         for (int i = 0; i < harnesses.Length; i++) {
-            try { results[$"query{i+1}"] = harnesses[i](); } catch (Exception ex) { Console.Error.WriteLine($"Error executing query{i+1}: {ex.Message}"); results[$"query{i+1}"] = null; }
+            var qid = i+1;
+            Console.WriteLine($"Running Query {qid}...");
+            try {
+                results[$"query{qid}"] = harnesses[i]();
+            } catch (Exception ex) {
+                results[$"query{qid}"] = new { error = ex.Message };
+                Console.WriteLine($"Error occurred while running Query{qid}: {ex}");
+            }
         }
-
-        Console.WriteLine(CustomJsonSerializer.Serialize(results));
+        File.WriteAllText($"{System.Environment.GetEnvironmentVariable("NHIBERNATE_RESULTS_PATH")}/nhibernate_results_{DateTime.Now:yyyyMMdd_HHmmss}.json", CustomJsonSerializer.Serialize(results));
     }
 }

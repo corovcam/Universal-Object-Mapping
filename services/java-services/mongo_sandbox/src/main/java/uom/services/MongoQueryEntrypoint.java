@@ -490,6 +490,6 @@ public class MongoQueryEntrypoint {
                 results.put("query" + idx, Map.of("error", e.toString()));
             }
         }
-        QueryRuntimeSupport.createJsonMapper().writeValue(new java.io.File("mongo_results_" + System.currentTimeMillis() + ".json"), results);
+        QueryRuntimeSupport.createJsonMapper().writeValue(new java.io.File(System.getenv("MONGO_RESULTS_PATH") + "/mongo_results_" + System.currentTimeMillis() + ".json"), results);
     }
 }

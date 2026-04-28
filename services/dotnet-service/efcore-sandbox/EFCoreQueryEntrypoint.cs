@@ -286,6 +286,6 @@ public static class EFCoreQueryEntrypoint
                 Console.WriteLine($"Error occurred while running Query{qid}: {ex}");
             }
         }
-        File.WriteAllText($"efcore_results_{DateTime.Now:yyyyMMdd_HHmmss}.json", CustomJsonSerializer.Serialize(results));
+        File.WriteAllText($"{Environment.GetEnvironmentVariable("EFCORE_RESULTS_PATH")}/efcore_results_{DateTime.Now:yyyyMMdd_HHmmss}.json", CustomJsonSerializer.Serialize(results));
     }
 }
