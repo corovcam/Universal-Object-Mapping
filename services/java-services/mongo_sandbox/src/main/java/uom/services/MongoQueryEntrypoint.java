@@ -105,6 +105,8 @@ final class QueryRuntimeSupport {
         customModule.addSerializer(Instant.class, customJsonSerializer);
         customModule.addSerializer(Date.class, customJsonSerializer);
         customModule.addSerializer(BigDecimal.class, customJsonSerializer);
+        customModule.addSerializer(Double.class, customJsonSerializer);
+        customModule.addSerializer(Float.class, customJsonSerializer);
         return JsonMapper.builder()
                 .changeDefaultPropertyInclusion(incl -> incl.withValueInclusion(Include.ALWAYS))
                 .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
