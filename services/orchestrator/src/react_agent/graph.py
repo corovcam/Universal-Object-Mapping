@@ -460,7 +460,7 @@ async def schema_inspection(
             system_time=datetime.now(tz=UTC).isoformat(),
         )
 
-        database_mapping = await get_database_mapping_json(state.destination_target)
+        database_mapping = await get_database_mapping_json(state.destination_target) # type: ignore
 
         agent = create_agent(
             model,
@@ -494,13 +494,13 @@ async def schema_inspection(
             # debug=True if os.getenv("DEVELOPMENT") else False,
         )
 
-        message = f"""Inspect the database schemas relevant to translating code from {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
+        message = f"""Inspect the database schemas relevant to translating code from {cast(FrameworkType, state.source_target).value}{f" {state.source_target_version}" if state.source_target_version else ""} to {cast(FrameworkType, state.destination_target).value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 
 {f"Mapping from {database_mapping['source']} to {database_mapping['destination']}:\n<database_mapping>\n{json.dumps(database_mapping['mapping'])}\n</database_mapping>\n" if database_mapping else ""}
 
 Source code being translated:
 {f"<schema_code>\n{state.source_schema_code}\n</schema_code>\n" if state.source_schema_code else ""}
-{f"<query_code>\n{state.source_query_code}\n</query_code>\n" if state.source_query_code else ""}"""  # ty:ignore[unresolved-attribute]
+{f"<query_code>\n{state.source_query_code}\n</query_code>\n" if state.source_query_code else ""}"""
 
         try:
             response = await agent.ainvoke(
@@ -576,11 +576,11 @@ async def translation_agent(
 
     strategies = "\n".join([r.get("strategy", "") for r in state.council_responses])
 
-    message = f"""Translate the following Source Code ({"schema/query" if state.translation_type.value == TranslationType.BOTH else state.translation_type.value}) from {state.source_target.value}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
+    message = f"""Translate the following Source Code ({"schema/query" if cast(TranslationType, state.translation_type).value == TranslationType.BOTH else cast(TranslationType, state.translation_type).value}) from {cast(FrameworkType, state.source_target).value}{f" {state.source_target_version}" if state.source_target_version else ""} to {cast(FrameworkType, state.destination_target).value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 {f"\nStrategies to consider:\n{strategies}\n" if strategies else ""}{f"\nDatabase Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}---
 Source Code:
 {f"<source_schema_code>\n{state.source_schema_code.strip()}\n</source_schema_code>" if state.source_schema_code else ""}{f"\n<source_query_code>\n{state.source_query_code.strip()}\n</source_query_code>" if state.source_query_code else ""}
-"""  # ty:ignore[unresolved-attribute]
+"""
 
     # Invoke the agent. It manages its own messages and tool calls loops.
     response = await agent.ainvoke(
@@ -876,7 +876,7 @@ builder = StateGraph(
 
 builder.add_node(extract_input, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
 builder.add_node(
-    schema_inspection,
+    schema_inspection, # type: ignore
     cache_policy=CachePolicy(ttl=300),
     retry_policy=RetryPolicy(max_attempts=3),
 )
@@ -888,7 +888,7 @@ builder.add_node(
 builder.add_node(human_intervention_node) # type: ignore
 
 builder.add_node(validate_schema_node, retry_policy=RetryPolicy(max_attempts=3)) # type: ignore
-builder.add_node(validate_query_node, retry_policy=RetryPolicy(max_attempts=3))  
+builder.add_node(validate_query_node, retry_policy=RetryPolicy(max_attempts=3))   # type: ignore
 
 builder.add_conditional_edges(START, should_extract_input)
 builder.add_conditional_edges("extract_input", should_extract_input)
