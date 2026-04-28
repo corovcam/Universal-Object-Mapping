@@ -94,12 +94,14 @@ final class QueryRuntimeSupport {
         SimpleModule customModule = new SimpleModule();
         CustomJsonSerializer customJsonSerializer = new CustomJsonSerializer();
         customModule.addSerializer(LocalDate.class, customJsonSerializer);
-        customModule.addSerializer(ZonedDateTime.class, customJsonSerializer);
+        customModule.addSerializer(LocalDateTime.class, customJsonSerializer);
         customModule.addSerializer(ZonedDateTime.class, customJsonSerializer);
         customModule.addSerializer(OffsetDateTime.class, customJsonSerializer);
         customModule.addSerializer(Instant.class, customJsonSerializer);
         customModule.addSerializer(Date.class, customJsonSerializer);
         customModule.addSerializer(BigDecimal.class, customJsonSerializer);
+        customModule.addSerializer(Double.class, customJsonSerializer);
+        customModule.addSerializer(Float.class, customJsonSerializer);
         return JsonMapper.builder()
                 .changeDefaultPropertyInclusion(incl -> incl.withValueInclusion(Include.ALWAYS))
                 .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
@@ -330,7 +332,7 @@ final class Query1 {
 }
 
 final class Query2 {
-    // Note: Avoid cartesian products, collect nodes/relationships and their properties into SDN aggregate roots/projections, see https://docs.spring.io/spring-data/neo4j/reference/appendix/custom-queries.html
+    // Note: Avoid cartesian products, collect nodes and relationships and their properties into SDN aggregate roots/projections, see https://docs.spring.io/spring-data/neo4j/reference/appendix/custom-queries.html
     public static BuildableStatement<ResultStatement> query(boolean returnCount) {
         var order = Cypher.node("Order").named("o");
         var customer = Cypher.node("Customer").named("c");
@@ -373,47 +375,105 @@ final class Query2 {
 }
 
 final class Query3 {
-    public static BuildableStatement<ResultStatement> query() {
+    public static BuildableStatement<ResultStatement> query(boolean returnCount) {
         var orderLine = Cypher.node("OrderLine").named("ol");
-        return Cypher.match(orderLine)
-            .returning(orderLine.property("taxRate").as("taxRate"), Cypher.count(orderLine).as("count"))
-            .orderBy(Cypher.sort(Cypher.name("count"), Direction.DESC));
+        var withClause = Cypher.match(orderLine)
+            .with(orderLine.property("taxRate").as("taxRate"), Cypher.count(orderLine).as("count"));
+        if (returnCount) return withClause.returning(Cypher.count(Cypher.asterisk()));
+        return withClause.returning(Cypher.name("taxRate"), Cypher.name("count")).orderBy(Cypher.sort(Cypher.name("count"), Direction.DESC));
     }
 
-    public static Map<String, Object> harness(Neo4jTemplate template) {
-        var stmt = query().build();
-        var results = template.find(OrderLine.class).as(Object.class).matching(stmt).all();
-        return Map.of("cypher", Map.of("query", stmt.getCypher(), "parameters", stmt.getCatalog().getParameters()), "count", results.size(), "firstSample", results.isEmpty() ? "null" : results.get(0), "lastSample", results.isEmpty() ? "null" : results.get(results.size() - 1));
+    public static Map<String, Object> harness(Neo4jTemplate template, Neo4jClient client) {
+        long count = template.count(query(true).build());
+        Object first = null;
+        if (count > 0) {
+            var asc = Cypher.call(query(false).build()).returning(Cypher.asterisk()).orderBy(Cypher.sort(Cypher.name("taxRate"), Direction.ASC)).limit(1).build();
+            var firstMap = client.query(asc.getCypher()).bindAll(asc.getCatalog().getParameters()).fetch().one().orElse(null);
+            first = new Query3Projection((Double) firstMap.get("taxRate"), (Long) firstMap.get("count"));
+        }
+        Object last = null;
+        if (count > 1) {
+            var desc = Cypher.call(query(false).build()).returning(Cypher.asterisk()).orderBy(Cypher.sort(Cypher.name("taxRate"), Direction.DESC)).limit(1).build();
+            var lastMap = client.query(desc.getCypher()).bindAll(desc.getCatalog().getParameters()).fetch().one().orElse(null);
+            last = new Query3Projection((Double) lastMap.get("taxRate"), (Long) lastMap.get("count"));
+        }
+        var stmt = query(false).build();
+        return Map.of("cypher", Map.of("query", stmt.getCypher(), "parameters", stmt.getCatalog().getParameters()), "count", count, "firstSample", first, "lastSample", last);
     }
 }
 
 final class Query4 {
-    public static BuildableStatement<ResultStatement> query() {
+    public static BuildableStatement<ResultStatement> query(boolean returnCount) {
         var orderLine = Cypher.node("OrderLine").named("ol");
-        return Cypher.match(orderLine).returning(orderLine)
-            .orderBy(Cypher.sort(orderLine.property("quantity"), Direction.DESC)).limit(50);
+        var partial = Cypher.match(orderLine);
+        if (returnCount) return partial.returning(Cypher.count(orderLine));
+        return partial.returning(orderLine).orderBy(Cypher.sort(orderLine.property("quantity"), Direction.DESC)).limit(50);
     }
 
     public static Map<String, Object> harness(Neo4jTemplate template) {
-        var stmt = query().build();
-        var results = template.findAll(stmt, stmt.getCatalog().getParameters(), OrderLine.class);
-        return Map.of("cypher", Map.of("query", stmt.getCypher(), "parameters", stmt.getCatalog().getParameters()), "count", results.size(), "firstSample", results.isEmpty() ? "null" : results.get(0), "lastSample", results.isEmpty() ? "null" : results.get(results.size() - 1));
+        long count = template.count(query(true).build());
+        long actualCount = Math.min(count, 50);
+
+        var q = query(false);
+        Object first = null;
+        if (actualCount > 0) {
+            var asc = ((OngoingReadingAndReturn)q).orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.ASC)).limit(1).build();
+            first = template.findOne(asc, asc.getCatalog().getParameters(), OrderLine.class).orElse(null);
+        }
+        Object last = null;
+        if (actualCount > 1) {
+            var desc = ((OngoingReadingAndReturn)q).orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.DESC)).limit(1).build();
+            last = template.findOne(desc, desc.getCatalog().getParameters(), OrderLine.class).orElse(null);
+        }
+        var stmt = q.build();
+        return Map.of("cypher", Map.of("query", stmt.getCypher(), "parameters", stmt.getCatalog().getParameters()), "count", actualCount, "firstSample", first, "lastSample", last);
     }
 }
 
 final class Query5 {
-    public static BuildableStatement<ResultStatement> query() {
+    public static BuildableStatement<ResultStatement> query(boolean returnCount) {
         var orderLine = Cypher.node("OrderLine").named("ol");
+        if (returnCount) return Cypher.match(orderLine).returning(Cypher.count(orderLine));
         return Cypher.match(orderLine).returning(
             orderLine.property("orderLineId").as("orderLineId"),
             orderLine.property("quantity").as("quantity")
         );
     }
 
-    public static Map<String, Object> harness(Neo4jTemplate template) {
-        var stmt = query().build();
-        var results = template.find(OrderLine.class).matching(stmt).all();
-        return Map.of("cypher", Map.of("query", stmt.getCypher(), "parameters", stmt.getCatalog().getParameters()), "count", results.size(), "firstSample", results.isEmpty() ? "null" : results.get(0), "lastSample", results.isEmpty() ? "null" : results.get(results.size() - 1));
+    public static Map<String, Object> harness(Neo4jTemplate template, Neo4jClient client) {
+        long count = template.count(query(true).build());
+
+        var q = query(false);
+        Object first = null;
+        if (count > 0) {
+            var asc = ((OngoingReadingAndReturn)q)
+                .orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.ASC))
+                .limit(1).build();
+            var firstMap = client.query(asc.getCypher())
+                                 .bindAll(asc.getCatalog().getParameters())
+                                 .fetch().one().orElse(null);
+            if (firstMap != null) {
+                Number id = (Number) firstMap.get("orderLineId");
+                Number quantity = (Number) firstMap.get("quantity");
+                first = new Query5Projection(id != null ? id.intValue() : null, quantity != null ? quantity.intValue() : null);
+            }
+        }
+        Object last = null;
+        if (count > 1) {
+            var desc = ((OngoingReadingAndReturn)q)
+                .orderBy(Cypher.sort(Cypher.property("ol", "orderLineId"), Direction.DESC))
+                .limit(1).build();
+            var lastMap = client.query(desc.getCypher())
+                                .bindAll(desc.getCatalog().getParameters())
+                                .fetch().one().orElse(null);
+            if (lastMap != null) {
+                Number id = (Number) lastMap.get("orderLineId");
+                Number quantity = (Number) lastMap.get("quantity");
+                last = new Query5Projection(id != null ? id.intValue() : null, quantity != null ? quantity.intValue() : null);
+            }
+        }
+        var stmt = q.build();
+        return Map.of("cypher", Map.of("query", stmt.getCypher(), "parameters", stmt.getCatalog().getParameters()), "count", count, "firstSample", first, "lastSample", last);
     }
 }
 
@@ -428,14 +488,15 @@ public class Neo4jQueryEntrypoint {
 
         try (Driver driver = GraphDatabase.driver(uri, AuthTokens.basic(user, pass))) {
             Neo4jTemplate template = QueryRuntimeSupport.createNeo4jTemplate(driver);
+            Neo4jClient client = Neo4jClient.create(driver);
 
             var results = new java.util.LinkedHashMap<String, Object>();
             List<java.util.function.Supplier<Map<String, Object>>> harnesses = List.of(
                 () -> Query1.harness(template),
                 () -> Query2.harness(template),
-                () -> Query3.harness(template),
+                () -> Query3.harness(template, client),
                 () -> Query4.harness(template),
-                () -> Query5.harness(template)
+                () -> Query5.harness(template, client)
             );
 
             int idx = 0;
