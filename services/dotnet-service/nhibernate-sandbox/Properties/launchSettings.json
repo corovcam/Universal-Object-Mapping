@@ -1,0 +1,13 @@
+{
+  "$schema": "https://www.schemastore.org/launchsettings.json",
+  "profiles": {
+    "default": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "CONNECTION_STRING": "Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True",
+        "NHIBERNATE_RESULTS_PATH": "/home/corovcak/Uni/DP/Universal-Object-Mapping/services/dotnet-service/nhibernate-sandbox/results"
+      },
+      "sqlDebugging": true
+    },
+  }
+}

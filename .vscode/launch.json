@@ -37,11 +37,17 @@
       "type": "dotnet",
       "request": "launch",
       "projectPath": "${file}",
-      "linux": {
+      "linux":{
         "args": [
-          "Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
-        ]
-      }
-    }
+        "Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
+        ],
+        "env": {
+          "CONNECTION_STRING": "Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True",
+          "EFCORE_RESULTS_PATH": "/home/corovcak/Uni/DP/Universal-Object-Mapping/services/dotnet-service/efcore-sandbox/results",
+          "NHIBERNATE_RESULTS_PATH": "/home/corovcak/Uni/DP/Universal-Object-Mapping/services/dotnet-service/nhibernate-sandbox/results",
+          "DAPPER_RESULTS_PATH": "/home/corovcak/Uni/DP/Universal-Object-Mapping/services/dotnet-service/dapper-sandbox/results"
+        }
+      },
+    },
   ]
 }

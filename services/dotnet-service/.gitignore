@@ -493,3 +493,4 @@ $RECYCLE.BIN/
 .env
 .env.dev
 sandbox/
+results/
