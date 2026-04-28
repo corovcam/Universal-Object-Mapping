@@ -45,11 +45,54 @@ public static class CustomJsonSerializer
         }
     }
 
+    public class FixedDecimalConverter : JsonConverter<decimal>
+    {
+        public override decimal Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.GetDecimal();
+        }
+
+        public override void Write(Utf8JsonWriter writer, decimal value, JsonSerializerOptions options)
+        {
+            writer.WriteRawValue(value.ToString("0.000", CultureInfo.InvariantCulture));
+        }
+    }
+
+    public class FixedDoubleConverter : JsonConverter<double>
+    {
+        public override double Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.GetDouble();
+        }
+
+        public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options)
+        {
+            writer.WriteRawValue(value.ToString("0.000", CultureInfo.InvariantCulture));
+        }
+    }
+
+    public class CustomCamelCaseNamingPolicy : JsonNamingPolicy
+    {
+        public override string ConvertName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return name;
+            string camelCased = CamelCase.ConvertName(name);
+            if (camelCased.EndsWith("ID"))
+            {
+                return camelCased[..^2] + "Id";
+            } else if (camelCased.EndsWith("URL"))
+            {
+                return camelCased[..^3] + "Url";
+            }
+            return camelCased;
+        }
+    }
+
     public static Action<JsonTypeInfo> AlphabetizeProperties()
     {
         return static typeInfo =>
         {
-            if (typeInfo.Kind != JsonTypeInfoKind.Object) return;
+            if (typeInfo.Kind!= JsonTypeInfoKind.Object) return;
             var properties = typeInfo.Properties.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
             typeInfo.Properties.Clear();
             for (int i = 0; i < properties.Count; i++)
@@ -62,8 +105,8 @@ public static class CustomJsonSerializer
 
     public static readonly JsonSerializerOptions Options = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DictionaryKeyPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNamingPolicy = new CustomCamelCaseNamingPolicy(),
+        DictionaryKeyPolicy = new CustomCamelCaseNamingPolicy(),
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         ReferenceHandler = ReferenceHandler.IgnoreCycles,
@@ -73,8 +116,10 @@ public static class CustomJsonSerializer
         },
         Converters = { 
             new StrictIsoDateTimeConverter(), 
-            new StrictIsoDateTimeOffsetConverter(), 
-            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) 
+            new StrictIsoDateTimeOffsetConverter(),
+            new FixedDecimalConverter(),
+            new FixedDoubleConverter(),
+            new JsonStringEnumConverter(new CustomCamelCaseNamingPolicy()) 
         }
     };
 
@@ -86,12 +131,6 @@ public static class CustomJsonSerializer
 
 // --- Schema and Related Settings ---
 
-public class StockItem
-{
-    public int StockItemID { get; set; }
-    public required string StockItemName { get; set; }
-}
-
 public class Customer
 {
     public required int CustomerID { get; set; }
@@ -99,7 +138,6 @@ public class Customer
     public required DateTime AccountOpenedDate { get; set; }
     public decimal? CreditLimit { get; set; }
     public List<CustomerTransaction> CustomerTransactions { get; set; } = [];
-    public List<Order> Orders { get; set; } = [];
 }
 
 public class CustomerTransaction
@@ -114,7 +152,6 @@ public class Order
 {
     public int OrderID { get; set; }
     public int CustomerID { get; set; }
-    [JsonIgnore]
     public Customer Customer { get; set; } = null!;
     public List<OrderLine> OrderLines { get; set; } = [];
 }
@@ -123,10 +160,6 @@ public class OrderLine
 {
     public int OrderLineID { get; set; }
     public int OrderID { get; set; }
-    [JsonIgnore]
-    public Order Order { get; set; } = null!;
-    public int StockItemID { get; set; }
-    public StockItem StockItem { get; set; } = null!;
     public required string Description { get; set; }
     public int PackageTypeID { get; set; }
     public int Quantity { get; set; }
@@ -165,83 +198,96 @@ public static class Query1
 
 public static class Query2
 {
-    static Customer Query2mapRow(Customer c, CustomerTransaction t, Order o, OrderLine ol, StockItem si)
+    static Order Query2mapRow(Order o, Customer c, CustomerTransaction t,  OrderLine ol)
     {
-        var customerDict = new Dictionary<int, Customer>();
-        if (!customerDict.TryGetValue(c.CustomerID, out var currentCustomer))
-        {
-            currentCustomer = c;
-            currentCustomer.CustomerTransactions = new List<CustomerTransaction>();
-            currentCustomer.Orders = new List<Order>();
-            customerDict.Add(currentCustomer.CustomerID, currentCustomer);
-        }
-        if (t != null && !currentCustomer.CustomerTransactions.Any(x => x.CustomerTransactionID == t.CustomerTransactionID))
-            currentCustomer.CustomerTransactions.Add(t);
+        // var orderDict = new Dictionary<int, Order>();
+        // var customerDict = new Dictionary<int, Customer>();
+        // if (!orderDict.TryGetValue(o.OrderID, out var currentOrder))
+        // {
+        //     currentOrder = o;
+        //     currentOrder.OrderLines = new List<OrderLine>();
+        //     orderDict.Add(currentOrder.OrderID, currentOrder);
+        // }
+
+        // if (c != null)
+        // {
+        //     if (!customerDict.TryGetValue(c.CustomerID, out var currentCustomer))
+        //     {
+        //         currentCustomer = c;
+        //         currentCustomer.CustomerTransactions = new List<CustomerTransaction>();
+        //         customerDict.Add(currentCustomer.CustomerID, currentCustomer);
+        //     }
+        //     currentOrder.Customer = currentCustomer;
+            
+        //     if (t != null && !currentCustomer.CustomerTransactions.Any(x => x.CustomerTransactionID == t.CustomerTransactionID))
+        //         currentCustomer.CustomerTransactions.Add(t);
+        // }
+
+        // if (ol != null && !currentOrder.OrderLines.Any(x => x.OrderLineID == ol.OrderLineID))
+        // {
+        //     currentOrder.OrderLines.Add(ol);
+        // }
         
-        if (o != null)
-        {
-            var currentOrder = currentCustomer.Orders.FirstOrDefault(x => x.OrderID == o.OrderID);
-            if (currentOrder == null)
+        // return currentOrder;
+
+        o.Customer = c;
+        o.OrderLines.Add(ol);
+        if (c != null) {
+            if (t != null)
             {
-                currentOrder = o;
-                currentOrder.OrderLines = new List<OrderLine>();
-                currentCustomer.Orders.Add(currentOrder);
-            }
-            if (ol != null && !currentOrder.OrderLines.Any(x => x.OrderLineID == ol.OrderLineID))
-            {
-                ol.StockItem = si;
-                currentOrder.OrderLines.Add(ol);
+                c.CustomerTransactions.Add(t);
             }
         }
-        return currentCustomer;
+        return o;       
     }
 
-    public static IEnumerable<Customer> Query(SqlConnection conn)
+    public static IEnumerable<Order> Query(SqlConnection conn)
     {
         string sql = @"
-            SELECT c.*, t.*, o.*, ol.*, si.*
-            FROM Sales.Customers c
+            SELECT o.*, c.*, t.*, ol.*
+            FROM Sales.Orders o
+            LEFT JOIN Sales.Customers c ON o.CustomerID = c.CustomerID
             LEFT JOIN Sales.CustomerTransactions t ON c.CustomerID = t.CustomerID
-            LEFT JOIN Sales.Orders o ON c.CustomerID = o.CustomerID
             LEFT JOIN Sales.OrderLines ol ON o.OrderID = ol.OrderID
-            LEFT JOIN Warehouse.StockItems si ON ol.StockItemID = si.StockItemID
-            WHERE c.CustomerID = 1";
-        return conn.Query<Customer, CustomerTransaction, Order, OrderLine, StockItem, Customer>(
-            sql, Query2mapRow, splitOn: "CustomerTransactionID,OrderID,OrderLineID,StockItemID").Distinct();
+            WHERE o.CustomerID = 1";
+        var duplicates = conn.Query<Order, Customer, CustomerTransaction, OrderLine, Order>(
+            sql, Query2mapRow, splitOn: "CustomerID,CustomerTransactionID,OrderLineID");
+        var result = duplicates.GroupBy(o => o.OrderID).Select(g => {
+            var order = g.First();
+            order.OrderLines = g.SelectMany(o => o.OrderLines).Where(ol => ol != null).GroupBy(ol => ol.OrderLineID).Select(g2 => g2.First()).ToList();
+            order.Customer?.CustomerTransactions = g.SelectMany(o => o.Customer.CustomerTransactions).Where(t => t != null).GroupBy(t => t.CustomerTransactionID).Select(g2 => g2.First()).ToList();
+            return order;
+        });
+        return result;
     }
 
     public static object Harness(SqlConnection conn)
     {
         string sql = @"
-            SELECT TOP 1 c.*, t.*, o.*, ol.*, si.*
-            FROM Sales.Customers c
+            SELECT TOP 1 o.*, c.*, t.*, ol.*
+            FROM Sales.Orders o
+            LEFT JOIN Sales.Customers c ON o.CustomerID = c.CustomerID
             LEFT JOIN Sales.CustomerTransactions t ON c.CustomerID = t.CustomerID
-            LEFT JOIN Sales.Orders o ON c.CustomerID = o.CustomerID
             LEFT JOIN Sales.OrderLines ol ON o.OrderID = ol.OrderID
-            LEFT JOIN Warehouse.StockItems si ON ol.StockItemID = si.StockItemID
-            WHERE c.CustomerID = 1
-            ORDER BY c.CustomerID ASC;
-            SELECT TOP 1 c.*, t.*, o.*, ol.*, si.*
-            FROM Sales.Customers c
+            WHERE o.CustomerID = 1
+            ORDER BY o.OrderID ASC;
+            SELECT TOP 1 o.*, c.*, t.*, ol.*
+            FROM Sales.Orders o
+            LEFT JOIN Sales.Customers c ON o.CustomerID = c.CustomerID
             LEFT JOIN Sales.CustomerTransactions t ON c.CustomerID = t.CustomerID
-            LEFT JOIN Sales.Orders o ON c.CustomerID = o.CustomerID
             LEFT JOIN Sales.OrderLines ol ON o.OrderID = ol.OrderID
-            LEFT JOIN Warehouse.StockItems si ON ol.StockItemID = si.StockItemID
-            WHERE c.CustomerID = 1
-            ORDER BY c.CustomerID DESC;
+            WHERE o.CustomerID = 1
+            ORDER BY o.OrderID DESC;
             SELECT COUNT(*)
-            FROM Sales.Customers c
+            FROM Sales.Orders o
+            LEFT JOIN Sales.Customers c ON o.CustomerID = c.CustomerID
             LEFT JOIN Sales.CustomerTransactions t ON c.CustomerID = t.CustomerID
-            LEFT JOIN Sales.Orders o ON c.CustomerID = o.CustomerID
             LEFT JOIN Sales.OrderLines ol ON o.OrderID = ol.OrderID
-            LEFT JOIN Warehouse.StockItems si ON ol.StockItemID = si.StockItemID
-            WHERE c.CustomerID = 1;";
-        var customerDict = new Dictionary<int, Customer>();
+            WHERE o.OrderID = 1;";
         using var multi = conn.QueryMultiple(sql);
-        var firstSample = multi.Read<Customer, CustomerTransaction, Order, OrderLine, StockItem, Customer>(Query2mapRow, splitOn: "CustomerTransactionID,OrderID,OrderLineID,StockItemID").FirstOrDefault();
-        var lastSample = multi.Read<Customer, CustomerTransaction, Order, OrderLine, StockItem, Customer>(Query2mapRow, splitOn: "CustomerTransactionID,OrderID,OrderLineID,StockItemID").FirstOrDefault();
+        var firstSample = multi.Read<Order, Customer, CustomerTransaction, OrderLine, Order>(Query2mapRow, splitOn: "CustomerID,CustomerTransactionID,OrderLineID").FirstOrDefault();
+        var lastSample = multi.Read<Order, Customer, CustomerTransaction, OrderLine, Order>(Query2mapRow, splitOn: "CustomerID,CustomerTransactionID,OrderLineID").FirstOrDefault();
         var rowCount = multi.ReadSingle<long>();
-        customerDict.Clear();
         return new { firstSample, lastSample, estimatedRowCount = rowCount };
     }
 }
@@ -324,9 +370,23 @@ public static class DapperQueryEntrypoint
         };
 
         for (int i = 0; i < harnesses.Length; i++) {
-            results[$"query{i+1}"] = harnesses[i]();
+            var qid = i+1;
+            Console.WriteLine($"Running Query {qid}...");
+            try {
+                results[$"query{qid}"] = harnesses[i]();
+            } catch (Exception ex) {
+                Console.WriteLine($"Error occurred while running Query{qid}: {ex}");
+            }
         }
-
-        Console.WriteLine(CustomJsonSerializer.Serialize(results));
+        
+        var resultsPath = Environment.GetEnvironmentVariable("DAPPER_RESULTS_PATH");
+        if (!string.IsNullOrEmpty(resultsPath))
+        {
+            System.IO.File.WriteAllText($"{resultsPath}/dapper_results_{DateTime.Now:yyyyMMdd_HHmmss}.json", CustomJsonSerializer.Serialize(results));
+        }
+        else
+        {
+            Console.WriteLine(CustomJsonSerializer.Serialize(results));
+        }
     }
 }
