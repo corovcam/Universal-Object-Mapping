@@ -254,13 +254,19 @@ public static class NHibernateQueryEntrypoint
         return session.Query<OrderLine>().Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);
     }
 
-    public static IQueryable<Order> Query2(NHibernate.ISession session)
+    public static IEnumerable<Order> Query2(NHibernate.ISession session)
     {
-        return session.Query<Order>()
-            .Fetch(o => o.Customer)
-                .ThenFetchMany(c => c.CustomerTransactions)
-            .FetchMany(o => o.OrderLines)
+        // Cartesian product cannot be done NHibernate
+        var q = session.Query<Order>()
             .Where(o => o.CustomerID == 1);
+
+        q.Fetch(o => o.Customer)
+            .ThenFetchMany(c => c.CustomerTransactions)
+            .ToFuture();
+
+        return q.FetchMany(o => o.OrderLines)
+            .Distinct()
+            .ToFuture();
     }
 
     public static IQueryable<Query3Projection> Query3(NHibernate.ISession session)
