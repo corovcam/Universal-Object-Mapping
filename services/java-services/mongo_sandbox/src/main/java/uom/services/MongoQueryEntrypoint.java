@@ -22,7 +22,6 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.ReadOnlyProperty;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
-import org.springframework.data.mongodb.core.ExecutableFindOperation;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -347,16 +346,7 @@ class OrderLine {
     public void setLastEditedWhen(LocalDateTime lastEditedWhen) { this.lastEditedWhen = lastEditedWhen; }
 }
 
-class CountProjection {
-    private Long count;
-
-    public Long getCount() { return count; }
-    public void setCount(Long count) { this.count = count; }
-}
-
-interface Query3Projection {
-    BigDecimal getTaxRate();
-    Long getCount();
+record CountProjection(Long count) {
 }
 
 interface Query5Projection {
@@ -366,19 +356,50 @@ interface Query5Projection {
 
 // --- Query Entrypoint ---
 
-public class MongoQueryEntrypoint {
-
-    public static Query query1() {
+final class Query1 {
+    public static Query query() {
         LocalDate from = LocalDate.of(2014, 12, 20);
         LocalDate to = LocalDate.of(2014, 12, 31);
         return new Query(Criteria.where("pickingCompletedWhen").gte(from).lte(to));
     }
 
-    public static Query query2() {
+    public static Map<String, Object> harness(MongoTemplate template) {
+        Query q = query();
+        long count = template.count(q, OrderLine.class);
+        Object first = null;
+        if (count > 0) {
+            first = template.findOne(query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1), OrderLine.class);
+        }
+        Object last = null;
+        if (count > 1) {
+            last = template.findOne(query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1), OrderLine.class);
+        }
+        return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject()), "count", count, "firstSample", first, "lastSample", last);
+    }
+}
+
+final class Query2 {
+    public static Query query() {
         return new Query(Criteria.where("customerId").is(1));
     }
 
-    public static TypedAggregation<OrderLine> query3() {
+    public static Map<String, Object> harness(MongoTemplate template) {
+        Query q = query();
+        long count = template.count(q, Order.class);
+        Object first = null;
+        if (count > 0) {
+            first = template.findOne(query().with(Sort.by(Sort.Direction.ASC, "orderId")).limit(1), Order.class);
+        }
+        Object last = null;
+        if (count > 1) {
+            last = template.findOne(query().with(Sort.by(Sort.Direction.DESC, "orderId")).limit(1), Order.class);
+        }
+        return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(Order.class), "filter", q.getQueryObject()), "count", count, "firstSample", first, "lastSample", last);
+    }
+}
+
+final class Query3 {
+    public static TypedAggregation<OrderLine> query() {
         return Aggregation.newAggregation(
             OrderLine.class,
             Aggregation.group("taxRate").count().as("count"),
@@ -387,83 +408,78 @@ public class MongoQueryEntrypoint {
         );
     }
 
-    public static Query query4() {
-        return new Query().with(Sort.by(Sort.Direction.DESC, "quantity")).limit(50);
-    }
-
-    public static ExecutableFindOperation.FindWithQuery<Query5Projection> query5(MongoTemplate template) {
-        return template.query(OrderLine.class).as(Query5Projection.class);
-    }
-
-    public static Map<String, Object> query1Harness(MongoTemplate template) {
-        Query q = query1();
-        long count = template.count(q, OrderLine.class);
-        OrderLine first = null;
-        if (count > 0) {
-            first = template.findOne(q.with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1), OrderLine.class);
-        }
-        OrderLine last = null;
-        if (count > 1) {
-            last = template.findOne(q.with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1), OrderLine.class);
-        }
-        return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject()), "count", count, "firstSample", first, "lastSample", last);
-    }
-
-    public static Map<String, Object> query2Harness(MongoTemplate template) {
-        Query q = query2();
-        var count = template.count(q, Order.class);
+    public static Map<String, Object> harness(MongoTemplate template) {
+        var baseAgg = query();
+        
+        var countOps = new ArrayList<>(baseAgg.getPipeline().getOperations());
+        countOps.add(Aggregation.count().as("count"));
+        var countAgg = Aggregation.newAggregation(OrderLine.class, countOps);
+        var countResult = template.aggregate(countAgg, OrderLine.class, CountProjection.class).getUniqueMappedResult();
+        var count = countResult != null ? countResult.count() : 0L;
+        
         Object first = null;
         if (count > 0) {
-            first = template.findOne(q.with(Sort.by(Sort.Direction.ASC, "orderId")).limit(1), Order.class);
-        }
-        Object last = null;
-        if (count > 1) {
-            last = template.findOne(q.with(Sort.by(Sort.Direction.DESC, "orderId")).limit(1), Order.class);
-        }
-        return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(Order.class), "filter", q.getQueryObject()), "count", count, "firstSample", first, "lastSample", last);
-    }
-
-    public static Map<String, Object> query3Harness(MongoTemplate template) {
-        long count = template.aggregate(query3(), OrderLine.class, Query3Projection.class).getMappedResults().size();
-        Object first = null;
-        if (count > 0) {
-            var agg = Aggregation.newAggregation(query3().getPipeline().add(Aggregation.sort(Sort.Direction.ASC, "taxRate")).add(Aggregation.limit(1)).getOperations());
+            var agg = Aggregation.newAggregation(query().getPipeline().add(Aggregation.sort(Sort.Direction.ASC, "taxRate")).add(Aggregation.limit(1)).getOperations());
             first = template.aggregate(agg, template.getCollectionName(OrderLine.class), Object.class).getUniqueMappedResult();
         }
         Object last = null;
         if (count > 1) {
-            var desc = Aggregation.newAggregation(query3().getPipeline().add(Aggregation.sort(Sort.Direction.DESC, "taxRate")).add(Aggregation.limit(1)).getOperations());
+            var desc = Aggregation.newAggregation(query().getPipeline().add(Aggregation.sort(Sort.Direction.DESC, "taxRate")).add(Aggregation.limit(1)).getOperations());
             last = template.aggregate(desc, template.getCollectionName(OrderLine.class), Object.class).getUniqueMappedResult();
         }
-        return Map.of("mongoAggregation", Map.of("collection", template.getCollectionName(OrderLine.class), "pipeline", query3().toString()), "count", count, "firstSample", first, "lastSample", last);
+        return Map.of("mongoAggregation", Map.of("collection", template.getCollectionName(OrderLine.class), "pipeline", baseAgg.toString()), "count", count, "firstSample", first, "lastSample", last);
+    }
+}
+
+final class Query4 {
+    public static Query query() {
+        return new Query().with(Sort.by(Sort.Direction.DESC, "quantity")).limit(50);
     }
 
-    public static Map<String, Object> query4Harness(MongoTemplate template) {
-        Query q = query4();
-        var count = template.count(q, OrderLine.class);
-        OrderLine first = null;
+    public static Map<String, Object> harness(MongoTemplate template) {
+        Query q = query();
+        long count = template.count(q, OrderLine.class);
+
+        Object first = null;
         if (count > 0) {
-            first = template.findOne(q.limit(1), OrderLine.class);
+            Query firstQ = q.with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1);
+            first = template.findOne(firstQ, OrderLine.class);
         }
-        OrderLine last = null;
+        Object last = null;
         if (count > 1) {
-            last = template.findOne(q.skip(count-1), OrderLine.class);
+            Query lastQ = q.with(Sort.by(Sort.Direction.ASC, "orderLineId")).skip(count - 1).limit(1);
+            last = template.findOne(lastQ, OrderLine.class);
         }
         return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject(), "sort", q.getSortObject()), "count", count, "firstSample", first, "lastSample", last);
     }
+}
 
-    public static Map<String, Object> query5Harness(MongoTemplate template) {
-        long count = query5(template).count();
-        Query5Projection first = null;
-        if (count > 0) {
-            first = query5(template).matching(new Query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1)).firstValue();
-        }
-        Query5Projection last = null;
-        if (count > 1) {
-            last = query5(template).matching(new Query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1)).firstValue();
-        }
-        return Map.of("count", count, "firstSample", first, "lastSample", last);
+final class Query5 {
+    public static Query query() {
+        Query q = new Query();
+        q.fields().include("orderLineId", "quantity");
+        return q;
     }
+
+    public static Map<String, Object> harness(MongoTemplate template) {
+        Query q = query();
+        long count = template.count(q, OrderLine.class);
+        
+        Object first = null;
+        if (count > 0) {
+            Query asc = query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1);
+            first = template.query(OrderLine.class).as(Query5Projection.class).matching(asc).firstValue();
+        }
+        Object last = null;
+        if (count > 1) {
+            Query desc = query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1);
+            last = template.query(OrderLine.class).as(Query5Projection.class).matching(desc).firstValue();
+        }
+        return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject(), "fields", q.getFieldsObject()), "count", count, "firstSample", first, "lastSample", last);
+    }
+}
+
+public class MongoQueryEntrypoint {
 
     public static void main(String[] args) throws Exception {
         String mongoUri = args.length > 0 ? args[0] : QueryRuntimeSupport.defaultMongoUri();
@@ -473,11 +489,11 @@ public class MongoQueryEntrypoint {
 
         var results = new LinkedHashMap<String, Object>();
         List<Supplier<Map<String, Object>>> harnesses = List.of(
-            () -> query1Harness(template),
-            () -> query2Harness(template),
-            () -> query3Harness(template),
-            () -> query4Harness(template),
-            () -> query5Harness(template)
+            () -> Query1.harness(template),
+            () -> Query2.harness(template),
+            () -> Query3.harness(template),
+            () -> Query4.harness(template),
+            () -> Query5.harness(template)
         );
 
         int idx = 0;
