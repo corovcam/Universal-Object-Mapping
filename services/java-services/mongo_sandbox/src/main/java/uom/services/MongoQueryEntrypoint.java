@@ -1,55 +1,34 @@
 package uom.services;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.TemporalAccessor;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.function.Supplier;
+import java.math.*;
+import java.time.*;
+import java.time.format.*;
+import java.time.temporal.*;
+import java.util.*;
+import java.util.function.*;
 
-import org.slf4j.LoggerFactory;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.annotation.ReadOnlyProperty;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.MongoDatabaseFactory;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory;
-import org.springframework.data.mongodb.core.aggregation.Aggregation;
-import org.springframework.data.mongodb.core.aggregation.TypedAggregation;
-import org.springframework.data.mongodb.core.convert.DefaultDbRefResolver;
-import org.springframework.data.mongodb.core.convert.DefaultMongoTypeMapper;
-import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
-import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
-import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.mapping.DocumentReference;
+import org.slf4j.*;
+import org.springframework.data.annotation.*;
+import org.springframework.data.domain.*;
+import org.springframework.data.mongodb.*;
+import org.springframework.data.mongodb.core.*;
+import org.springframework.data.mongodb.core.aggregation.*;
+import org.springframework.data.mongodb.core.convert.*;
+import org.springframework.data.mongodb.core.mapping.*;
 import org.springframework.data.mongodb.core.mapping.Field;
-import org.springframework.data.mongodb.core.mapping.MongoMappingContext;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.*;
 
-import com.fasterxml.jackson.annotation.JsonInclude.Include;
-import com.mongodb.client.MongoClients;
+import com.fasterxml.jackson.annotation.*;
+import com.fasterxml.jackson.annotation.JsonInclude.*;
+import com.mongodb.client.*;
 
-import ch.qos.logback.classic.LoggerContext;
-import tools.jackson.core.JsonGenerator;
-import tools.jackson.core.StreamWriteFeature;
-import tools.jackson.databind.MapperFeature;
-import tools.jackson.databind.SerializationContext;
-import tools.jackson.databind.SerializationFeature;
-import tools.jackson.databind.cfg.DateTimeFeature;
-import tools.jackson.databind.json.JsonMapper;
-import tools.jackson.databind.module.SimpleModule;
-import tools.jackson.databind.ser.std.StdSerializer;
+import ch.qos.logback.classic.*;
+import tools.jackson.core.*;
+import tools.jackson.databind.*;
+import tools.jackson.databind.cfg.*;
+import tools.jackson.databind.json.*;
+import tools.jackson.databind.module.*;
+import tools.jackson.databind.ser.std.*;
 
 
 // --- Harness and Utilities ---
@@ -170,6 +149,7 @@ final class MongoTemplateFactory {
  *                      Instead, Customer and its transactions are embedded within Order.
  */
 @Document(collection = "orders")
+@JsonIgnoreProperties({ "id" })
 class Order {
 
     @Id
@@ -275,6 +255,7 @@ class CustomerTransaction {
  * TRANSLATED FROM: C# OrderLine entity
  */
 @Document(collection = "orderLines")
+@JsonIgnoreProperties({ "id" })
 class OrderLine {
 
     @Id
