@@ -97,16 +97,6 @@ final class QueryRuntimeSupport {
                 .build();
     }
 
-    static Neo4jTemplate createNeo4jTemplate(Driver driver) {
-        Neo4jClient client = Neo4jClient.create(driver);
-        var mappingContext = new Neo4jMappingContext();
-        mappingContext.setInitialEntitySet(Set.of(Order.class, Customer.class, CustomerTransaction.class, OrderLine.class));
-        mappingContext.afterPropertiesSet();
-    
-        Neo4jTransactionManager transactionManager = new Neo4jTransactionManager(driver);
-        return new Neo4jTemplate(client, mappingContext, transactionManager);
-    }
-
     static void configureLogger() {
         var loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
         var mongoLogger = loggerContext.getLogger("org.springframework.data.neo4j.cypher");
@@ -282,13 +272,28 @@ class OrderLine {
     public void setLastEditedWhen(ZonedDateTime lastEditedWhen) { this.lastEditedWhen = lastEditedWhen; }
 }
 
+final class Neo4jTemplateFactory {
+    private Neo4jTemplateFactory() {
+    }
+
+    static Neo4jTemplate create(Driver driver) {
+        Neo4jClient client = Neo4jClient.create(driver);
+        var mappingContext = new Neo4jMappingContext();
+        mappingContext.setInitialEntitySet(Set.of(Order.class, Customer.class, CustomerTransaction.class, OrderLine.class));
+        mappingContext.afterPropertiesSet();
+    
+        Neo4jTransactionManager transactionManager = new Neo4jTransactionManager(driver);
+        return new Neo4jTemplate(client, mappingContext, transactionManager);
+    }
+}
+
+// --- Queries ---
+
 record Query3Projection(Double taxRate, Long count) {
 }
 
 record Query5Projection(Integer orderLineId, Integer quantity) {
 }
-
-// --- Queries ---
 
 final class Query1 {
     public static BuildableStatement<ResultStatement> query(boolean returnCount) {
@@ -469,6 +474,14 @@ final class Query5 {
 // --- Query Entrypoint ---
 
 public class Neo4jQueryEntrypoint {
+
+    public static void validateNeo4jEntity(Class<?> entityClass, Neo4jTemplate neo4jTemplate, JsonMapper jsonMapper) {
+        System.out.println("Validating Neo4j entity: " + entityClass.getSimpleName());
+        var node = Cypher.node(entityClass.getSimpleName());
+        System.out.println(jsonMapper.writeValueAsString(neo4jTemplate.findOne(Cypher.match(node).returning(node).limit(1).build(), Map.of(), entityClass)));
+        System.out.println("Successfully validated Neo4j entity: " + entityClass.getSimpleName());
+    }
+
     public static void main(String[] args) throws Exception {
         String uri = args.length > 0 ? args[0] : QueryRuntimeSupport.getNeo4jUri();
         String user = args.length > 1 ? args[1] : QueryRuntimeSupport.getNeo4jUsername();
@@ -476,9 +489,18 @@ public class Neo4jQueryEntrypoint {
         QueryRuntimeSupport.configureLogger();
 
         try (Driver driver = GraphDatabase.driver(uri, AuthTokens.basic(user, pass))) {
-            Neo4jTemplate template = QueryRuntimeSupport.createNeo4jTemplate(driver);
+            Neo4jTemplate template = Neo4jTemplateFactory.create(driver);
             Neo4jClient client = Neo4jClient.create(driver);
+            var jsonMapper = QueryRuntimeSupport.createJsonMapper();
 
+            // First, validate that our entity mappings are correct and can be used to query the database without errors
+            // Validate all entities annotated with @Node
+            validateNeo4jEntity(Order.class, template, jsonMapper);
+            validateNeo4jEntity(Customer.class, template, jsonMapper);
+            validateNeo4jEntity(CustomerTransaction.class, template, jsonMapper);
+            validateNeo4jEntity(OrderLine.class, template, jsonMapper);
+
+            // Now create and execute the queries and capture results
             var results = new LinkedHashMap<String, Object>();
             List<Supplier<Map<String, Object>>> harnesses = List.of(
                 () -> Query1.harness(template),
@@ -494,6 +516,7 @@ public class Neo4jQueryEntrypoint {
                 System.out.println("Executing query" + idx + "...");
                 try {
                     results.put("query" + idx, harness.get());
+                    System.out.println("Successfully executed query" + idx);
                 } catch (Exception e) {
                     System.err.println("Error occurred while executing query" + idx);
                     e.printStackTrace();

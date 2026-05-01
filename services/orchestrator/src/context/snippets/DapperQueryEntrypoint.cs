@@ -123,7 +123,7 @@ public static class CustomJsonSerializer
         }
     };
 
-    public static string Serialize(object entity)
+    public static string Serialize(object? entity)
     {
         return JsonSerializer.Serialize(entity, Options);
     }
@@ -274,7 +274,7 @@ public static class Query3
     {
         var sql = @"SELECT TOP 1 TaxRate, COUNT(*) as Count FROM Sales.OrderLines GROUP BY TaxRate ORDER BY Count DESC;
                     SELECT TOP 1 TaxRate, COUNT(*) as Count FROM Sales.OrderLines GROUP BY TaxRate ORDER BY Count ASC;
-                    SELECT COUNT(*) FROM (SELECT TaxRate, COUNT(*) as Count FROM Sales.OrderLines GROUP BY TaxRate) AS SubQuery;;";
+                    SELECT COUNT(*) FROM (SELECT TaxRate, COUNT(*) as Count FROM Sales.OrderLines GROUP BY TaxRate) AS SubQuery;";
         using var multi = conn.QueryMultiple(sql);
         return new { firstSample = multi.ReadSingle<dynamic>(), lastSample = multi.ReadSingle<dynamic>(), estimatedRowCount = multi.ReadSingle<long>() };
     }
@@ -321,6 +321,15 @@ public static class Query5
 
 public static class DapperQueryEntrypoint
 {   
+
+    public static void ValidateEntity<T>(SqlConnection conn, string schema, string table)
+    {
+        Console.WriteLine($"Validating Dapper entity: {typeof(T).Name}");
+        var sql = $"SELECT TOP 1 * FROM {schema}.{table}";
+        Console.WriteLine(CustomJsonSerializer.Serialize(conn.QueryFirstOrDefault<T>(sql)));
+        Console.WriteLine($"Successfully validated Dapper entity: {typeof(T).Name}");
+    }
+
     public static void Main(string[] args)
     {   
         string connectionString = args.ElementAtOrDefault(0) 
@@ -330,6 +339,13 @@ public static class DapperQueryEntrypoint
         using var conn = new SqlConnection(connectionString);
         conn.Open();
 
+        // First, validate that our entity mappings are correct and can be used to query the database without errors
+        ValidateEntity<Customer>(conn, "Sales", "Customers");
+        ValidateEntity<CustomerTransaction>(conn, "Sales", "CustomerTransactions");
+        ValidateEntity<Order>(conn, "Sales", "Orders");
+        ValidateEntity<OrderLine>(conn, "Sales", "OrderLines");
+
+        // Now create and execute the queries and capture results
         var results = new Dictionary<string, object?>();
         var harnesses = new Func<object>[] {
             () => Query1.Harness(conn),
@@ -344,6 +360,7 @@ public static class DapperQueryEntrypoint
             Console.WriteLine($"Running Query {qid}...");
             try {
                 results[$"query{qid}"] = harnesses[i]();
+                Console.WriteLine($"Successfully ran Query {qid}");
             } catch (Exception ex) {
                 Console.WriteLine($"Error occurred while running Query{qid}: {ex}");
             }

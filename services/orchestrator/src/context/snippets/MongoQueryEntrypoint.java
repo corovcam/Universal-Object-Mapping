@@ -95,10 +95,6 @@ final class QueryRuntimeSupport {
                 .build();
     }
 
-    static MongoTemplate createMongoTemplate(String mongoUri, String mongoDatabase) {
-        return MongoTemplateFactory.create(mongoUri, mongoDatabase);
-    }
-
     static void configureLogger() {
         var loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
         var mongoLogger = loggerContext.getLogger("org.springframework.data.mongodb.core.MongoTemplate");
@@ -111,31 +107,6 @@ final class QueryRuntimeSupport {
 
     static String defaultMongoDatabase() {
         return System.getenv("MONGODB_DATABASE") != null ? System.getenv("MONGODB_DATABASE") : DEFAULT_MONGO_DATABASE;
-    }
-}
-
-final class MongoTemplateFactory {
-    private MongoTemplateFactory() {
-    }
-
-    static MongoTemplate create(String mongoUri, String mongoDatabase) {
-        MongoDatabaseFactory databaseFactory = new SimpleMongoClientDatabaseFactory(
-                MongoClients.create(mongoUri),
-                mongoDatabase);
-        MongoCustomConversions customConversions = MongoCustomConversions.create(configuration -> {
-        });
-        MongoMappingContext mappingContext = new MongoMappingContext();
-        mappingContext.setSimpleTypeHolder(customConversions.getSimpleTypeHolder());
-        mappingContext.afterPropertiesSet();
-
-        MappingMongoConverter converter = new MappingMongoConverter(
-                new DefaultDbRefResolver(databaseFactory),
-                mappingContext);
-        converter.setCustomConversions(customConversions);
-        converter.setTypeMapper(new DefaultMongoTypeMapper(null));
-        converter.afterPropertiesSet();
-
-        return new MongoTemplate(databaseFactory, converter);
     }
 }
 
@@ -327,6 +298,28 @@ class OrderLine {
     public void setLastEditedWhen(LocalDateTime lastEditedWhen) { this.lastEditedWhen = lastEditedWhen; }
 }
 
+final class MongoTemplateFactory {
+    private MongoTemplateFactory() {
+    }
+
+    static MongoTemplate create(String mongoUri, String mongoDatabase) {
+        MongoDatabaseFactory databaseFactory = new SimpleMongoClientDatabaseFactory(MongoClients.create(mongoUri), mongoDatabase);
+        MongoCustomConversions customConversions = MongoCustomConversions.create(configuration -> {});
+        MongoMappingContext mappingContext = new MongoMappingContext();
+        mappingContext.setSimpleTypeHolder(customConversions.getSimpleTypeHolder());
+        mappingContext.afterPropertiesSet();
+
+        MappingMongoConverter converter = new MappingMongoConverter(new DefaultDbRefResolver(databaseFactory), mappingContext);
+        converter.setCustomConversions(customConversions);
+        converter.setTypeMapper(new DefaultMongoTypeMapper(null));
+        converter.afterPropertiesSet();
+
+        return new MongoTemplate(databaseFactory, converter);
+    }
+}
+
+// --- Query Entrypoint ---
+
 record CountProjection(Long count) {
 }
 
@@ -334,8 +327,6 @@ interface Query5Projection {
     Integer getOrderLineId();
     Integer getQuantity();
 }
-
-// --- Query Entrypoint ---
 
 final class Query1 {
     public static Query query() {
@@ -461,13 +452,27 @@ final class Query5 {
 }
 
 public class MongoQueryEntrypoint {
+    public static void validateMongoEntity(Class<?> entityClass, MongoTemplate mongoTemplate) {
+        System.out.println("Validating MongoDB entity: " + entityClass.getSimpleName());
+        var jsonMapper = QueryRuntimeSupport.createJsonMapper().rebuild().changeDefaultPropertyInclusion(incl -> incl.withValueInclusion(Include.NON_EMPTY)).build();
+        Query query = new Query().limit(1);
+        // This will throw MappingException or similar if the entity mapping is invalid or if the collection doesn't exist / has incompatible data
+        System.out.println(jsonMapper.writeValueAsString(mongoTemplate.findOne(query, entityClass)));
+        System.out.println("Successfully validated MongoDB entity: " + entityClass.getSimpleName());
+    }
 
     public static void main(String[] args) throws Exception {
-        String mongoUri = args.length > 0 ? args[0] : QueryRuntimeSupport.defaultMongoUri();
-        String mongoDatabase = args.length > 1 ? args[1] : QueryRuntimeSupport.defaultMongoDatabase();
+        var mongoUri = args.length > 0 ? args[0] : QueryRuntimeSupport.defaultMongoUri();
+        var mongoDatabase = args.length > 1 ? args[1] : QueryRuntimeSupport.defaultMongoDatabase();
         QueryRuntimeSupport.configureLogger();
-        MongoTemplate template = QueryRuntimeSupport.createMongoTemplate(mongoUri, mongoDatabase);
+        var template = MongoTemplateFactory.create(mongoUri, mongoDatabase);
 
+        // First, validate that our entity mappings are correct and can be used to query the database without errors
+        // Only validate @Document aggregate roots - Order and OrderLine. Customer and CustomerTransaction are embedded value objects.
+        validateMongoEntity(Order.class, template);
+        validateMongoEntity(OrderLine.class, template);
+
+        // Now create and execute the queries and capture results
         var results = new LinkedHashMap<String, Object>();
         List<Supplier<Map<String, Object>>> harnesses = List.of(
             () -> Query1.harness(template),
@@ -483,6 +488,7 @@ public class MongoQueryEntrypoint {
             System.out.println("Executing query" + idx + "...");
             try {
                 results.put("query" + idx, harness.get());
+                System.out.println("Successfully executed query" + idx);
             } catch (Exception e) {
                 System.err.println("Error occurred while executing query" + idx);
                 e.printStackTrace();
