@@ -200,36 +200,6 @@ public static class Query2
 {
     static Order Query2mapRow(Order o, Customer c, CustomerTransaction t,  OrderLine ol)
     {
-        // var orderDict = new Dictionary<int, Order>();
-        // var customerDict = new Dictionary<int, Customer>();
-        // if (!orderDict.TryGetValue(o.OrderID, out var currentOrder))
-        // {
-        //     currentOrder = o;
-        //     currentOrder.OrderLines = new List<OrderLine>();
-        //     orderDict.Add(currentOrder.OrderID, currentOrder);
-        // }
-
-        // if (c != null)
-        // {
-        //     if (!customerDict.TryGetValue(c.CustomerID, out var currentCustomer))
-        //     {
-        //         currentCustomer = c;
-        //         currentCustomer.CustomerTransactions = new List<CustomerTransaction>();
-        //         customerDict.Add(currentCustomer.CustomerID, currentCustomer);
-        //     }
-        //     currentOrder.Customer = currentCustomer;
-            
-        //     if (t != null && !currentCustomer.CustomerTransactions.Any(x => x.CustomerTransactionID == t.CustomerTransactionID))
-        //         currentCustomer.CustomerTransactions.Add(t);
-        // }
-
-        // if (ol != null && !currentOrder.OrderLines.Any(x => x.OrderLineID == ol.OrderLineID))
-        // {
-        //     currentOrder.OrderLines.Add(ol);
-        // }
-        
-        // return currentOrder;
-
         o.Customer = c;
         o.OrderLines.Add(ol);
         if (c != null) {
@@ -238,7 +208,7 @@ public static class Query2
                 c.CustomerTransactions.Add(t);
             }
         }
-        return o;       
+        return o;
     }
 
     public static IEnumerable<Order> Query(SqlConnection conn)

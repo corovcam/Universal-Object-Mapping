@@ -1,51 +1,36 @@
 package uom.services;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.TemporalAccessor;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
+import java.math.*;
+import java.time.*;
+import java.time.format.*;
+import java.time.temporal.*;
+import java.util.*;
 import java.util.Set;
+import java.util.function.*;
 
-import org.neo4j.cypherdsl.core.Cypher;
-import org.neo4j.cypherdsl.core.ResultStatement;
-import org.neo4j.cypherdsl.core.SortItem.Direction;
-import org.neo4j.cypherdsl.core.StatementBuilder.BuildableStatement;
-import org.neo4j.cypherdsl.core.StatementBuilder.OngoingReadingAndReturn;
-import org.neo4j.driver.AuthTokens;
-import org.neo4j.driver.Driver;
-import org.neo4j.driver.GraphDatabase;
-import org.slf4j.LoggerFactory;
-import org.springframework.data.neo4j.core.Neo4jClient;
-import org.springframework.data.neo4j.core.Neo4jTemplate;
-import org.springframework.data.neo4j.core.mapping.Neo4jMappingContext;
-import org.springframework.data.neo4j.core.schema.GeneratedValue;
-import org.springframework.data.neo4j.core.schema.Id;
+import org.neo4j.cypherdsl.core.*;
+import org.neo4j.cypherdsl.core.SortItem.*;
+import org.neo4j.cypherdsl.core.StatementBuilder.*;
+import org.neo4j.driver.*;
+import org.slf4j.*;
+import org.springframework.data.neo4j.core.*;
+import org.springframework.data.neo4j.core.mapping.*;
+import org.springframework.data.neo4j.core.schema.*;
 import org.springframework.data.neo4j.core.schema.Node;
 import org.springframework.data.neo4j.core.schema.Property;
 import org.springframework.data.neo4j.core.schema.Relationship;
-import org.springframework.data.neo4j.core.transaction.Neo4jTransactionManager;
+import org.springframework.data.neo4j.core.transaction.*;
 
-import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import com.fasterxml.jackson.annotation.*;
+import com.fasterxml.jackson.annotation.JsonInclude.*;
 
-import ch.qos.logback.classic.LoggerContext;
-import tools.jackson.core.JsonGenerator;
-import tools.jackson.core.StreamWriteFeature;
-import tools.jackson.databind.MapperFeature;
-import tools.jackson.databind.SerializationContext;
-import tools.jackson.databind.SerializationFeature;
-import tools.jackson.databind.cfg.DateTimeFeature;
-import tools.jackson.databind.json.JsonMapper;
-import tools.jackson.databind.module.SimpleModule;
-import tools.jackson.databind.ser.std.StdSerializer;
+import ch.qos.logback.classic.*;
+import tools.jackson.core.*;
+import tools.jackson.databind.*;
+import tools.jackson.databind.cfg.*;
+import tools.jackson.databind.json.*;
+import tools.jackson.databind.module.*;
+import tools.jackson.databind.ser.std.*;
 
 // --- Harness and Utilities ---
 
@@ -147,6 +132,7 @@ final class QueryRuntimeSupport {
 // --- Schema and Related Settings ---
 
 @Node("Order")
+@JsonIgnoreProperties({ "id" })
 class Order {
 
     @Id @GeneratedValue
@@ -175,6 +161,7 @@ class Order {
 }
 
 @Node("Customer")
+@JsonIgnoreProperties({ "id" })
 class Customer {
 
     @Id @GeneratedValue
@@ -213,6 +200,7 @@ class Customer {
 }
 
 @Node("CustomerTransaction")
+@JsonIgnoreProperties({ "id" })
 class CustomerTransaction {
 
     @Id @GeneratedValue
@@ -241,6 +229,7 @@ class CustomerTransaction {
 }
 
 @Node("OrderLine")
+@JsonIgnoreProperties({ "id" })
 class OrderLine {
 
     @Id @GeneratedValue
@@ -490,8 +479,8 @@ public class Neo4jQueryEntrypoint {
             Neo4jTemplate template = QueryRuntimeSupport.createNeo4jTemplate(driver);
             Neo4jClient client = Neo4jClient.create(driver);
 
-            var results = new java.util.LinkedHashMap<String, Object>();
-            List<java.util.function.Supplier<Map<String, Object>>> harnesses = List.of(
+            var results = new LinkedHashMap<String, Object>();
+            List<Supplier<Map<String, Object>>> harnesses = List.of(
                 () -> Query1.harness(template),
                 () -> Query2.harness(template),
                 () -> Query3.harness(template, client),

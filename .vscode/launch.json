@@ -3,6 +3,22 @@
   "configurations": [
     {
       "type": "java",
+      "name": "Neo4jSchemaValidationEntrypoint",
+      "request": "launch",
+      "mainClass": "uom.services.Neo4jSchemaValidationEntrypoint",
+      "projectName": "neo4j_sandbox",
+      "envFile": "${workspaceFolder}/services/java-services/.env.dev"
+    },
+    {
+      "type": "java",
+      "name": "MongoSchemaValidationEntrypoint",
+      "request": "launch",
+      "mainClass": "uom.services.MongoSchemaValidationEntrypoint",
+      "projectName": "mongo_sandbox",
+      "envFile": "${workspaceFolder}/services/java-services/.env.dev"
+    },
+    {
+      "type": "java",
       "name": "MongoQueryEntrypoint",
       "request": "launch",
       "mainClass": "uom.services.MongoQueryEntrypoint",
@@ -37,9 +53,9 @@
       "type": "dotnet",
       "request": "launch",
       "projectPath": "${file}",
-      "linux":{
+      "linux": {
         "args": [
-        "Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
+          "Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
         ],
         "env": {
           "CONNECTION_STRING": "Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True",
@@ -47,7 +63,7 @@
           "NHIBERNATE_RESULTS_PATH": "/home/corovcak/Uni/DP/Universal-Object-Mapping/services/dotnet-service/nhibernate-sandbox/results",
           "DAPPER_RESULTS_PATH": "/home/corovcak/Uni/DP/Universal-Object-Mapping/services/dotnet-service/dapper-sandbox/results"
         }
-      },
-    },
+      }
+    }
   ]
 }
