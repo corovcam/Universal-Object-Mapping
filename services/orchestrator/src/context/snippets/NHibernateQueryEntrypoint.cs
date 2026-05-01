@@ -127,7 +127,7 @@ public static class CustomJsonSerializer
         }
     };
 
-    public static string Serialize(object entity)
+    public static string Serialize(object? entity)
     {
         return JsonSerializer.Serialize(entity, Options);
     }
@@ -293,6 +293,13 @@ public static class NHibernateQueryEntrypoint
             lastSample = count > 1 ? (orderBySelector != null ? query.OrderByDescending(orderBySelector).FirstOrDefault() : query.LastOrDefault()) : default };
     }
 
+    public static void ValidateEntity<T>(NHibernate.ISession session) where T : class
+    {
+        Console.WriteLine($"Validating NHibernate entity: {typeof(T).Name}");
+        session.Query<T>().FirstOrDefault();
+        Console.WriteLine($"Successfully validated NHibernate entity: {typeof(T).Name}");
+    }
+
     public static void Main(string[] args)
     {
         string connectionString = args.ElementAtOrDefault(0) 
@@ -318,6 +325,13 @@ public static class NHibernateQueryEntrypoint
         using var sessionFactory = configuration.BuildSessionFactory();
         using var session = sessionFactory.OpenSession();
 
+        // First, validate that our entity mappings are correct and can be used to query the database without errors
+        ValidateEntity<Customer>(session);
+        ValidateEntity<CustomerTransaction>(session);
+        ValidateEntity<Order>(session);
+        ValidateEntity<OrderLine>(session);
+
+        // Now create and execute the queries and capture results
         var results = new Dictionary<string, object?>();
         var harnesses = new Func<object>[] {
             () => RunQuery(() => Query1(session), ol => ol.OrderLineID),

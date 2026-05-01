@@ -125,7 +125,7 @@ public static class CustomJsonSerializer
         }
     };
 
-    public static string Serialize(object entity)
+    public static string Serialize(object? entity)
     {
         return JsonSerializer.Serialize(entity, Options);
     }
@@ -254,6 +254,13 @@ public static class EFCoreQueryEntrypoint
             lastSample = count > 1 ? (orderBySelector != null ? q().OrderByDescending(orderBySelector).FirstOrDefault() : query.LastOrDefault()) : default };
     }
 
+    public static void ValidateEntity<T>(SandboxDbContext ctx) where T : class
+    {
+        Console.WriteLine($"Validating EF Core entity: {typeof(T).Name}");
+        Console.WriteLine(CustomJsonSerializer.Serialize(ctx.Set<T>().FirstOrDefault()));
+        Console.WriteLine($"Successfully validated EF Core entity: {typeof(T).Name}");
+    }
+
     public static void Main(string[] args)
     {   
         using var context = new SandboxDbContext(
@@ -266,8 +273,14 @@ public static class EFCoreQueryEntrypoint
                 .EnableSensitiveDataLogging()
                 .LogTo(Console.WriteLine, [DbLoggerCategory.Database.Command.Name], minimumLevel: LogLevel.Information, options: DbContextLoggerOptions.SingleLine).Options
         );
-        
-        var data = Query1(context).OrderBy(ol => ol.OrderLineID).FirstOrDefault();
+
+        // First, validate that our entity mappings are correct and can be used to query the database without errors
+        ValidateEntity<Customer>(context);
+        ValidateEntity<CustomerTransaction>(context);
+        ValidateEntity<Order>(context);
+        ValidateEntity<OrderLine>(context);
+
+        // Now create and execute the queries and capture results
         var results = new Dictionary<string, object?>();
         var harnesses = new Func<object>[] {
             () => RunQuery(() => Query1(context), ol => ol.OrderLineID),

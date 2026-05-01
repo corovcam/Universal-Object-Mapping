@@ -3,11 +3,135 @@ using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using System.Collections.Generic;
-using Microsoft.Extensions.Logging;
+using System.Text.Json.Serialization;
+using System.Text.Json;
+using System.Text.Encodings.Web;
+using System.Globalization;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace efcore_sandbox;
+
+// --- Harness and Utilities ---
+
+public static class CustomJsonSerializer
+{
+    public class StrictIsoDateTimeConverter : JsonConverter<DateTime>
+    {
+        public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return DateTime.Parse(
+                reader.GetString()!,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+        }
+
+        public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
+        {
+            writer.WriteStringValue(value.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture));
+        }
+    }
+
+    public class StrictIsoDateTimeOffsetConverter : JsonConverter<DateTimeOffset>
+    {
+        public override DateTimeOffset Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return DateTimeOffset.Parse(reader.GetString()!, CultureInfo.InvariantCulture);
+        }
+
+        public override void Write(Utf8JsonWriter writer, DateTimeOffset value, JsonSerializerOptions options)
+        {
+            writer.WriteStringValue(
+                value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture));
+        }
+    }
+
+    public class FixedDecimalConverter : JsonConverter<decimal>
+    {
+        public override decimal Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.GetDecimal();
+        }
+
+        public override void Write(Utf8JsonWriter writer, decimal value, JsonSerializerOptions options)
+        {
+            writer.WriteRawValue(value.ToString("0.000", CultureInfo.InvariantCulture));
+        }
+    }
+
+    public class FixedDoubleConverter : JsonConverter<double>
+    {
+        public override double Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.GetDouble();
+        }
+
+        public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options)
+        {
+            writer.WriteRawValue(value.ToString("0.000", CultureInfo.InvariantCulture));
+        }
+    }
+
+    public class CustomCamelCaseNamingPolicy : JsonNamingPolicy
+    {
+        public override string ConvertName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return name;
+            string camelCased = CamelCase.ConvertName(name);
+            if (camelCased.EndsWith("ID"))
+            {
+                return camelCased[..^2] + "Id";
+            } else if (camelCased.EndsWith("URL"))
+            {
+                return camelCased[..^3] + "Url";
+            }
+            return camelCased;
+        }
+    }
+
+    public static Action<JsonTypeInfo> AlphabetizeProperties()
+    {
+        return static typeInfo =>
+        {
+            if (typeInfo.Kind!= JsonTypeInfoKind.Object) return;
+            var properties = typeInfo.Properties.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+            typeInfo.Properties.Clear();
+            for (int i = 0; i < properties.Count; i++)
+            {
+                properties[i].Order = i;
+                typeInfo.Properties.Add(properties[i]);
+            }
+        };
+    }
+
+    public static readonly JsonSerializerOptions Options = new()
+    {
+        PropertyNamingPolicy = new CustomCamelCaseNamingPolicy(),
+        DictionaryKeyPolicy = new CustomCamelCaseNamingPolicy(),
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        ReferenceHandler = ReferenceHandler.IgnoreCycles,
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver
+        {
+            Modifiers = { AlphabetizeProperties() }
+        },
+        Converters = { 
+            new StrictIsoDateTimeConverter(), 
+            new StrictIsoDateTimeOffsetConverter(),
+            new FixedDecimalConverter(),
+            new FixedDoubleConverter(),
+            new JsonStringEnumConverter(new CustomCamelCaseNamingPolicy()) 
+        }
+    };
+
+    public static string Serialize(object? entity)
+    {
+        return JsonSerializer.Serialize(entity, Options);
+    }
+}
+
+// --- Schema and Related Settings ---
 
 [Table("Customers", Schema = "Sales")]
 public class Customer
@@ -79,7 +203,7 @@ public static class EFCoreSchemaValidationEntrypoint
     public static void ValidateEntity<T>(SandboxDbContext ctx) where T : class
     {
         Console.WriteLine($"Validating EF Core entity: {typeof(T).Name}");
-        var entity = ctx.Set<T>().FirstOrDefault();
+        Console.WriteLine(CustomJsonSerializer.Serialize(ctx.Set<T>().FirstOrDefault()));
         Console.WriteLine($"Successfully validated EF Core entity: {typeof(T).Name}");
     }
 
