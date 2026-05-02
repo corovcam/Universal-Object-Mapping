@@ -348,7 +348,7 @@ public static class NHibernateQueryEntrypoint
                 results[$"query{qid}"] = harnesses[i]();
             } catch (Exception ex) {
                 results[$"query{qid}"] = new { error = ex.Message };
-                Console.WriteLine($"Error occurred while running Query{qid}: {ex}");
+                Console.Error.WriteLine($"Error occurred while running Query{qid}: {ex}");
             }
         }
         File.WriteAllText($"{System.Environment.GetEnvironmentVariable("NHIBERNATE_RESULTS_PATH")}/nhibernate_results_{DateTime.Now:yyyyMMdd_HHmmss}.json", CustomJsonSerializer.Serialize(results));

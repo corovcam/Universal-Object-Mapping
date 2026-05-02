@@ -290,7 +290,7 @@ public static class NHibernateSchemaValidationEntrypoint
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error occurred while validating entity: {ex}");
+                Console.Error.WriteLine($"Error occurred while validating entity: {ex}");
             }
         }
     }

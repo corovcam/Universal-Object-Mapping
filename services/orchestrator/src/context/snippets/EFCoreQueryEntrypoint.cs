@@ -296,7 +296,8 @@ public static class EFCoreQueryEntrypoint
             try {
                 results[$"query{qid}"] = harnesses[i]();
             } catch (Exception ex) {
-                Console.WriteLine($"Error occurred while running Query{qid}: {ex}");
+                results[$"query{qid}"] = new { error = ex.Message };
+                Console.Error.WriteLine($"Error occurred while running Query{qid}: {ex}");
             }
         }
         File.WriteAllText($"{Environment.GetEnvironmentVariable("EFCORE_RESULTS_PATH")}/efcore_results_{DateTime.Now:yyyyMMdd_HHmmss}.json", CustomJsonSerializer.Serialize(results));

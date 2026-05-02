@@ -231,7 +231,7 @@ public static class EFCoreSchemaValidationEntrypoint
             try {
                 query();
             } catch (Exception ex) {
-                Console.WriteLine($"Error occurred while validating entity: {ex}");
+                Console.Error.WriteLine($"Error occurred while validating entity: {ex}");
             }
         }
     }
