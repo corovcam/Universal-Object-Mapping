@@ -192,7 +192,7 @@ public static class Query1
             SELECT TOP 1 * FROM Sales.OrderLines WHERE PickingCompletedWhen >= @From AND PickingCompletedWhen <= @To ORDER BY OrderLineID DESC;
             SELECT COUNT(*) FROM Sales.OrderLines WHERE PickingCompletedWhen >= @From AND PickingCompletedWhen <= @To;";
         using var multi = conn.QueryMultiple(sql, new { From = from, To = to });
-        return new { firstSample = multi.ReadSingle<OrderLine>(), lastSample = multi.ReadSingle<OrderLine>(), estimatedRowCount = multi.ReadSingle<long>() };
+        return new { firstSample = multi.ReadSingle<OrderLine>(), lastSample = multi.ReadSingle<OrderLine>(), count = multi.ReadSingle<long>() };
     }
 }
 
@@ -258,7 +258,7 @@ public static class Query2
         var firstSample = multi.Read<Order, Customer, CustomerTransaction, OrderLine, Order>(Query2mapRow, splitOn: "CustomerID,CustomerTransactionID,OrderLineID").FirstOrDefault();
         var lastSample = multi.Read<Order, Customer, CustomerTransaction, OrderLine, Order>(Query2mapRow, splitOn: "CustomerID,CustomerTransactionID,OrderLineID").FirstOrDefault();
         var rowCount = multi.ReadSingle<long>();
-        return new { firstSample, lastSample, estimatedRowCount = rowCount };
+        return new { firstSample, lastSample, count = rowCount };
     }
 }
 
@@ -276,7 +276,7 @@ public static class Query3
                     SELECT TOP 1 TaxRate, COUNT(*) as Count FROM Sales.OrderLines GROUP BY TaxRate ORDER BY Count ASC;
                     SELECT COUNT(*) FROM (SELECT TaxRate, COUNT(*) as Count FROM Sales.OrderLines GROUP BY TaxRate) AS SubQuery;";
         using var multi = conn.QueryMultiple(sql);
-        return new { firstSample = multi.ReadSingle<dynamic>(), lastSample = multi.ReadSingle<dynamic>(), estimatedRowCount = multi.ReadSingle<long>() };
+        return new { firstSample = multi.ReadSingle<dynamic>(), lastSample = multi.ReadSingle<dynamic>(), count = multi.ReadSingle<long>() };
     }
 }
 
@@ -294,7 +294,7 @@ public static class Query4
                     SELECT TOP 1 * FROM Sales.OrderLines ORDER BY Quantity ASC;
                     SELECT COUNT(*) FROM (SELECT TOP 50 * FROM Sales.OrderLines ORDER BY Quantity DESC) AS SubQuery;";
         using var multi = conn.QueryMultiple(sql);
-        return new { firstSample = multi.ReadSingle<OrderLine>(), lastSample = multi.ReadSingle<OrderLine>(), estimatedRowCount = multi.ReadSingle<long>() };
+        return new { firstSample = multi.ReadSingle<OrderLine>(), lastSample = multi.ReadSingle<OrderLine>(), count = multi.ReadSingle<long>() };
     }
 }
 
@@ -313,7 +313,7 @@ public static class Query5
             SELECT TOP 1 OrderLineID, Quantity FROM Sales.OrderLines ORDER BY OrderLineID DESC;
             SELECT COUNT(*) FROM Sales.OrderLines;";
         using var multi = conn.QueryMultiple(sql);
-        return new { firstSample = multi.ReadSingle<dynamic>(), lastSample = multi.ReadSingle<dynamic>(), estimatedRowCount = multi.ReadSingle<long>() };
+        return new { firstSample = multi.ReadSingle<dynamic>(), lastSample = multi.ReadSingle<dynamic>(), count = multi.ReadSingle<long>() };
     }
 }
 
@@ -362,7 +362,8 @@ public static class DapperQueryEntrypoint
                 results[$"query{qid}"] = harnesses[i]();
                 Console.WriteLine($"Successfully ran Query {qid}");
             } catch (Exception ex) {
-                Console.WriteLine($"Error occurred while running Query{qid}: {ex}");
+                results[$"query{qid}"] = new { error = ex.Message };
+                Console.Error.WriteLine($"Error occurred while running Query{qid}: {ex}");
             }
         }
         

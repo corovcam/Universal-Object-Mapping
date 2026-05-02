@@ -208,7 +208,7 @@ public static class DapperSchemaValidationEntrypoint
             try {
                 query();
             } catch (Exception ex) {
-                Console.WriteLine($"Error occurred while validating entity: {ex}");
+                Console.Error.WriteLine($"Error occurred while validating entity: {ex}");
             }
         }
     }
