@@ -7,7 +7,6 @@ from dataclasses import dataclass, field, fields
 from typing import Annotated
 
 from react_agent.constants import AvailableModel
-from react_agent.prompts import SYSTEM_PROMPT_TRANSLATOR
 
 
 @dataclass(kw_only=True)
@@ -15,7 +14,7 @@ class Context:
     """The context for the agent."""
 
     system_prompt: str = field(
-        default=SYSTEM_PROMPT_TRANSLATOR,
+        default="",
         metadata={
             "description": "The system prompt to use for the agent's interactions. "
             "This prompt sets the context and behavior for the agent."

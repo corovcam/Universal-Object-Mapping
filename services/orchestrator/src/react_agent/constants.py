@@ -50,7 +50,7 @@ class TranslationType(str, Enum):
     BOTH = "both"
 
 
-class FrameworkType(str, Enum):
+class FrameworkEnum(str, Enum):
     """Supported Object-Relational/Graph/Document Mapping targets."""
 
     DOTNET_EFCORE = ".NET Entity Framework Core"
@@ -61,41 +61,39 @@ class FrameworkType(str, Enum):
 
 
 class DotnetFramework(str, Enum):
-    DOTNET_EFCORE = FrameworkType.DOTNET_EFCORE.value
-    DOTNET_DAPPER = FrameworkType.DOTNET_DAPPER.value
-    DOTNET_NHIBERNATE = FrameworkType.DOTNET_NHIBERNATE.value
+    DOTNET_EFCORE = FrameworkEnum.DOTNET_EFCORE.value
+    DOTNET_DAPPER = FrameworkEnum.DOTNET_DAPPER.value
+    DOTNET_NHIBERNATE = FrameworkEnum.DOTNET_NHIBERNATE.value
 
 
 class JavaFramework(str, Enum):
-    JAVA_SPRING_DATA_MONGODB = FrameworkType.JAVA_SPRING_DATA_MONGODB.value
-    JAVA_SPRING_DATA_NEO4J = FrameworkType.JAVA_SPRING_DATA_NEO4J.value
+    JAVA_SPRING_DATA_MONGODB = FrameworkEnum.JAVA_SPRING_DATA_MONGODB.value
+    JAVA_SPRING_DATA_NEO4J = FrameworkEnum.JAVA_SPRING_DATA_NEO4J.value
 
 
 class SourceFramework(str, Enum):
-    DOTNET_EFCORE = FrameworkType.DOTNET_EFCORE.value
-    DOTNET_DAPPER = FrameworkType.DOTNET_DAPPER.value
-    DOTNET_NHIBERNATE = FrameworkType.DOTNET_NHIBERNATE.value
+    DOTNET_EFCORE = FrameworkEnum.DOTNET_EFCORE.value
+    DOTNET_DAPPER = FrameworkEnum.DOTNET_DAPPER.value
+    DOTNET_NHIBERNATE = FrameworkEnum.DOTNET_NHIBERNATE.value
 
 
 class TargetFramework(str, Enum):
-    JAVA_SPRING_DATA_MONGODB = FrameworkType.JAVA_SPRING_DATA_MONGODB.value
-    JAVA_SPRING_DATA_NEO4J = FrameworkType.JAVA_SPRING_DATA_NEO4J.value
+    JAVA_SPRING_DATA_MONGODB = FrameworkEnum.JAVA_SPRING_DATA_MONGODB.value
+    JAVA_SPRING_DATA_NEO4J = FrameworkEnum.JAVA_SPRING_DATA_NEO4J.value
 
 
 FRAMEWORK_TO_NORMALIZED_NAME = {
-    FrameworkType.DOTNET_EFCORE: "dotnet_efcore",
-    FrameworkType.DOTNET_DAPPER: "dotnet_dapper",
-    FrameworkType.DOTNET_NHIBERNATE: "dotnet_nhibernate",
-    FrameworkType.JAVA_SPRING_DATA_MONGODB: "java_spring_data_mongodb",
-    FrameworkType.JAVA_SPRING_DATA_NEO4J: "java_spring_data_neo4j",
+    FrameworkEnum.DOTNET_EFCORE: "dotnet_efcore",
+    FrameworkEnum.DOTNET_DAPPER: "dotnet_dapper",
+    FrameworkEnum.DOTNET_NHIBERNATE: "dotnet_nhibernate",
+    FrameworkEnum.JAVA_SPRING_DATA_MONGODB: "java_spring_data_mongodb",
+    FrameworkEnum.JAVA_SPRING_DATA_NEO4J: "java_spring_data_neo4j",
 }
 
 NORMALIZED_FRAMEWORK_TO_FRAMEWORK = {
-    "dotnet_efcore": FrameworkType.DOTNET_EFCORE,
-    "dotnet_dapper": FrameworkType.DOTNET_DAPPER,
-    "dotnet_nhibernate": FrameworkType.DOTNET_NHIBERNATE,
-    "java_spring_data_mongodb": FrameworkType.JAVA_SPRING_DATA_MONGODB,
-    "java_spring_data_neo4j": FrameworkType.JAVA_SPRING_DATA_NEO4J,
+    "dotnet_efcore": FrameworkEnum.DOTNET_EFCORE,
+    "dotnet_dapper": FrameworkEnum.DOTNET_DAPPER,
+    "dotnet_nhibernate": FrameworkEnum.DOTNET_NHIBERNATE,
+    "java_spring_data_mongodb": FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
+    "java_spring_data_neo4j": FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
 }
-
-# FrameworkType = Union[SourceFramework, DestinationFramework]

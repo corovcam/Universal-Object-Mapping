@@ -1,159 +1,108 @@
-"""Java compilation and validation tool using the Java Spring Boot service REST API."""
-
+"""Java compilation and validation tool using execute_in_sandbox."""
+import base64
 import logging
 import os
-from typing import cast
+from datetime import datetime
+from typing import Literal, cast
 
-import httpx
+from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from react_agent.constants import (
-    FRAMEWORK_TO_NORMALIZED_NAME,
-    FrameworkType,
-    JavaFramework,
-)
-from react_agent.utils.utils import get_normalized_framework_name
+from react_agent.constants import FrameworkEnum, JavaFramework, TranslationType
+from react_agent.custom_tools.ssh_tools import execute_in_sandbox, scp_from_sandbox
+from react_agent.utils.utils import get_framework_config_content
 
 logger = logging.getLogger(__name__)
 
 
 class JavaValidationInput(BaseModel):
     source_code: str = Field(
+        min_length=1,
         description="The Java source code to compile and validate."
     )
     framework: JavaFramework = Field(
-        description=("The target Spring Data framework."),
+        description="The Java framework.",
     )
-    validate_schema: bool = Field(
-        default=True,
-        description=(
-            "If true, also validate entity mapping against the live database "
-            "after successful compilation."
-        ),
+    entry_type_name: str = Field(
+        min_length=1,
+        description="Entrypoint type class name declared in the Java source code.",
     )
-
-
-def _get_java_service_uri() -> str:
-    """Returns the Java service base URI from the environment."""
-    return os.environ.get("JAVA_SERVICE_URI", "http://localhost:8090")
-
-
-def _format_errors(result: dict) -> str:
-    """Formats compilation/validation errors into a readable string for the LLM agent."""
-    lines = []
-    for error in result.get("errors", []):
-        line_num = error.get("lineNumber", -1)
-        col_num = error.get("columnNumber", -1)
-        message = error.get("message", "Unknown error")
-        source = error.get("sourceFile", "")
-        code = error.get("code", "")
-
-        location = ""
-        if line_num > 0:
-            location = f"Line {line_num}"
-            if col_num > 0:
-                location += f", Col {col_num}"
-            location += ": "
-
-        source_prefix = f"[{source}] " if source else ""
-        code_suffix = f" ({code})" if code else ""
-
-        lines.append(f"  - {source_prefix}{location}{message}{code_suffix}")
-
-    return "\n".join(lines)
 
 
 @tool("validate_java_code", args_schema=JavaValidationInput)
 async def validate_java_code(
     source_code: str,
     framework: JavaFramework,
-    validate_schema: bool = True,
-) -> str:
-    """Compile and validate Java Spring Data source code against live databases.
+    entry_type_name: str,
+    runtime: ToolRuntime
+) -> dict[Literal["output", "json"], str]:
+    """Compile and validate Java Spring Data source code against live databases via SSH sandbox."""
+    try:
+        pom_content = await get_framework_config_content(FrameworkEnum(framework.value))
+    except ValueError as e:
+        return {"output": f"[Error] {e}"}
 
-    Sends source code (which may contain multiple entity classes in one file)
-    to the java-service which:
-    1. Compiles it using Maven CLI with the full Spring Data classpath (MongoDB, Neo4j)
-    2. If validate_schema=True, loads the compiled entities dynamically and
-       runs sample queries against the live database to verify the mapping works
+    pom_b64 = base64.b64encode(pom_content.encode()).decode()
+    java_b64 = base64.b64encode(source_code.encode()).decode()
 
-    Returns compilation errors with line numbers, or validation success/failure.
-    """
-    base_url = _get_java_service_uri()
-    endpoint = "/api/compiler/compile"
-    url = f"{base_url}{endpoint}"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    sandbox_dir = f"/sandbox/sandbox-{timestamp}"
+    results_dir = f"{sandbox_dir}/results"
 
-    payload = {
-        "sourceCode": source_code,
-        "framework": get_normalized_framework_name(framework),
-        "validate": validate_schema,
-    }
-
-    logger.debug(
-        f"Requesting Java validation at {url} (framework: {framework}, validate: {validate_schema})"
-    )
+    translation_type = cast(TranslationType, runtime.state.get("translation_type"))
+    script = f"""
+export MONGODB_URI="mongodb://uom_readonly:uom_readonly@mongodb:27017/uom"
+export NEO4J_URI="bolt://neo4j:7687"
+export NEO4J_USERNAME="neo4j"
+export NEO4J_PASSWORD="password"
+export MONGO_RESULTS_PATH="{results_dir}"
+export NEO4J_RESULTS_PATH="{results_dir}"
+mkdir -p "{sandbox_dir}/src/main/java/uom/services"
+mkdir -p "{results_dir}"
+echo "{pom_b64}" | base64 -d > "{sandbox_dir}/pom.xml"
+echo "{java_b64}" | base64 -d > "{sandbox_dir}/src/main/java/uom/services/{entry_type_name}.java"
+cd "{sandbox_dir}"
+mvn clean compile
+"""
+    if source_code.strip():
+        script += f"mvn exec:java -Dexec.mainClass=\"uom.services.{entry_type_name}\" -Dexec.classpathScope=compile"
+        if translation_type in [TranslationType.QUERY, TranslationType.BOTH]:
+            script += f"""
+NEWEST_JSON=$(ls -t "{results_dir}"/*.json 2>/dev/null | head -n 1)
+if [ -n "$NEWEST_JSON" ]; then
+    echo "JSON_PATH=$NEWEST_JSON"
+fi
+"""
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(url, json=payload)
-    except httpx.ConnectError:
-        logger.error(
-            f"Connection Error: Could not connect to Java service at {base_url}"
+        output = await execute_in_sandbox.ainvoke(
+            {"service_name": "java-service", "command": script}
         )
-        return (
-            f"[Connection Error] Could not connect to Java service at {base_url}. "
-            "Ensure the java-service container is running."
-        )
-    except httpx.TimeoutException:
-        logger.error(
-            f"Timeout: Java service at {base_url} did not respond within 60 seconds"
-        )
-        return (
-            f"[Timeout] Java service at {base_url} did not respond within 60 seconds. "
-            "The compilation may be too complex or the service is overloaded."
-        )
-    except httpx.HTTPError as e:
-        logger.error(f"HTTP Error failed to communicate with Java service: {e}")
-        return f"[HTTP Error] Failed to communicate with Java service: {e}"
-
-    try:
-        result = response.json()
-        logger.debug(f"Java validation response: {result}")
     except Exception as e:
-        logger.error(
-            f"Non-JSON response from Java service: {e} - Status {response.status_code}"
-        )
-        return (
-            f"[Error] Java service returned non-JSON response "
-            f"(status {response.status_code}): {response.text[:500]}"
-        )
+        return {"output": f"[Error] SSH sandbox execution failed: {e}"}
 
-    success = result.get("success", False)
-    message = result.get("message", "")
-    warnings = result.get("warnings", [])
-    errors = result.get("errors", [])
+    if "BUILD SUCCESS" in output:
+        if "Error occurred" not in output and "Exception" not in output:
+            json_part = ""
+            json_path_line = [
+                line for line in output.splitlines() if line.startswith("JSON_PATH=")
+            ]
+            if json_path_line:
+                remote_path = json_path_line[0].split("=")[1].strip()
+                json_content = await scp_from_sandbox.ainvoke(
+                    {"service_name": "java-service", "remote_path": remote_path}
+                )
+                if not json_content.startswith("[SCP Error]"):
+                    json_part = json_content
+                else:
+                    json_part = f"\\n===JSON ERROR===\\nFailed to fetch JSON from {remote_path}: {json_content}"
 
-    if success:
-        logger.info(f"Java validation passed. Message: {message}")
-        # Build success response
-        parts = [f"[Java Validation Passed] {message}"]
-        if warnings:
-            parts.append("Warnings:")
-            for w in warnings:
-                parts.append(f"  - {w}")
-        return "\n".join(parts)
+            return {
+                "output": f"[Java Validation Passed] Successfully compiled and executed.\\nMaven Output:\\n{output[:500]}...",
+                "json": json_part
+            }
+        else:
+            return {"output": f"[Java Validation Failed] Execution failed.\\nMaven Output:\\n{output[-1000:]}"}
     else:
-        logger.warning(
-            f"Java validation failed. Message: {message}. Errors: {len(errors)}"
-        )
-        # Build failure response with structured errors
-        parts = [f"[Java Compilation/Validation Failed] {message}"]
-        if errors:
-            parts.append("Errors:")
-            parts.append(_format_errors(result))
-        if warnings:
-            parts.append("Warnings:")
-            for w in warnings:
-                parts.append(f"  - {w}")
-        return "\n".join(parts)
+        return {"output": f"[Java Compilation Failed] Maven Output:\\n{output[-2000:]}"}

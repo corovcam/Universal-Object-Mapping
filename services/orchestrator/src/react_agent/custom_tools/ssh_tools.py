@@ -34,7 +34,11 @@ async def execute_in_sandbox(
         # By default in docker compose, the container hostname matches the service name.
         host, port = get_ssh_host_and_port(service_name)
         async with asyncssh.connect(
-            host=host, port=port, username="sandbox", password="sandbox", known_hosts=None
+            host=host,
+            port=port,
+            username="sandbox",
+            password="sandbox",
+            known_hosts=None,
         ) as conn:
             logger.info("Executing command: %s in service: %s", command, service_name)
             result = await conn.run(command)
@@ -51,3 +55,50 @@ async def execute_in_sandbox(
             return output if output else "Command executed successfully with no output."
     except Exception as e:
         return f"Error executing SSH command: {e}"
+
+
+@tool
+async def scp_from_sandbox(
+    service_name: Literal["dotnet-service", "java-service"], remote_path: str
+) -> str:
+    """Retrieve the content of a file from a specified service container using SCP/SFTP.
+
+    Args:
+        service_name: The target docker service name (e.g., 'dotnet-service' or 'java-service').
+        remote_path: The absolute path to the remote file to read.
+
+    Returns:
+        The content of the file as a string.
+    """
+    try:
+        if service_name not in ["dotnet-service", "java-service"]:
+            return "Error: Invalid service name. Supported services are 'dotnet-service' and 'java-service'."
+
+        host, port = get_ssh_host_and_port(service_name)
+        async with asyncssh.connect(
+            host=host,
+            port=port,
+            username="sandbox",
+            password="sandbox",
+            known_hosts=None,
+        ) as conn:
+            logger.info(
+                "SCP retrieving file: %s from service: %s", remote_path, service_name
+            )
+            async with conn.start_sftp_client() as sftp:
+                try:
+                    async with sftp.open(remote_path, "r") as f:
+                        content = await f.read()
+                        if isinstance(content, bytes):
+                            return content.decode("utf-8")
+                        return content
+                except asyncssh.SFTPError as e:
+                    logger.exception("SFTP error while retrieving file")
+                    return f"[SCP Error] File not found or inaccessible: {e}"
+
+    except asyncssh.Error as e:
+        logger.exception("SSH SCP error")
+        return f"SSH connection failed: {e}"
+    except Exception as e:
+        logger.exception("Unexpected error during SCP execution")
+        return f"Unexpected error: {e}"

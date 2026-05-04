@@ -10,7 +10,8 @@ from langgraph.graph import add_messages
 from langgraph.managed import IsLastStep
 from typing_extensions import Annotated
 
-from react_agent.constants import FrameworkType, TranslationType
+from react_agent.constants import FrameworkEnum, TranslationType
+from react_agent.utils.types import QueryEquivalenceDeepDiff, QueryValidationResults
 
 
 @dataclass
@@ -43,9 +44,9 @@ class InputState:
     source_schema_code: str | None = field(default=None)
     source_query_code: str | None = field(default=None)
     translation_type: TranslationType | None = field(default=None)
-    source_target: FrameworkType | None = field(default=None)
+    source_target: FrameworkEnum | None = field(default=None)
     source_target_version: str | None = field(default=None)
-    destination_target: FrameworkType | None = field(default=None)
+    destination_target: FrameworkEnum | None = field(default=None)
     destination_target_version: str | None = field(default=None)
 
 
@@ -58,6 +59,9 @@ class OutputState:
 
     translated_schema_code: str | None = field(default=None)
     translated_query_code: str | None = field(default=None)
+    source_validation_harness_code: str | None = field(default=None)
+    target_validation_harness_code: str | None = field(default=None)
+    explanation_message: str | None = field(default=None)
 
 
 @dataclass
@@ -76,16 +80,14 @@ class State(InputState, OutputState):
     """
 
     # Core variables
+    source_validation_entry_type_name: str | None = field(default=None)
+    target_validation_entry_type_name: str | None = field(default=None)
+    source_query_validation_results: QueryValidationResults | None = field(default=None)
+    target_query_validation_results: QueryValidationResults | None = field(default=None)
+    query_equivalence_deep_diffs: dict[str, QueryEquivalenceDeepDiff] | None = field(default=None)
     schema_context: str = field(default="")
     council_responses: list[dict] = field(default_factory=list)
     translation_messages: Annotated[Sequence[AnyMessage], add_messages] = field(
         default_factory=list
     )
-    validation_harness_code: str | None = field(default=None)
-    validation_sort_by_field: str | None = field(default=None)
-    validation_entry_type_name: str | None = field(default=None)
-    validation_entry_method_name: str | None = field(default=None)
-    source_validation_harness_code: str | None = field(default=None)
-    source_validation_schema_code: str | None = field(default=None)
-    validation_schema_code: str | None = field(default=None)
     translation_loop_count: int = field(default=0)

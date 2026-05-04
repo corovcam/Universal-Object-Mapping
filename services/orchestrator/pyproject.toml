@@ -29,6 +29,9 @@ dependencies = [
     "langchain-litellm>=0.6.4",
     "aiofiles>=25.1.0",
     "types-aiofiles>=25.1.0.20260409",
+    "orjson>=3.11.8",
+    "deepdiff[optimize]>=9.0.0",
+    "logfire[httpx]>=4.32.1",
 ]
 # external-dependencies = [
 #     "pkg:generic/node@24",
@@ -86,6 +89,7 @@ lint.ignore = [
     "D107",
     "D101",
     "D102",
+    "F841",
 ]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D", "UP"]
@@ -101,6 +105,9 @@ log_cli = true
 [tool.ty.src]
 include = ["src", "tests"]
 
+[tool.ty.rules]
+unused-type-ignore-comment = "ignore"
+
 [[tool.ty.overrides]]
 include = ["tests"]
 
@@ -110,3 +117,9 @@ invalid-key = "warn"
 
 [tool.pyright]
 include = ["src", "tests"]
+venvPath = "."
+venv = ".venv"
+reportUnnecessaryTypeIgnoreComment = "none"
+
+[tool.logfire]
+pydantic_plugin_record = "all"
