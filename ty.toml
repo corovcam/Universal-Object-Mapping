@@ -4,6 +4,9 @@ root = ["./services/orchestrator/src"]
 [src]
 include = ["services/orchestrator/src", "services/orchestrator/tests"]
 
+[rules]
+unused-type-ignore-comment = "ignore"
+
 [[overrides]]
 include = ["services/orchestrator/tests"]
 

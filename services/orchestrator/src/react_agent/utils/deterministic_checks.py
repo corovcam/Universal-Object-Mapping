@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from langchain_core.messages import HumanMessage
 
-from react_agent.constants import FrameworkType, TranslationType
+from react_agent.constants import FrameworkEnum, TranslationType
 from react_agent.state import State
 from react_agent.utils import get_message_text
 
@@ -84,7 +84,7 @@ def _latest_validation_outcome(
 
 
 def _validate_query_code_structure(
-    destination_target: FrameworkType | None,
+    destination_target: FrameworkEnum | None,
     translated_query_code: str | None,
     source_query_code: str | None,
 ) -> list[str]:
@@ -112,7 +112,7 @@ def _validate_query_code_structure(
             "and place deterministic validation setup in validation_harness_code."
         )
 
-    if destination_target == FrameworkType.JAVA_SPRING_DATA_MONGODB:
+    if destination_target == FrameworkEnum.JAVA_SPRING_DATA_MONGODB:
         for token in ("mongotemplate", "criteria", "query"):
             if token not in lower_code:
                 errors.append(
@@ -120,7 +120,7 @@ def _validate_query_code_structure(
                 )
                 break
 
-    if destination_target == FrameworkType.JAVA_SPRING_DATA_NEO4J:
+    if destination_target == FrameworkEnum.JAVA_SPRING_DATA_NEO4J:
         if "neo4jtemplate" not in lower_code:
             errors.append("Spring Data Neo4j query must use Neo4jTemplate.")
 

@@ -2,302 +2,79 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-import os
+import logging
 import re
-from datetime import datetime
-from enum import Enum
-from typing import Any
+from collections import OrderedDict
+from typing import Any, Awaitable, Literal, cast
 
-import httpx
+import orjson
+from deepdiff import DeepDiff
 from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from react_agent.constants import FrameworkType, SourceFramework, TargetFramework
-from react_agent.context import Context
-from react_agent.utils.utils import get_normalized_framework_name
+from react_agent.constants import (
+    DotnetFramework,
+    FrameworkEnum,
+    JavaFramework,
+    SourceFramework,
+    TargetFramework,
+)
+from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
+from react_agent.custom_tools.java_validator import validate_java_code
+from react_agent.state import State
+from react_agent.utils.types import QueryEquivalenceDeepDiff
+
+logger = logging.getLogger(__name__)
 
 
 class SourceQueryInput(BaseModel):
-    """Input payload for validating source-side query metadata."""
+    """Input payload for validating source-side schema/queries."""
 
     validation_schema_code: str = Field(
         min_length=1,
-        description="C# schema/entity code. This may include DbContext/session/config/bootstrap setup, but should keep "
-        "the core source schema mapping equivalent to the original source_schema_code. Should be fully valid C# code. Do not include query-related code here."
-        + """
-<example orm=\"EfCore\">
-using System;
-using Microsoft.EntityFrameworkCore;
-using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
-
-namespace Sandbox;
-
-[Table(\"OrderLines\", Schema = \"Sales\")]
-public class OrderLine
-{
-    [Key]
-    public int OrderLineID { get; set; }
-
-    public DateTime? PickingCompletedWhen { get; set; }
-
-    public string Description { get; set; } = string.Empty;
-}
-
-public class WideWorldImportersContext : DbContext
-{
-    public WideWorldImportersContext(DbContextOptions<WideWorldImportersContext> options)
-        : base(options)
-    {
-    }
-
-    public DbSet<OrderLine> OrderLines => Set<OrderLine>();
-}
-</example>
-
-<example orm=\"Dapper\">
-using System;
-using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
-
-namespace Sandbox;
-
-[Table(\"OrderLines\", Schema = \"Sales\")]
-public class OrderLine
-{
-    [Key]
-    public int OrderLineID { get; set; }
-
-    public DateTime? PickingCompletedWhen { get; set; }
-
-    public string Description { get; set; } = string.Empty;
-}
-</example>
-
-<example orm=\"NHibernate\">
-using System;
-using NHibernate.Mapping.ByCode;
-using NHibernate.Mapping.ByCode.Conformist;
-
-namespace Sandbox;
-
-public class OrderLine
-{
-    public virtual int OrderLineID { get; set; }
-    public virtual DateTime? PickingCompletedWhen { get; set; }
-    public virtual string Description { get; set; } = string.Empty;
-}
-
-public class OrderLineMap : ClassMapping<OrderLine>
-{
-    public OrderLineMap()
-    {
-        Schema(\"Sales\");
-        Table(\"OrderLines\");
-        Id(x => x.OrderLineID, m => m.Column(\"OrderLineID\"));
-        Property(x => x.PickingCompletedWhen);
-        Property(x => x.Description);
-    }
-}
-</example>""",
+        description="Source schema validation code. This should include imports, serialization, runtime config, context/session/config/bootstrap setup, and any other code needed to run the query, but should keep "
+        "the Schema and Related Settings logic equivalent to the original source_schema_code (without JSON serialization related annotations). Should be fully valid and runnable code with entrypoint. Include simple one-entity fetch queries to validate each entity (see examples). Do not include source query related code here."
     )
     validation_harness_code: str = Field(
         min_length=1,
-        description="C# query validation harness code only. Should keep the core source query logic equivalent to the original source query method."
-        + """
-<example orm=\"EfCore\">
-using System;
-using System.Linq;
-using Microsoft.EntityFrameworkCore;
-
-namespace Sandbox;
-
-public static class QueryEntrypoint
-{
-    public static IQueryable<OrderLine> Build(WideWorldImportersContext context, bool ascending)
-    {
-        var from = new DateTime(2014, 12, 20);
-        var to = new DateTime(2014, 12, 31);
-
-        var query = context.OrderLines
-            .Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);
-
-        var sorted = ascending ? query.OrderBy(ol => ol.OrderLineID) : query.OrderByDescending(ol => ol.OrderLineID);
-
-        return sorted;
-    }
-}
-</example>
-
-<example orm=\"Dapper\">
-using System;
-
-namespace Sandbox;
-
-public static class QueryEntrypoint
-{
-    public static (string Sql, object? Parameters) Build(bool ascending)
-    {
-        var sql = @\"SELECT OrderLineID, PickingCompletedWhen, Description
-                    FROM Sales.OrderLines
-                    WHERE PickingCompletedWhen >= @From AND PickingCompletedWhen <= @To
-                    ORDER BY OrderLineID \" + (ascending ? \"ASC\" : \"DESC\");
-        var parameters = new { From = new DateTime(2014, 12, 20), To = new DateTime(2014, 12, 31) };
-        return (sql, parameters);
-    }
-}
-</example>
-
-<example orm=\"NHibernate\">
-using System;
-using NHibernate;
-
-namespace Sandbox;
-
-public static class QueryEntrypoint
-{
-    public static IQuery Build(ISession session, bool ascending)
-    {
-        var hql = \"FROM OrderLine ol WHERE ol.PickingCompletedWhen >= :from AND ol.PickingCompletedWhen <= :to ORDER BY ol.OrderLineID \" + (ascending ? \"asc\" : \"desc\");
-        return session.CreateQuery(hql)
-            .SetParameter(\"from\", new DateTime(2014, 12, 20))
-            .SetParameter(\"to\", new DateTime(2014, 12, 31));
-    }
-}
-</example>""",
+        description="Source query validation harness code. Must include the query method(s) and a main entrypoint method that executes the queries, extracts `count`, `firstSample`, `lastSample`, potentially additional query information or errors, and writes the output as JSON to the path defined in the environment variable.",
     )
     source_framework: SourceFramework = Field(
-        description="Source framework for query execution"
-    )
-    sort_by_field: str = Field(
-        min_length=1,
-        description="Deterministic sort field (preferably unique ID, or any relevant property) for first/last sample extraction",
+        description="Source framework for translation"
     )
     entry_type_name: str = Field(
         min_length=1,
-        description="Entrypoint type name declared in validation_harness_code",
+        description="Entrypoint type name declared in validation_schema_code/validation_harness_code",
     )
     entry_method_name: str = Field(
         min_length=1,
-        description="Entrypoint method name declared in validation_harness_code",
+        description="Entrypoint method name declared in validation_schema_code/validation_harness_code",
     )
 
 
 class TargetQueryInput(BaseModel):
-    """Input payload for validating target-side query metadata."""
+    """Input payload for validating target-side schema/queries."""
 
     validation_schema_code: str = Field(
         min_length=1,
-        description="Java schema code only."
-        + """
-<example framework="MongoDb">
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.mapping.Field;
-
-@Document(collection = "customers")
-class Customer {
-    @Id
-    private String id;
-    
-    @Field("customerId")
-    private Integer customerId;
-    
-    @Field("customerName")
-    private String customerName;
-}
-</example>
-
-<example framework="Neo4j">
-import org.springframework.data.neo4j.core.schema.Id;
-import org.springframework.data.neo4j.core.schema.Node;
-import org.springframework.data.neo4j.core.schema.Property;
-
-@Node("Customer")
-class Customer {
-    @Id
-    private Long id;
-
-    @Property("customerId")
-    private Integer customerId;
-
-    @Property("customerName")
-    private String customerName;
-}
-</example>""",
+        description="Target schema validation code. This should include imports, serialization, runtime config, context/session/config/bootstrap setup, and any other code needed to run the query, but should keep "
+        "the Schema and Related Settings logic equivalent to the original translated_schema_code (without JSON serialization related annotations). Should be fully valid and runnable code with entrypoint. Include simple one-entity fetch queries to validate each entity (see examples). Do not include target query related code here.",
     )
     validation_harness_code: str = Field(
         min_length=1,
-        description=(
-            "Java query validation harness code only. Place validator-only setup/wiring here (template/bootstrap/count) while "
-            "keeping translated_query_code focused on the production query method."
-        )
-        + """
-<example framework="MongoDb">
-import java.util.Date;
-import java.util.Map;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-
-class QueryValidationHarness {
-   static Map<String, Object> build(MongoTemplate mongoTemplate) {
-      Date from = new Date(2014, 12, 20);
-      Date to = new Date(2014, 12, 31);
-      Query query = Query.query(Criteria.where("pickingCompletedWhen").gte(from).lte(to));
-      Query countQuery = Query.of(query).limit(-1).skip(-1);
-      return Map.of(
-         "query", query,
-         "countQuery", countQuery,
-         "collection", "orderLines"
-      );
-   }
-}
-</example>
-
-<example framework="Neo4j">
-import java.util.Map;
-import org.neo4j.cypherdsl.core.Cypher;
-import org.neo4j.cypherdsl.core.Statement;
-import org.springframework.data.neo4j.core.Neo4jTemplate;
-
-class QueryValidationHarness {
-   static Map<String, Object> build(Neo4jTemplate neo4jTemplate, String sortByField, boolean ascending) {
-      var customer = Cypher.node("Customer").named("c");
-      var sortProperty = customer.property(sortByField);
-      Statement statement = Cypher.match(customer)
-               .returning(customer)
-               .orderBy(ascending ? sortProperty.ascending() : sortProperty.descending())
-               .limit(Cypher.literalOf(1))
-               .build();
-
-      Statement countStatement = Cypher.match(customer)
-               .returning(Cypher.count(customer).as("cnt"))
-               .build();
-
-      return Map.of(
-               "statement", statement,
-               "countStatement", countStatement,
-               "params", Map.of()
-      );
-   }
-}
-</example>""",
+        description="Target query validation harness code. Must include the query method(s) and a main entrypoint method that executes the queries, extracts `count`, `firstSample`, `lastSample`, potentially additional query information or errors, and writes the output as JSON to the path defined in the environment variable.",
     )
-    framework: TargetFramework = Field(description="Target query framework")
-    sort_by_field: str = Field(
-        min_length=1,
-        description="Deterministic sort field for first/last sample extraction. Should be the same field as source query sort_by_field or its mapped equivalent.",
-    )
+    target_framework: TargetFramework = Field(description="Target framework for translation")
     entry_type_name: str = Field(
         min_length=1,
-        description="Entrypoint type name declared in validation_harness_code",
+        description="Entrypoint type name declared in validation_schema_code/validation_harness_code",
     )
     entry_method_name: str = Field(
         min_length=1,
-        description="Entrypoint method name declared in validation_harness_code",
+        description="Entrypoint method name declared in validation_schema_code/validation_harness_code",
     )
 
 
@@ -318,8 +95,8 @@ class QueryEquivalenceInput(BaseModel):
             "[Target Query Validation Passed] followed by JSON summary."
         ),
     )
-    mapping_json: dict[str, Any] = Field(
-        default_factory=dict,
+    mapping_json: dict[str, Any] | None = Field(
+        default=None,
         description=(
             "Mapping in JSON format. Example: "
             '{"nodes":{"Customer":{"propertyMappings":[{"sourceColumn":"CustomerID","targetProperty":"customerId"}]}},'
@@ -328,477 +105,179 @@ class QueryEquivalenceInput(BaseModel):
     )
 
 
-def _extract_type_names(code: str) -> set[str]:
-    return {
-        match.group(2).lower()
-        for match in re.finditer(
-            r"\b(class|record|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)",
-            code,
-        )
-    }
-
-
-def _detect_duplicate_type_names(schema_code: str, harness_code: str) -> list[str]:
-    return sorted(
-        _extract_type_names(schema_code).intersection(_extract_type_names(harness_code))
-    )
-
-
-@tool("validate_source_query", args_schema=SourceQueryInput)
+# @tool("validate_source_query", args_schema=SourceQueryInput)
+@tool
 async def validate_source_query(
-    validation_schema_code: str,
     validation_harness_code: str,
-    framework: SourceFramework,
-    sort_by_field: str,
-    entry_type_name: str,
-    entry_method_name: str,
-    runtime: ToolRuntime[Context],
-) -> str:
-    """Validate source query execution metadata via dotnet-service."""
-    normalized_schema = validation_schema_code.strip()
-    normalized_harness = validation_harness_code.strip()
-
-    duplicate_types = _detect_duplicate_type_names(
-        normalized_schema, normalized_harness
-    )
-    if duplicate_types:
-        return "[Source Query Validation Failed]\n" + json.dumps(
+    runtime: ToolRuntime,
+) -> dict[Literal["output", "validation_results"], str | dict[str, Any]]:
+    """Validate source query execution metadata."""
+    src_framework = cast(FrameworkEnum, runtime.state.get("source_target"))
+    
+    output, entrypoint_json = "Compilation Failed", ""
+    if src_framework.value in DotnetFramework:
+        output, entrypoint_json = await validate_dotnet_code.ainvoke(
             {
-                "errors": [
-                    "validation_harness_code duplicates schema types. Keep schema and harness separate."
-                ],
-                "duplicateTypes": duplicate_types,
-            },
-            default=str,
+                "source_code": validation_harness_code.strip(),
+                "framework": DotnetFramework(src_framework.value),
+            }
+        )
+    elif src_framework.value in JavaFramework:
+        output, entrypoint_json = await validate_java_code.ainvoke(
+            {
+                "source_code": validation_harness_code.strip(),
+                "framework": JavaFramework(src_framework.value),
+                "entry_type_name": runtime.state.get("source_validation_entry_type_name", "ValidationEntryPoint"),
+            }
         )
 
-    payload = {
-        "sourceCode": normalized_harness,
-        "schemaCode": normalized_schema,
-        "framework": get_normalized_framework_name(framework),
-        "sortByField": sort_by_field,
-        "entryTypeName": entry_type_name,
-        "entryMethodName": entry_method_name,
-    }
-
-    dotnet_service_uri = runtime.context.dotnet_service_uri
-    url = f"{dotnet_service_uri}/api/compiler/query-info"
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(url, json=payload)
-    except httpx.ConnectError:
-        return (
-            f"[Source Query Validation Failed] Could not connect to dotnet-service at "
-            f"{dotnet_service_uri}."
-        )
-    except httpx.TimeoutException:
-        return "[Source Query Validation Failed] dotnet-service query-info request timed out."
-    except httpx.HTTPError as ex:
-        return f"[Source Query Validation Failed] HTTP error while calling dotnet-service: {ex}"
-
-    try:
-        result = response.json()
-    except Exception:
-        return (
-            "[Source Query Validation Failed] dotnet-service returned non-JSON payload: "
-            f"{response.text[:600]}"
-        )
-
-    if response.is_success and result.get("success", False):
-        summary = {
-            "estimatedRowCount": result.get("estimatedRowCount"),
-            "errors": result.get(
-                "errors", []
-            ),  # TODO: just return the whole error stream from dotnet/java services, dont't try to parse it in the services, it is too error prone.
-            "payload": result,
-        }
-        return "[Source Query Validation Passed]\n" + json.dumps(summary, default=str)
-
-    errors = result.get("errors") if isinstance(result, dict) else None
-    if not isinstance(errors, list):
-        errors = [result]
-
-    return "[Source Query Validation Failed]\n" + json.dumps(
-        {
-            "errors": errors,
-            "payload": result,
-        },
-        default=str,
-    )
+    if "Compilation Failed" in output:
+        return {"output": f"[Source Query Validation Failed]\\n{output}"}
+    else:
+        if "===JSON ERROR===" not in entrypoint_json:
+            try:
+                parsed: dict[str, Any] = orjson.loads(entrypoint_json)
+                return {"output": f"[Source Query Validation Passed]\\n{output}", "validation_results": parsed}
+            except json.JSONDecodeError:
+                return {"output": f"[Source Query Validation Failed] Could not parse JSON output.\\n{output}"}
+        return {"output": f"[Source Query Validation Failed] No JSON output.\\n{output}"}
 
 
-@tool("validate_target_query", args_schema=TargetQueryInput)
+# @tool("validate_target_query", args_schema=TargetQueryInput)
+@tool
 async def validate_target_query(
-    validation_schema_code: str,
     validation_harness_code: str,
-    framework: TargetFramework,
-    sort_by_field: str,
-    entry_type_name: str,
-    entry_method_name: str,
-    runtime: ToolRuntime[Context],
-) -> str:
-    """Validate target query execution metadata via java-services."""
-    normalized_schema = validation_schema_code.strip()
-    normalized_harness = validation_harness_code.strip()
+    runtime: ToolRuntime,
+) -> dict[Literal["output", "validation_results"], str | dict[str, Any]]:
+    """Validate target query execution metadata via java_validator."""
+    tgt_framework = cast(FrameworkEnum, runtime.state.get("destination_target"))
 
-    duplicate_types = _detect_duplicate_type_names(
-        normalized_schema, normalized_harness
-    )
-    if duplicate_types:
-        return "[Target Query Validation Failed]\n" + json.dumps(
+    output, entrypoint_json = "Compilation Failed", ""
+    if tgt_framework.value in DotnetFramework:
+        output, entrypoint_json = await validate_dotnet_code.ainvoke(
             {
-                "errors": [
-                    "validation_harness_code duplicates schema types. Keep schema and harness separate."
-                ],
-                "duplicateTypes": duplicate_types,
-            },
-            default=str,
+                "source_code": validation_harness_code.strip(),
+                "framework": DotnetFramework(tgt_framework.value),
+            }
+        )
+    elif tgt_framework.value in JavaFramework:
+        output, entrypoint_json = await validate_java_code.ainvoke(
+            {
+                "source_code": validation_harness_code.strip(),
+                "framework": JavaFramework(tgt_framework.value),
+                "entry_type_name": runtime.state.get("target_validation_entry_type_name", "ValidationEntryPoint"),
+            }
         )
 
-    payload = {
-        "sourceCode": normalized_harness,
-        "schemaCode": normalized_schema,
-        "framework": get_normalized_framework_name(framework),
-        "sortByField": sort_by_field,
-        "entryTypeName": entry_type_name,
-        "entryMethodName": entry_method_name,
-    }
-
-    java_service_uri = runtime.context.java_service_uri
-    url = f"{java_service_uri}/api/query/info"
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(url, json=payload)
-    except httpx.ConnectError:
-        return (
-            f"[Target Query Validation Failed] Could not connect to java-services at "
-            f"{java_service_uri}."
-        )
-    except httpx.TimeoutException:
-        return "[Target Query Validation Failed] java-services query-info request timed out."
-    except httpx.HTTPError as ex:
-        return f"[Target Query Validation Failed] HTTP error while calling java-services: {ex}"
-
-    try:
-        result = response.json()
-    except Exception:
-        return (
-            "[Target Query Validation Failed] java-services returned non-JSON payload: "
-            f"{response.text[:600]}"
-        )
-
-    if response.is_success and result.get("success", False):
-        summary = {
-            "estimatedRowCount": result.get("estimatedRowCount"),
-            "errors": result.get(
-                "errors", []
-            ),  # TODO: just return the whole error stream from dotnet/java services, dont't try to parse it in the services, it is too error prone.
-            "payload": result,
-        }
-        return "[Target Query Validation Passed]\n" + json.dumps(summary, default=str)
-
-    errors = result.get("errors") if isinstance(result, dict) else None
-    if not isinstance(errors, list):
-        errors = [result]
-
-    return "[Target Query Validation Failed]\n" + json.dumps(
-        {
-            "errors": errors,
-            "payload": result,
-        },
-        default=str,
-    )
+    if "Compilation Failed" in output:
+        return {"output": f"[Target Query Validation Failed]\\n{output}"}
+    else:
+        if "===JSON ERROR===" not in entrypoint_json:
+            try:
+                parsed: dict[str, Any] = orjson.loads(entrypoint_json)
+                return {"output": f"[Target Query Validation Passed]\\n{output}", "validation_results": parsed}
+            except json.JSONDecodeError:
+                return {"output": f"[Target Query Validation Failed] Could not parse JSON output.\\n{output}"}
+        return {"output": f"[Target Query Validation Failed] No JSON output.\\n{output}"}
 
 
-def _parse_validation_payload(
+def _check_validation_markers(
     validation_output: str,
     passed_marker: str,
     failed_marker: str,
-) -> tuple[dict[str, Any] | None, str | None]:
+) -> str | None:
     text = validation_output.strip()
     if not text:
-        return None, "validation output is empty"
-
+        return "validation output is empty"
     if failed_marker in text:
-        return None, f"found failure marker {failed_marker}"
-
-    parsed: dict[str, Any] | None = None
-    try:
-        as_json = json.loads(text)
-        if isinstance(as_json, dict):
-            parsed = as_json
-    except json.JSONDecodeError:
-        parsed = None
-
-    if parsed is None and passed_marker in text:
-        _, _, json_part = text.partition("\n")
-        if json_part.strip():
-            try:
-                as_json = json.loads(json_part)
-                if isinstance(as_json, dict):
-                    parsed = as_json
-            except json.JSONDecodeError:
-                parsed = None
-
-    if parsed is None:
-        return None, "could not parse JSON payload from validator output"
-
-    payload = parsed.get("payload")
-    if isinstance(payload, dict):
-        return payload, None
-
-    return parsed, None
+        return f"found failure marker {failed_marker}"
+    if passed_marker not in text:
+        logger.warning("Validation output does not contain expected markers. Output: %s", validation_output)
 
 
 @tool("check_query_equivalence", args_schema=QueryEquivalenceInput)
 async def check_query_equivalence(
     source_validation_output: str,
     target_validation_output: str,
-    mapping_json: dict[str, Any],
+    runtime: ToolRuntime[State],
 ) -> str:
     """Compare source and target query metadata for logical equivalence."""
-    source_info, source_error = _parse_validation_payload(
+    output = _check_validation_markers(
         source_validation_output,
         "[Source Query Validation Passed]",
         "[Source Query Validation Failed]",
     )
-    if source_error is not None:
-        return f"[Query Equivalence Failed] Invalid source validation payload: {source_error}"
+    if output is not None:
+        return f"[Query Equivalence Failed] Invalid source validation payload: {output}"
 
-    target_info, target_error = _parse_validation_payload(
+    output = _check_validation_markers(
         target_validation_output,
         "[Target Query Validation Passed]",
         "[Target Query Validation Failed]",
     )
-    if target_error is not None:
-        return f"[Query Equivalence Failed] Invalid target validation payload: {target_error}"
+    if output is not None:
+        return f"[Query Equivalence Failed] Invalid target validation payload: {output}"
 
-    assert source_info is not None
-    assert target_info is not None
+    source_query_validation_results = runtime.state.get("source_query_validation_results", {})
+    target_query_validation_results = runtime.state.get("target_query_validation_results", {})
+    common_keys = list(set(source_query_validation_results.keys()).intersection(set(target_query_validation_results.keys())))
 
-    mapping = _extract_field_mapping(mapping_json)
-    # TODO: add edit distance (Levenshtein distance) maybe for string comparisons
-    # TODO: add tolerance threshold for sample comparison, not just pass/fail
-    # TODO: we don't need to compare query output schemas, we just need to compare samples
-    # and count, we just need easy-to-compare JSON representations of samples from services
-    count_match, count_details = _compare_count(source_info, target_info)
-    sample_match, sample_details = _compare_samples(source_info, target_info, mapping)
+    if not common_keys:
+        return f"[Query Equivalence Results]\\n{json.dumps({'error': 'No matching query keys found between source and target.'})}"
 
-    overall = count_match and sample_match
-    status = "Passed" if overall else "Failed"
-    return "\n".join(
-        [
-            f"[Query Equivalence {status}]",
-            f"count_match={count_match}; details={count_details}",
-            f"sample_match={sample_match}; details={sample_details}",
-        ]
-    )
+    diff_results = {}
+    diff_tasks: dict[str, Awaitable[QueryEquivalenceDeepDiff]] = OrderedDict()
+    for key in common_keys:
+        source_q = source_query_validation_results[key]
+        target_q = target_query_validation_results[key]
 
-
-def _extract_field_mapping(mapping_payload: Any) -> dict[str, list[str]]:
-    """Extract source-to-target field mapping from standalone mapping payloads."""
-    mapping: dict[str, list[str]] = {}
-
-    if not isinstance(mapping_payload, dict):
-        return mapping
-
-    collections = mapping_payload.get("collections")
-    if isinstance(collections, dict):
-        for collection_payload in collections.values():
-            if not isinstance(collection_payload, dict):
-                continue
-
-            collection_mappings = collection_payload.get("mappings")
-            if not isinstance(collection_mappings, list):
-                continue
-
-            for collection_mapping in collection_mappings:
-                if not isinstance(collection_mapping, dict):
-                    continue
-                _merge_property_mappings(
-                    collection_mapping.get("propertyMappings"),
-                    mapping,
-                )
-
-    nodes = mapping_payload.get("nodes")
-    if isinstance(nodes, dict):
-        for node_payload in nodes.values():
-            if not isinstance(node_payload, dict):
-                continue
-            _merge_property_mappings(node_payload.get("propertyMappings"), mapping)
-
-    relationships = mapping_payload.get("relationships")
-    if isinstance(relationships, dict):
-        for relationship_entries in relationships.values():
-            if not isinstance(relationship_entries, list):
-                continue
-            for relationship_payload in relationship_entries:
-                if not isinstance(relationship_payload, dict):
-                    continue
-                _merge_property_mappings(
-                    relationship_payload.get("propertyMappings"),
-                    mapping,
-                )
-
-    for source_column in mapping:
-        mapping[source_column] = sorted(mapping[source_column])
-
-    return dict(sorted(mapping.items()))
-
-
-def _merge_property_mappings(
-    property_mappings_payload: Any,
-    mapping: dict[str, list[str]],
-) -> None:
-    """Merge source column to target property entries into an index."""
-    if not isinstance(property_mappings_payload, list):
-        return
-
-    for property_mapping in property_mappings_payload:
-        if not isinstance(property_mapping, dict):
+        if not isinstance(source_q, dict) or not isinstance(target_q, dict):
+            diff_results[key] = {"error": "Query payload is not an object."}
             continue
 
-        source_column = property_mapping.get("sourceColumn")
-        target_property = property_mapping.get("targetProperty")
+        src_count = source_q.get("count")
+        tgt_count = target_q.get("count")
 
-        if not isinstance(source_column, str) or not isinstance(target_property, str):
-            continue
+        src_first = source_q.get("firstSample")
+        tgt_first = target_q.get("firstSample")
+        src_last = source_q.get("lastSample")
+        tgt_last = target_q.get("lastSample")
 
-        normalized_source = source_column.strip().lower()
-        normalized_target = target_property.strip().lower()
-        if not normalized_source or not normalized_target:
-            continue
+        def compute_diffs():
+            count_diff = DeepDiff(src_count, tgt_count)
 
-        mapping.setdefault(normalized_source, [])
-        if normalized_target not in mapping[normalized_source]:
-            mapping[normalized_source].append(normalized_target)
+            diff_first = DeepDiff(src_first, tgt_first, ignore_order=True, report_repetition=True, significant_digits=3, get_deep_distance=True)
+            diff_last = DeepDiff(src_last, tgt_last, ignore_order=True, report_repetition=True, significant_digits=3, get_deep_distance=True)
 
+            # diff_swapped_first = DeepDiff(src_first, tgt_last, ignore_order=True, report_repetition=True, significant_digits=3, get_deep_distance=True)
+            # diff_swapped_last = DeepDiff(src_last, tgt_first, ignore_order=True, report_repetition=True, significant_digits=3, get_deep_distance=True)
 
-def _compare_count(
-    source_info: dict[str, Any],
-    target_info: dict[str, Any],
-) -> tuple[bool, str]:
-    source_count = source_info.get("estimatedRowCount")
+            # normal_empty = not diff_first and not diff_last
+            # swapped_empty = not diff_swapped_first and not diff_swapped_last
 
-    target_count = target_info.get("estimatedRowCount")
+            if not count_diff and not diff_first and not diff_last:
+                return {}
+            
+            sample_diffs = OrderedDict((
+                ("deepdiff_mapping", { "old": runtime.state.get("source_target", "source"), "new": runtime.state.get("destination_target", "target") }),
+                ("countDiff", count_diff.to_dict()), 
+                ("firstSampleDiff", diff_first.to_dict()), 
+                ("lastSampleDiff", diff_last.to_dict())
+            ))
 
-    if source_count is None or target_count is None:
-        return False, "count missing in source or target payload"
+            return sample_diffs
 
-    try:
-        normalized_source_count = int(source_count)
-        normalized_target_count = int(target_count)
-    except (TypeError, ValueError):
-        return (
-            False,
-            (
-                "non-numeric count values "
-                f"(source={source_count}, target={target_count})"
-            ),
-        )
+        diff_tasks[key] = asyncio.to_thread(compute_diffs)
+    
+    awaited_tasks = await asyncio.gather(*diff_tasks.values(), return_exceptions=True)
+    for i, key in enumerate(common_keys):
+        if isinstance(awaited_tasks[i], Exception):
+            diff_results[key] = {"error": f"Error computing diffs: {awaited_tasks[i]}"}
+        elif cast(QueryEquivalenceDeepDiff, awaited_tasks[i]).get("error") is not None:
+            diff_results[key] = {"error": cast(QueryEquivalenceDeepDiff, awaited_tasks[i])["error"]}
+        elif not awaited_tasks[i]:
+            diff_results[key] = {"status": "Equivalent"}
+        else:
+            diff_results[key] = OrderedDict((("status", "Differences Found"), ("diffs", awaited_tasks[i])))
 
-    if normalized_source_count == normalized_target_count:
-        return True, f"exact match ({normalized_source_count})"
-
-    return (
-        False,
-        (
-            "exact mismatch "
-            f"(source={normalized_source_count}, target={normalized_target_count})"
-        ),
-    )
-
-
-def _compare_samples(
-    source_info: dict[str, Any],
-    target_info: dict[str, Any],
-    mapping: dict[str, list[str]],
-) -> tuple[bool, str]:
-    source_first = source_info.get("firstSample")
-    source_last = source_info.get("lastSample")
-    target_first = target_info.get("firstSample")
-    target_last = target_info.get("lastSample")
-
-    first_ok, first_detail = _compare_sample_pair(source_first, target_first, mapping)
-    last_ok, last_detail = _compare_sample_pair(source_last, target_last, mapping)
-
-    if first_ok and last_ok:
-        return True, "first and last sample pairs matched"
-
-    return False, json.dumps({"first": first_detail, "last": last_detail})
-
-
-# TODO: normalization should also be handled in dotnet-service and java-service when serializing into JSON somehow so that we simplify this part
-def _compare_sample_pair(
-    source: Any, target: Any, mapping: dict[str, list[str]]
-) -> tuple[bool, Any]:
-    if source is None and target is None:
-        return True, "both samples are null"
-    if source is None or target is None:
-        return False, "one sample is null"
-
-    if not isinstance(source, dict) or not isinstance(target, dict):
-        normalized_source = _normalize_value(source)
-        normalized_target = _normalize_value(target)
-        return normalized_source == normalized_target, {
-            "source": normalized_source,
-            "target": normalized_target,
-        }
-
-    target_normalized = {
-        key.lower(): _normalize_value(value) for key, value in target.items()
-    }
-    mismatches = []
-
-    for source_key, source_value in source.items():
-        source_key_normalized = source_key.lower()
-        expected_target_keys = mapping.get(
-            source_key_normalized, [source_key_normalized]
-        )
-        normalized_source_value = _normalize_value(source_value)
-
-        if not any(
-            expected_key in target_normalized
-            and target_normalized[expected_key] == normalized_source_value
-            for expected_key in expected_target_keys
-        ):
-            mismatches.append(
-                {
-                    "sourceKey": source_key,
-                    "sourceValue": normalized_source_value,
-                    "expectedTargetKeys": expected_target_keys,
-                }
-            )
-    # TODO: should use tolerance threshold, or e.g. levenshtein distance
-    return len(mismatches) == 0, {"mismatches": mismatches}
-
-
-def _normalize_value(value: Any) -> Any:
-    if value is None:
-        return None
-
-    if isinstance(value, bool):
-        return value
-
-    if isinstance(value, int | float):
-        if isinstance(value, float) and value.is_integer():
-            return int(value)
-        return value
-
-    if isinstance(value, str):
-        candidate = value.strip()
-        try:
-            parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
-            return parsed.isoformat()
-        except ValueError:
-            return candidate
-
-    if isinstance(value, list):
-        return [_normalize_value(item) for item in value]
-
-    if isinstance(value, dict):
-        return {
-            str(key).lower(): _normalize_value(inner) for key, inner in value.items()
-        }
-
-    return str(value)
+    return f"[Query Equivalence Results]\\n{orjson.dumps(diff_results).decode("utf-8")}"

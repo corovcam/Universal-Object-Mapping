@@ -1,90 +1,97 @@
-"""Dotnet compilation and validation tool via dotnet-service REST API."""
-
+"""Dotnet compilation and validation tool using execute_in_sandbox."""
+import base64
 import logging
 import os
-from typing import cast
+from datetime import datetime
+from typing import Literal, cast
 
-import httpx
+from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from react_agent.constants import (
-    FRAMEWORK_TO_NORMALIZED_NAME,
-    DotnetFramework,
-    FrameworkType,
-)
-from react_agent.utils.utils import get_normalized_framework_name
+from react_agent.constants import DotnetFramework, FrameworkEnum, TranslationType
+from react_agent.custom_tools.ssh_tools import execute_in_sandbox, scp_from_sandbox
+from react_agent.utils.utils import get_framework_config_content
 
 logger = logging.getLogger(__name__)
 
 
 class DotnetValidationInput(BaseModel):
-    source_code: str = Field(description="The C# schema code to validate.")
+    source_code: str = Field(description="The C# code to validate.")
     framework: DotnetFramework = Field(description="The target .NET framework.")
-
-
-def _get_dotnet_service_uri() -> str:
-    """Return dotnet-service base URL from environment with local default."""
-    return os.environ.get("DOTNET_SERVICE_URI", "http://localhost:5073")
 
 
 @tool("validate_dotnet_code", args_schema=DotnetValidationInput)
 async def validate_dotnet_code(
-    source_code: str, framework: DotnetFramework = DotnetFramework.DOTNET_EFCORE
-) -> str:
-    """Compile and validate C# source code through dotnet-service.
-
-    This tool currently validates schema/source code compilation before query
-    validation stages run in the orchestrator workflow.
-    """
+    source_code: str,
+    framework: DotnetFramework,
+    runtime: ToolRuntime,
+) -> dict[Literal["output", "json"], str]:
+    """Compile and validate C# source code through dotnet-service CLI."""
     if "class " not in source_code and "record " not in source_code:
-        return "Compilation Error: No class or record defined in C# source code."
-
-    base_url = _get_dotnet_service_uri()
-    url = f"{base_url}/api/compiler/validate-schema"
-    payload = {
-        "sourceCode": source_code,
-        "framework": get_normalized_framework_name(framework),
-    }
-
-    logger.debug(
-        "Requesting dotnet validation at %s (framework=%s)",
-        url,
-        framework.value,
-    )
+        return {"output": "Compilation Error: No class or record defined in C# source code."}
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(url, json=payload)
-    except httpx.ConnectError:
-        return (
-            f"[Connection Error] Could not connect to dotnet-service at {base_url}. "
-            "Ensure the service is running."
-        )
-    except httpx.TimeoutException:
-        return (
-            f"[Timeout] dotnet-service at {base_url} did not respond within 60 seconds."
-        )
-    except httpx.HTTPError as ex:
-        return f"[HTTP Error] Failed to communicate with dotnet-service: {ex}"
+        csproj_content = await get_framework_config_content(FrameworkEnum(framework.value))
+    except ValueError as e:
+        return {"output": f"[Error] {e}"}
+
+    csproj_b64 = base64.b64encode(csproj_content.encode()).decode()
+    cs_b64 = base64.b64encode(source_code.encode()).decode()
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    sandbox_dir = f"/sandbox/sandbox-{timestamp}"
+    results_dir = f"{sandbox_dir}/results"
+
+    translation_type = cast(TranslationType, runtime.state.get("translation_type"))
+    script = f"""
+export CONNECTION_STRING="Server=mssql_db,1433;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
+export EFCORE_RESULTS_PATH="{results_dir}"
+export DAPPER_RESULTS_PATH="{results_dir}"
+export NHIBERNATE_RESULTS_PATH="{results_dir}"
+mkdir -p "{sandbox_dir}"
+mkdir -p "{results_dir}"
+echo "{csproj_b64}" | base64 -d > "{sandbox_dir}/sandbox.csproj"
+echo "{cs_b64}" | base64 -d > "{sandbox_dir}/Program.cs"
+cd "{sandbox_dir}"
+dotnet build
+"""
+    if source_code.strip():
+        script += "dotnet run\n"
+        if translation_type in [TranslationType.QUERY, TranslationType.BOTH]:
+            script += f"""
+# Output newest json file path
+NEWEST_JSON=$(ls -t "{results_dir}"/*.json 2>/dev/null | head -n 1)
+if [ -n "$NEWEST_JSON" ]; then
+    echo "JSON_PATH=$NEWEST_JSON"
+fi
+"""
 
     try:
-        data = response.json()
-    except Exception:
-        return (
-            f"[Error] dotnet-service returned non-JSON response (status {response.status_code}): "
-            f"{response.text[:500]}"
+        output = await execute_in_sandbox.ainvoke(
+            {"service_name": "dotnet-service", "command": script}
         )
+    except Exception as e:
+        return {"output": f"[Error] SSH sandbox execution failed: {e}"}
 
-    if response.is_success:
-        return f"[Dotnet Validation Passed] Sandbox schema validation successful. Framework targeted: {framework.value}"
+    if "Build succeeded" in output:
+        json_part = ""
+        json_path_line = [
+            line for line in output.splitlines() if line.startswith("JSON_PATH=")
+        ]
+        if json_path_line:
+            remote_path = json_path_line[0].split("=")[1].strip()
+            json_content = await scp_from_sandbox.ainvoke(
+                {"service_name": "dotnet-service", "remote_path": remote_path}
+            )
+            if not json_content.startswith("[SCP Error]"):
+                json_part = json_content
+            else:
+                json_part = f"\\n===JSON ERROR===\\nFailed to fetch JSON from {remote_path}."
 
-    errors = data.get("errors") if isinstance(data, dict) else None
-    if isinstance(errors, list) and len(errors) > 0:
-        error_message = "\n".join(str(error) for error in errors)
+        return {
+            "output": f"[Dotnet Validation Passed] Sandbox schema validation successful. Framework targeted: {framework.value}\\n{output[-1500:]}", 
+            "json": json_part
+        }
     else:
-        error_message = (
-            data.get("error") or data.get("message") or "Compilation failed."
-        )
-
-    return f"[Dotnet Compilation Failed] {error_message}"
+        return {"output": f"[Dotnet Compilation Failed] {output[-2000:]}"}

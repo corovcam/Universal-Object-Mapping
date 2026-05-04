@@ -2,7 +2,7 @@
 
 from typing import Any, Literal, cast
 
-from react_agent.constants import FrameworkType
+from react_agent.constants import FrameworkEnum
 from react_agent.utils.utils import get_database_mapping_json
 
 
@@ -654,7 +654,7 @@ async def get_neo4j_standalone_mapping() -> (
 ):
     """Load standalone SQL-to-Neo4j mapping grouped into nodes and relationships."""
     raw_database_mapping = await get_database_mapping_json(
-        FrameworkType.JAVA_SPRING_DATA_NEO4J
+        FrameworkEnum.JAVA_SPRING_DATA_NEO4J
     )
     database_mapping = _extract_neo4j_standalone_mapping(
         raw_database_mapping.get("mapping") if raw_database_mapping else None
@@ -678,7 +678,7 @@ async def get_mongodb_standalone_mapping() -> (
 ):
     """Load standalone SQL-to-MongoDB mapping grouped into collections."""
     raw_database_mapping = await get_database_mapping_json(
-        FrameworkType.JAVA_SPRING_DATA_MONGODB
+        FrameworkEnum.JAVA_SPRING_DATA_MONGODB
     )
     database_mapping = _extract_mongodb_standalone_mapping(
         raw_database_mapping.get("mapping") if raw_database_mapping else None
