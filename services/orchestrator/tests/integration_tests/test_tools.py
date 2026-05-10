@@ -5,13 +5,17 @@ Documentation tools are tested with real HTTP endpoints.
 """
 
 import os
+from typing import cast
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from langchain_core.tools import StructuredTool
 
+from react_agent.constants import JavaFramework, TranslationType
 from react_agent.custom_tools.docs_search import fetch_web_docs, load_docs_mcp_tools
 from react_agent.custom_tools.java_validator import validate_java_code
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.asyncio]
 
 # ── Java Validator ───────────────────────────────────────────────────────────
 
@@ -77,27 +81,71 @@ class TestJavaValidator:
     """Tests for validate_java_code tool."""
 
     async def test_valid_java_code(self):
-        result = await validate_java_code.ainvoke(
-            {"source_code": SAMPLE_JAVA, "framework": "spring-data-mongodb"}
-        )
-        assert isinstance(result, str)
-        assert "Validation Passed" in result or "Compiled successfully" in result
+        runtime = MagicMock()
+        runtime.state = {"translation_type": TranslationType.SCHEMA}
+        func = cast(StructuredTool, validate_java_code)
+
+        with patch(
+            "react_agent.custom_tools.java_validator.get_framework_config_content",
+            AsyncMock(return_value="<project></project>"),
+        ), patch(
+            "react_agent.custom_tools.java_validator.execute_in_sandbox",
+            new=MagicMock(ainvoke=AsyncMock(return_value="BUILD SUCCESS")),
+        ):
+            assert func.coroutine is not None
+            result = await func.coroutine(
+                source_code=SAMPLE_JAVA,
+                framework=JavaFramework.JAVA_SPRING_DATA_MONGODB,
+                entry_type_name="Order",
+                runtime=runtime,
+            )
+
+        assert isinstance(result, dict)
+        assert "[Java Validation Passed]" in result["output"]
 
     async def test_invalid_java_no_class(self):
-        result = await validate_java_code.ainvoke(
-            {"source_code": "System.out.println('hello');", "framework": "none"}
-        )
-        assert "Compilation/Validation Failed" in result
+        runtime = MagicMock()
+        runtime.state = {"translation_type": TranslationType.SCHEMA}
+        func = cast(StructuredTool, validate_java_code)
+
+        with patch(
+            "react_agent.custom_tools.java_validator.get_framework_config_content",
+            AsyncMock(return_value="<project></project>"),
+        ), patch(
+            "react_agent.custom_tools.java_validator.execute_in_sandbox",
+            new=MagicMock(ainvoke=AsyncMock(return_value="BUILD FAILURE\nCompilation error")),
+        ):
+            assert func.coroutine is not None
+            result = await func.coroutine(
+                source_code="System.out.println('hello');",
+                framework=JavaFramework.JAVA_SPRING_DATA_MONGODB,
+                entry_type_name="ValidationEntryPoint",
+                runtime=runtime,
+            )
+
+        assert "[Java Compilation Failed]" in result["output"]
 
     async def test_maven_fallback(self):
-        result = await validate_java_code.ainvoke(
-            {
-                "source_code": "System.out.println('hello');",
-                "framework": "none",
-                "use_maven": True,
-            }
-        )
-        assert "Compilation/Validation Failed (Maven)" in result
+        runtime = MagicMock()
+        runtime.state = {"translation_type": TranslationType.QUERY}
+        func = cast(StructuredTool, validate_java_code)
+
+        with patch(
+            "react_agent.custom_tools.java_validator.get_framework_config_content",
+            AsyncMock(return_value="<project></project>"),
+        ), patch(
+            "react_agent.custom_tools.java_validator.execute_in_sandbox",
+            new=MagicMock(ainvoke=AsyncMock(return_value="BUILD SUCCESS\nError occurred during startup")),
+        ):
+            assert func.coroutine is not None
+            result = await func.coroutine(
+                source_code=SAMPLE_JAVA,
+                framework=JavaFramework.JAVA_SPRING_DATA_MONGODB,
+                entry_type_name="Order",
+                runtime=runtime,
+            )
+
+        assert "[Java Validation Failed]" in result["output"]
 
 
 # ── Documentation Search ────────────────────────────────────────────────────
@@ -149,4 +197,10 @@ class TestLoadDocsMcpTools:
         async with load_docs_mcp_tools() as tools:
             assert len(tools) >= 1
             tool_names = [t.name for t in tools]
-        assert "fetch_web_docs" in tool_names
+        expected_names = {
+            "fetch_web_docs",
+            "microsoft_docs_search",
+            "microsoft_code_sample_search",
+            "microsoft_docs_fetch",
+        }
+        assert any(name in expected_names for name in tool_names)

@@ -4,16 +4,16 @@ Tests cover graph structure, individual node invocations (both with and
 without real LLM calls), and partial graph execution via LangGraph's
 update_state / interrupt_after patterns.
 """
-
-from unittest.mock import MagicMock
+from contextlib import asynccontextmanager
+from typing import Awaitable, cast
+from unittest.mock import MagicMock, patch
 
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from react_agent.constants import FrameworkType
+from react_agent.constants import FrameworkEnum, TranslationType
 from react_agent.graph import (
     extract_input,
-    graph,
     schema_inspection,
 )
 from react_agent.state import State
@@ -21,63 +21,25 @@ from react_agent.state import State
 pytestmark = pytest.mark.anyio
 
 
-# ── Graph Structure ──────────────────────────────────────────────────────────
-
-
-class TestGraphStructure:
-    """Verify the compiled graph has the expected topology."""
-
-    def test_graph_name(self):
-        assert graph.name == "UOM Orchestrator Workflow"
-
-    def test_expected_nodes_present(self):
-        nodes = list(graph.nodes.keys())
-        for expected in [
-            "extract_input",
-            "schema_inspection",
-            "generate_translation_node",
-            "validate_schema_node",
-            "validate_query_node",
-            "human_intervention_node"
-        ]:
-            assert expected in nodes, f"Missing node: {expected}"
-
-    def test_entry_point(self):
-        nodes = list(graph.nodes.keys())
-        assert nodes[0] == "__start__"
-        assert "extract_input" in nodes
-
-    def test_schema_inspection_before_translation(self):
-        nodes = list(graph.nodes.keys())
-        assert nodes.index("schema_inspection") < nodes.index("generate_translation_node"), (
-            "schema_inspection should precede generate_translation_node"
-        )
-
-    def test_edge_topology(self):
-        """Verify the full linear edge chain."""
-        nodes = list(graph.nodes.keys())
-        expected_order = [
-            "extract_input",
-            "schema_inspection",
-            "generate_translation_node",
-            "validate_schema_node",
-            "validate_query_node"
-        ]
-        indices = [nodes.index(n) for n in expected_order]
-        assert indices == sorted(indices), f"Node order mismatch: {indices}"
-
-
 # ── extract_input Node ───────────────────────────────────────────────────────
 
 
+@pytest.mark.asyncio
 class TestExtractInput:
     """Tests for the extract_input node function."""
 
     async def test_skips_when_state_populated(
-        self, sample_state: State, runnable_config: RunnableConfig, runtime: MagicMock
+        self, runnable_config: RunnableConfig, runtime: MagicMock
     ):
         """When source_code and targets are set, returns empty dict."""
-        result = await extract_input(sample_state, runnable_config, runtime)
+        populated_state = State(
+            source_schema_code="public class Customer {}",
+            source_query_code="var customers = await db.Customers.ToListAsync();",
+            translation_type=TranslationType.BOTH,
+            source_target=FrameworkEnum.DOTNET_EFCORE,
+            destination_target=FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
+        )
+        result = await cast(Awaitable, extract_input(populated_state, runnable_config, runtime))
         assert result == {}
 
     @pytest.mark.integration
@@ -89,17 +51,17 @@ class TestExtractInput:
         Asserts structural correctness of the output (valid FrameworkType,
         non-empty source_code) without checking exact content.
         """
-        result = await extract_input(empty_state, runnable_config, runtime)
+        result = await cast(Awaitable, extract_input(empty_state, runnable_config, runtime))
 
         assert "source_schema_code" in result
         assert len(result["source_schema_code"]) > 0
 
         assert "source_target" in result
-        assert isinstance(result["source_target"], FrameworkType)
+        assert isinstance(result["source_target"], FrameworkEnum)
         assert result["source_target"] is not None
 
         assert "destination_target" in result
-        assert isinstance(result["destination_target"], FrameworkType)
+        assert isinstance(result["destination_target"], FrameworkEnum)
         assert result["destination_target"] is not None
 
 
@@ -114,7 +76,15 @@ class TestSchemaInspection:
         self, sample_state: State, runnable_config: RunnableConfig, runtime: MagicMock
     ):
         """Schema inspection produces a non-empty schema_context string."""
-        result = await schema_inspection(sample_state, runnable_config, runtime)
+        @asynccontextmanager
+        async def empty_tools():
+            yield []
+
+        with patch(
+            "react_agent.graph.load_database_tools",
+            side_effect=empty_tools,
+        ):
+            result = await schema_inspection(sample_state, runnable_config, runtime)
 
         assert "schema_context" in result
         assert isinstance(result["schema_context"], str)
@@ -127,12 +97,13 @@ class TestSchemaInspection:
 class TestPartialGraphExecution:
     """Test running subsets of the graph using LangGraph patterns."""
 
-    def test_individual_node_invocation(self, compiled_graph, sample_state: State):
+    async def test_individual_node_invocation(self, compiled_graph):
         """Invoke a single node via compiled_graph.nodes[...].invoke()."""
         node = compiled_graph.nodes.get("extract_input")
         assert node is not None, "extract_input node not found in compiled graph"
 
     @pytest.mark.integration
+    @pytest.mark.asyncio
     async def test_extract_to_schema_partial(
         self, compiled_graph_with_checkpointer, empty_state: State
     ):

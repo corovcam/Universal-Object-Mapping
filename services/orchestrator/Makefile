@@ -25,10 +25,10 @@ install:
 	./scripts/install_logdy.sh
 
 dev:
-	langgraph dev
+	langgraph dev --allow-blocking
 
 debug:
-	langgraph dev --debug-port 5678 --wait-for-client
+	langgraph dev --debug-port 5678 --wait-for-client --allow-blocking
 endif
 
 ######################
