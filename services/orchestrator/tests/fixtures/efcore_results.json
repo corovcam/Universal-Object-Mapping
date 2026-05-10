@@ -1,0 +1,148 @@
+{
+  "query1": {
+    "count": 1883,
+    "firstSample": {
+      "description": "Tape dispenser (Red)",
+      "lastEditedBy": 19,
+      "lastEditedWhen": "2014-12-29T11:00:00.000Z",
+      "orderId": 10417,
+      "orderLineId": 33036,
+      "packageTypeId": 7,
+      "pickedQuantity": 80,
+      "pickingCompletedWhen": "2014-12-29T11:00:00.000Z",
+      "quantity": 80,
+      "stockItemId": 204,
+      "taxRate": 15,
+      "unitPrice": 32
+    },
+    "lastSample": {
+      "description": "Air cushion film 200mmx200mm 325m",
+      "lastEditedBy": 16,
+      "lastEditedWhen": "2014-12-30T11:00:00.000Z",
+      "orderId": 40554,
+      "orderLineId": 128234,
+      "packageTypeId": 7,
+      "pickedQuantity": 10,
+      "pickingCompletedWhen": "2014-12-30T11:00:00.000Z",
+      "quantity": 10,
+      "stockItemId": 214,
+      "taxRate": 15,
+      "unitPrice": 90
+    },
+    "sqlString": "DECLARE @from datetime2 = '2014-12-20T00:00:00.0000000';\nDECLARE @to datetime2 = '2014-12-31T00:00:00.0000000';\n\nSELECT [o].[OrderLineID], [o].[Description], [o].[LastEditedBy], [o].[LastEditedWhen], [o].[OrderID], [o].[PackageTypeID], [o].[PickedQuantity], [o].[PickingCompletedWhen], [o].[Quantity], [o].[StockItemID], [o].[TaxRate], [o].[UnitPrice]\nFROM [Sales].[OrderLines] AS [o]\nWHERE [o].[PickingCompletedWhen] >= @from AND [o].[PickingCompletedWhen] <= @to"
+  },
+  "query2": {
+    "count": 129,
+    "firstSample": {
+      "customer": {
+        "accountOpenedDate": "2013-01-01T00:00:00.000Z",
+        "creditLimit": null,
+        "customerId": 1,
+        "customerName": "Tailspin Toys (Head Office)",
+        "customerTransactions": [
+          {
+            "customerId": 1,
+            "customerTransactionId": 7,
+            "transactionAmount": 103.5,
+            "transactionDate": "2013-01-01T00:00:00.000Z"
+          },
+          {
+            "customerId": 1,
+            "customerTransactionId": 11,
+            "transactionAmount": 511.98,
+            "transactionDate": "2013-01-01T00:00:00.000Z"
+          }
+        ]
+      },
+      "customerId": 1,
+      "orderId": 73290,
+      "orderLines": [
+        {
+          "description": "Tape dispenser (Black)",
+          "lastEditedBy": 18,
+          "lastEditedWhen": "2016-05-27T11:00:00.000Z",
+          "orderId": 73290,
+          "orderLineId": 230477,
+          "packageTypeId": 7,
+          "pickedQuantity": 50,
+          "pickingCompletedWhen": "2016-05-27T11:00:00.000Z",
+          "quantity": 50,
+          "stockItemId": 203,
+          "taxRate": 15,
+          "unitPrice": 32
+        },
+        {
+          "description": "10 mm Double sided bubble wrap 20m",
+          "lastEditedBy": 18,
+          "lastEditedWhen": "2016-05-27T11:00:00.000Z",
+          "orderId": 73290,
+          "orderLineId": 230478,
+          "packageTypeId": 7,
+          "pickedQuantity": 20,
+          "pickingCompletedWhen": "2016-05-27T11:00:00.000Z",
+          "quantity": 20,
+          "stockItemId": 157,
+          "taxRate": 15,
+          "unitPrice": 30
+        }
+      ]
+    },
+    "sqlString": "SELECT [o].[OrderID], [o].[CustomerID], [c].[CustomerID], [c].[AccountOpenedDate], [c].[CreditLimit], [c].[CustomerName]\nFROM [Sales].[Orders] AS [o]\nINNER JOIN [Sales].[Customers] AS [c] ON [o].[CustomerID] = [c].[CustomerID]\nWHERE [o].[CustomerID] = 1\nORDER BY [o].[OrderID], [c].[CustomerID]\n\nThis LINQ query is being executed in split-query mode, and the SQL shown is for the first query to be executed. Additional queries may also be executed depending on the results of the first query."
+  },
+  "query3": {
+    "count": 2,
+    "firstSample": {
+      "count": 1036,
+      "taxRate": 10
+    },
+    "lastSample": {
+      "count": 230376,
+      "taxRate": 15
+    },
+    "sqlString": "SELECT [o].[TaxRate], COUNT(*) AS [Count]\nFROM [Sales].[OrderLines] AS [o]\nGROUP BY [o].[TaxRate]\nORDER BY COUNT(*) DESC"
+  },
+  "query4": {
+    "count": 50,
+    "firstSample": {
+      "description": "Black and orange fragile despatch tape 48mmx75m",
+      "lastEditedBy": 2,
+      "lastEditedWhen": "2013-01-31T11:00:00.000Z",
+      "orderId": 1646,
+      "orderLineId": 5195,
+      "packageTypeId": 7,
+      "pickedQuantity": 360,
+      "pickingCompletedWhen": "2013-01-31T11:00:00.000Z",
+      "quantity": 360,
+      "stockItemId": 191,
+      "taxRate": 15,
+      "unitPrice": 3.7
+    },
+    "lastSample": {
+      "description": "Black and orange fragile despatch tape 48mmx100m",
+      "lastEditedBy": 8,
+      "lastEditedWhen": "2016-05-26T11:00:00.000Z",
+      "orderId": 73229,
+      "orderLineId": 230307,
+      "packageTypeId": 7,
+      "pickedQuantity": 360,
+      "pickingCompletedWhen": "2016-05-26T11:00:00.000Z",
+      "quantity": 360,
+      "stockItemId": 192,
+      "taxRate": 15,
+      "unitPrice": 4.1
+    },
+    "sqlString": "DECLARE @p int = 50;\n\nSELECT TOP(@p) [o].[OrderLineID], [o].[Description], [o].[LastEditedBy], [o].[LastEditedWhen], [o].[OrderID], [o].[PackageTypeID], [o].[PickedQuantity], [o].[PickingCompletedWhen], [o].[Quantity], [o].[StockItemID], [o].[TaxRate], [o].[UnitPrice]\nFROM [Sales].[OrderLines] AS [o]\nORDER BY [o].[Quantity] DESC"
+  },
+  "query5": {
+    "count": 231412,
+    "firstSample": {
+      "orderLineId": 1,
+      "quantity": 50
+    },
+    "lastSample": {
+      "orderLineId": 231412,
+      "quantity": 8
+    },
+    "sqlString": "SELECT [o].[OrderLineID], [o].[Quantity]\nFROM [Sales].[OrderLines] AS [o]"
+  }
+}

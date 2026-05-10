@@ -4,7 +4,7 @@
     "."
   ],
   "graphs": {
-    "agent": "./src/react_agent/graph.py:graph"
+    "agent": "./src/react_agent/graph.py:build_graph"
   },
   "env": ".env.dev"
 }
