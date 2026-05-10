@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field, fields
 from typing import Annotated
 
-from react_agent.constants import AvailableModel
+from daytona import (
+    AsyncDaytona,
+    AsyncSandbox,
+    CreateSandboxFromImageParams,
+    Image,
+    SandboxState,
+)
 
+from react_agent.constants import AvailableModel, SandboxType
+
+logger = logging.getLogger(__name__)
 
 @dataclass(kw_only=True)
 class Context:
@@ -83,6 +93,16 @@ class Context:
         default=os.environ.get("JAVA_SERVICE_SSH_URI", "ssh://localhost:8022"),
         metadata={"description": "SSH URI of the Java service."},
     )
+    
+    # dotnet_sandbox_dockerfile: str = field(
+    #     default=DAYTONA_SANDBOX_IMAGES[SandboxType.DOTNET_10_SANDBOX].dockerfile(),
+    #     metadata={"description": "Dockerfile content for the .NET sandbox environment."},
+    # )
+    
+    # java_sandbox_dockerfile: str = field(
+    #     default=DAYTONA_SANDBOX_IMAGES[SandboxType.JAVA_25_SANDBOX].dockerfile(),
+    #     metadata={"description": "Dockerfile content for the Java sandbox environment."},
+    # )
 
     def __post_init__(self) -> None:
         """Fetch env vars for attributes that were not passed as args."""
@@ -92,3 +112,52 @@ class Context:
 
             if getattr(self, f.name) == f.default:
                 setattr(self, f.name, os.environ.get(f.name.upper(), f.default))
+
+
+class ValidationSandbox:
+    SANDBOXES: dict[SandboxType, AsyncSandbox] = {}
+    
+    DAYTONA_SANDBOX_IMAGES: dict[SandboxType, Image] = {
+        SandboxType.DOTNET_10_SANDBOX: Image
+            .base(os.getenv("DOTNET_SANDBOX_IMAGE", "mcr.microsoft.com/dotnet/sdk:10.0")),
+            # .workdir("/sandbox")
+            # .add_local_file(os.path.join(os.getenv("CONTEXT_ABSOLUTE_PATH", ""), "/snippets/efcore-sandbox.csproj") if os.getenv("CONTEXT_ABSOLUTE_PATH") else os.path.join(os.getcwd(), "src/context/snippets/efcore-sandbox.csproj"), "/app/efcore-sandbox.csproj")
+            # .dockerfile(),
+        SandboxType.JAVA_25_SANDBOX: Image
+            .base(os.getenv("JAVA_SANDBOX_IMAGE", "bellsoft/liberica-openjre-debian:25-cds")),
+            # .workdir("/sandbox")
+            # .add_local_file(os.path.join(os.getenv("CONTEXT_ABSOLUTE_PATH", ""), "/snippets/mongo-pom.xml") if os.getenv("CONTEXT_ABSOLUTE_PATH") else os.path.join(os.getcwd(), "src/context/snippets/mongo-pom.xml"), "mongo-pom.xml")
+            # .dockerfile(),
+    }
+    
+    @staticmethod
+    async def _create_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType) -> None:
+        pass
+  
+    @staticmethod
+    async def create_validation_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType) -> None:
+        params = CreateSandboxFromImageParams(
+            image=ValidationSandbox.DAYTONA_SANDBOX_IMAGES[sandbox_type],
+            auto_stop_interval=5, # Sandbox will be stopped after 5 minutes
+            auto_archive_interval=5, # Auto-archive after a Sandbox has been stopped for 5 minutes
+            auto_delete_interval=0, # Sandbox will be deleted immediately after stopping
+            name=f"validation-sandbox-{sandbox_type.value.lower()}"
+        )
+        try:
+            if params.name:
+                sandbox_instance = await daytona.get(params.name)
+                if sandbox_instance.state == SandboxState.CREATING:
+                    pass
+                if sandbox_instance.state == SandboxState.UNKNOWN:
+                    logger.info(f"Sandbox with name {params.name} already exists. Skipping creation.")
+                    return
+            sandbox_instance = await daytona.create(params, on_snapshot_create_logs=logger.info, timeout=180)
+            logger.info(f"Sandbox created with ID: {sandbox_instance.id}")
+            await sandbox_instance.start(timeout=60)
+            logger.info(f"Waiting for sandbox {sandbox_instance.id} to start...")
+            await sandbox_instance.wait_for_sandbox_start(timeout=60)
+            logger.info(f"Sandbox {sandbox_instance.id} started successfully.")
+            ValidationSandbox.SANDBOXES[sandbox_type] = sandbox_instance
+            logger.debug("Sandbox details:\n%s", sandbox_instance.model_dump_json(indent=2))
+        except Exception as e:
+            logger.exception(f"Failed to create or start sandbox for {sandbox_type.value}.")

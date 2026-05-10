@@ -1,7 +1,6 @@
 """Dotnet compilation and validation tool using execute_in_sandbox."""
 import base64
 import logging
-import os
 from datetime import datetime
 from typing import Literal, cast
 
