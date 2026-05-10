@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from collections import OrderedDict
 from typing import Any, Awaitable, Literal, cast
 
@@ -13,7 +12,7 @@ import orjson
 from deepdiff import DeepDiff
 from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from react_agent.constants import (
     DotnetFramework,
@@ -22,6 +21,7 @@ from react_agent.constants import (
     SourceFramework,
     TargetFramework,
 )
+from react_agent.context import Context
 from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
 from react_agent.custom_tools.java_validator import validate_java_code
 from react_agent.state import State
@@ -97,6 +97,7 @@ class QueryEquivalenceInput(BaseModel):
     )
     mapping_json: dict[str, Any] | None = Field(
         default=None,
+        exclude=True,
         description=(
             "Mapping in JSON format. Example: "
             '{"nodes":{"Customer":{"propertyMappings":[{"sourceColumn":"CustomerID","targetProperty":"customerId"}]}},'
@@ -109,10 +110,10 @@ class QueryEquivalenceInput(BaseModel):
 @tool
 async def validate_source_query(
     validation_harness_code: str,
-    runtime: ToolRuntime,
+    runtime: ToolRuntime[Context, State],
 ) -> dict[Literal["output", "validation_results"], str | dict[str, Any]]:
     """Validate source query execution metadata."""
-    src_framework = cast(FrameworkEnum, runtime.state.get("source_target"))
+    src_framework = cast(FrameworkEnum, runtime.state.source_target)
     
     output, entrypoint_json = "Compilation Failed", ""
     if src_framework.value in DotnetFramework:
@@ -127,7 +128,7 @@ async def validate_source_query(
             {
                 "source_code": validation_harness_code.strip(),
                 "framework": JavaFramework(src_framework.value),
-                "entry_type_name": runtime.state.get("source_validation_entry_type_name", "ValidationEntryPoint"),
+                "entry_type_name": runtime.state.source_validation_entry_type_name or "ValidationEntryPoint",
             }
         )
 
@@ -147,10 +148,10 @@ async def validate_source_query(
 @tool
 async def validate_target_query(
     validation_harness_code: str,
-    runtime: ToolRuntime,
+    runtime: ToolRuntime[Context, State],
 ) -> dict[Literal["output", "validation_results"], str | dict[str, Any]]:
     """Validate target query execution metadata via java_validator."""
-    tgt_framework = cast(FrameworkEnum, runtime.state.get("destination_target"))
+    tgt_framework = cast(FrameworkEnum, runtime.state.destination_target)
 
     output, entrypoint_json = "Compilation Failed", ""
     if tgt_framework.value in DotnetFramework:
@@ -165,7 +166,7 @@ async def validate_target_query(
             {
                 "source_code": validation_harness_code.strip(),
                 "framework": JavaFramework(tgt_framework.value),
-                "entry_type_name": runtime.state.get("target_validation_entry_type_name", "ValidationEntryPoint"),
+                "entry_type_name": runtime.state.target_validation_entry_type_name or "ValidationEntryPoint",
             }
         )
 
@@ -199,7 +200,7 @@ def _check_validation_markers(
 async def check_query_equivalence(
     source_validation_output: str,
     target_validation_output: str,
-    runtime: ToolRuntime[State],
+    runtime: ToolRuntime[Context, State],
 ) -> str:
     """Compare source and target query metadata for logical equivalence."""
     output = _check_validation_markers(
@@ -218,9 +219,10 @@ async def check_query_equivalence(
     if output is not None:
         return f"[Query Equivalence Failed] Invalid target validation payload: {output}"
 
-    source_query_validation_results = runtime.state.get("source_query_validation_results", {})
-    target_query_validation_results = runtime.state.get("target_query_validation_results", {})
+    source_query_validation_results = runtime.state.source_query_validation_results or {}
+    target_query_validation_results = runtime.state.target_query_validation_results or {}
     common_keys = list(set(source_query_validation_results.keys()).intersection(set(target_query_validation_results.keys())))
+    common_keys.sort()
 
     if not common_keys:
         return f"[Query Equivalence Results]\\n{json.dumps({'error': 'No matching query keys found between source and target.'})}"
@@ -246,8 +248,8 @@ async def check_query_equivalence(
         def compute_diffs():
             count_diff = DeepDiff(src_count, tgt_count)
 
-            diff_first = DeepDiff(src_first, tgt_first, ignore_order=True, report_repetition=True, significant_digits=3, get_deep_distance=True)
-            diff_last = DeepDiff(src_last, tgt_last, ignore_order=True, report_repetition=True, significant_digits=3, get_deep_distance=True)
+            diff_first = DeepDiff(src_first, tgt_first, ignore_order=True, report_repetition=True, significant_digits=3, cutoff_intersection_for_pairs=1, cutoff_distance_for_pairs=1, get_deep_distance=True)
+            diff_last = DeepDiff(src_last, tgt_last, ignore_order=True, report_repetition=True, significant_digits=3, cutoff_intersection_for_pairs=1, cutoff_distance_for_pairs=1, get_deep_distance=True)
 
             # diff_swapped_first = DeepDiff(src_first, tgt_last, ignore_order=True, report_repetition=True, significant_digits=3, get_deep_distance=True)
             # diff_swapped_last = DeepDiff(src_last, tgt_first, ignore_order=True, report_repetition=True, significant_digits=3, get_deep_distance=True)
@@ -255,14 +257,14 @@ async def check_query_equivalence(
             # normal_empty = not diff_first and not diff_last
             # swapped_empty = not diff_swapped_first and not diff_swapped_last
 
-            if not count_diff and not diff_first and not diff_last:
+            if not count_diff and diff_first.get("deep_distance") == 0 and diff_last.get("deep_distance") == 0:
                 return {}
             
             sample_diffs = OrderedDict((
-                ("deepdiff_mapping", { "old": runtime.state.get("source_target", "source"), "new": runtime.state.get("destination_target", "target") }),
-                ("countDiff", count_diff.to_dict()), 
-                ("firstSampleDiff", diff_first.to_dict()), 
-                ("lastSampleDiff", diff_last.to_dict())
+                ("deepdiff_mapping", { "old": runtime.state.source_target or "source", "new": runtime.state.destination_target or "target" }),
+                ("countDiff", count_diff.to_json()), 
+                ("firstSampleDiff", diff_first.to_json()), 
+                ("lastSampleDiff", diff_last.to_json())
             ))
 
             return sample_diffs

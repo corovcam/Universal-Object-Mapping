@@ -1,6 +1,8 @@
 """Constants and enumerations for the React Agent Orchestrator service."""
-
+import os
 from enum import Enum
+
+from daytona import Image
 
 
 class AvailableModel(str, Enum):
@@ -32,6 +34,9 @@ class AvailableModel(str, Enum):
     EINFRA_NOMIC_EMBED_V2 = "einfra/nomic-embed-text-v2-moe"
     EINFRA_NOMIC_EMBED_V1_5 = "einfra/nomic-embed-text-v1.5"
     EINFRA_DEEPSEEK_V3_2 = "einfra/deepseek-v3.2"
+    EINFRA_DEEPSEEK_V4_PRO = "einfra/deepseek-v4-pro"
+    EINFRA_DEEPSEEK_V4_PRO_THINKING = "einfra/deepseek-v4-pro-thinking"
+    
     EINFRA_MISTRAL_LARGE = "einfra/mistral-large"
     EINFRA_DEEPSEEK_V3_2_THINKING = "einfra/deepseek-v3.2-thinking"
     EINFRA_KIMI_K2_5 = "einfra/kimi-k2.5"
@@ -97,3 +102,8 @@ NORMALIZED_FRAMEWORK_TO_FRAMEWORK = {
     "java_spring_data_mongodb": FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
     "java_spring_data_neo4j": FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
 }
+
+
+class SandboxType(str, Enum):
+    DOTNET_10_SANDBOX = "dotnet-10-sandbox"
+    JAVA_25_SANDBOX = "java-25-sandbox"

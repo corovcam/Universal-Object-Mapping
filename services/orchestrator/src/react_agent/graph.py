@@ -10,7 +10,10 @@ from datetime import UTC, datetime
 from typing import Any, Literal, Union, cast
 
 import logfire
-import orjson
+from daytona import (
+    AsyncDaytona,
+    DaytonaConfig,
+)
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
@@ -29,18 +32,19 @@ from langgraph.cache.memory import InMemoryCache
 from langgraph.graph import START, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import CachePolicy, RetryPolicy
-from pydantic import BaseModel, Field, create_model, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from react_agent.constants import (
     AvailableModel,
     DotnetFramework,
     FrameworkEnum,
     JavaFramework,
+    SandboxType,
     SourceFramework,
     TargetFramework,
     TranslationType,
 )
-from react_agent.context import Context
+from react_agent.context import Context, ValidationSandbox
 from react_agent.custom_tools.mcp_database import load_database_tools
 from react_agent.prompts import (
     SYSTEM_PROMPT_EXTRACTION,
@@ -332,7 +336,7 @@ async def schema_inspection(
                 "schema_context": "No database tools available. Schema inspection skipped."
             }
 
-        model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_5)
+        model = await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING, temperature=0.4)
 
         system_prompt = SYSTEM_PROMPT_SCHEMA_INSPECTOR.format(
             system_time=datetime.now(tz=UTC).isoformat(),
@@ -347,7 +351,7 @@ async def schema_inspection(
             middleware=[
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
-                    await get_model(config, runtime, AvailableModel.EINFRA_GLM_5, temperature=0.4),
+                    await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0.4),
                     await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0.4),
                     await get_model(
                         config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0.4
@@ -781,74 +785,83 @@ def route_post_schema_validation(
         return "validate_query_node"
     return "__end__"
 
+async def build_graph(**kwargs):
+    """Build the LangGraph StateGraph with the defined nodes and edges, and return the graph instance."""
+    # Observability
+    langfuse = get_client()
 
-# Observability
+    # Verify connection
+    if langfuse.auth_check():
+        logger.info("Langfuse client is authenticated and ready!")
+    else:
+        logger.error(
+            "Langfuse authentication failed. Please check your credentials and host."
+        )
 
-langfuse = get_client()
+    # Initialize Langfuse CallbackHandler for Langchain (tracing)
+    langfuse_handler = CallbackHandler()
 
-# Verify connection
-if langfuse.auth_check():
-    logger.info("Langfuse client is authenticated and ready!")
-else:
-    logger.error(
-        "Langfuse authentication failed. Please check your credentials and host."
+    logfire.configure()
+    logfire.instrument_openai()
+    logfire.instrument_httpx()
+    logfire.instrument_aiohttp_client()
+    logging.basicConfig(handlers=[logfire.LogfireLoggingHandler()])
+
+    # Build the graph
+
+    # checkpointer = InMemorySaver()
+    # store = InMemoryStore()
+    cache = InMemoryCache()
+    builder = StateGraph(
+        State,
+        input_schema=InputState,
+        output_schema=OutputState,
+        context_schema=Context,
     )
 
-# Initialize Langfuse CallbackHandler for Langchain (tracing)
-langfuse_handler = CallbackHandler()
+    builder.add_node(extract_input, retry_policy=RetryPolicy(max_attempts=3))  # pyright: ignore[reportArgumentType]
+    builder.add_node(
+        schema_inspection, # pyright: ignore[reportArgumentType]
+        cache_policy=CachePolicy(ttl=300),
+        retry_policy=RetryPolicy(max_attempts=3),
+    )
+    builder.add_node(
+        generate_translation_node, # pyright: ignore[reportArgumentType]
+        cache_policy=CachePolicy(ttl=300),
+        retry_policy=RetryPolicy(max_attempts=3),
+    )
+    builder.add_node(human_intervention_node) # pyright: ignore[reportArgumentType]
 
-logfire.configure()
-logfire.instrument_openai()
-logfire.instrument_httpx()
-logging.basicConfig(handlers=[logfire.LogfireLoggingHandler()])
+    builder.add_node(validate_schema_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
+    builder.add_node(validate_query_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
+    builder.add_node(evaluation_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
 
-# Build the graph
+    builder.add_conditional_edges(START, should_extract_input)
+    builder.add_conditional_edges("extract_input", should_extract_input)
+    builder.add_edge("schema_inspection", "generate_translation_node")
 
-# checkpointer = InMemorySaver()
-# store = InMemoryStore()
-cache = InMemoryCache()
-builder = StateGraph(
-    State,
-    input_schema=InputState,
-    output_schema=OutputState,
-    context_schema=Context,
-)
+    builder.add_conditional_edges("generate_translation_node", route_post_translation)
+    builder.add_conditional_edges("validate_schema_node", route_post_schema_validation)
+    builder.add_edge("validate_query_node", "evaluation_node")
+    builder.add_conditional_edges("evaluation_node", route_post_evaluation)
+    builder.add_edge("human_intervention_node", "generate_translation_node")
+    
+    # Initialize the Daytona client
+    async with AsyncDaytona() as daytona:
+        # Create the Sandbox instances
+        for sandbox_type in SandboxType:
+            await ValidationSandbox.create_validation_sandbox(daytona, sandbox_type)
 
-
-builder.add_node(extract_input, retry_policy=RetryPolicy(max_attempts=3))  # pyright: ignore[reportArgumentType]
-builder.add_node(
-    schema_inspection, # pyright: ignore[reportArgumentType]
-    cache_policy=CachePolicy(ttl=300),
-    retry_policy=RetryPolicy(max_attempts=3),
-)
-builder.add_node(
-    generate_translation_node, # pyright: ignore[reportArgumentType]
-    cache_policy=CachePolicy(ttl=300),
-    retry_policy=RetryPolicy(max_attempts=3),
-)
-builder.add_node(human_intervention_node) # pyright: ignore[reportArgumentType]
-
-builder.add_node(validate_schema_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
-builder.add_node(validate_query_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
-builder.add_node(evaluation_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
-
-builder.add_conditional_edges(START, should_extract_input)
-builder.add_conditional_edges("extract_input", should_extract_input)
-builder.add_edge("schema_inspection", "generate_translation_node")
-
-builder.add_conditional_edges("generate_translation_node", route_post_translation)
-builder.add_conditional_edges("validate_schema_node", route_post_schema_validation)
-builder.add_edge("validate_query_node", "evaluation_node")
-builder.add_conditional_edges("evaluation_node", route_post_evaluation)
-builder.add_edge("human_intervention_node", "generate_translation_node")
-
-graph = builder.compile(
-    name="UOM Orchestrator Workflow",
-    interrupt_before=["human_intervention_node"],
-    # checkpointer=checkpointer,
-    # store=store,
-    cache=cache,
-    # debug=True if os.getenv("DEVELOPMENT") else False,
-).with_config({"callbacks": CallbackManager([langfuse_handler, LoggingCallbackHandler()])})
+        graph = builder.compile(
+            name="UOM Orchestrator Workflow",
+            interrupt_before=["human_intervention_node"],
+            # checkpointer=checkpointer,
+            # store=store,
+            cache=cache,
+            # debug=True if os.getenv("DEVELOPMENT") else False,
+            **kwargs
+        ).with_config({"callbacks": CallbackManager([langfuse_handler, LoggingCallbackHandler()])})
+        
+        return graph
 
 # logger.info(graph.get_graph().draw_mermaid())

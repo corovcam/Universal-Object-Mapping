@@ -14,7 +14,6 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
-from langgraph.runtime import get_runtime
 from openai import DefaultAsyncHttpxClient, DefaultHttpxClient
 from pydantic import BaseModel, Field, create_model
 
@@ -177,7 +176,7 @@ async def load_chat_model(
             base_url=config.get("openai_api_url"),  # type: ignore
             api_key=config.get("openai_api_key"),  # type: ignore
             max_retries=10,
-            request_timeout=120, # pyright: ignore[reportCallIssue]
+            request_timeout=120, # type: ignore
             stream_usage=True,
             **({"temperature": config.get("temperature", 0)} if config.get("temperature") is not None else {}),
             # **debug_kwargs,  # type: ignore
@@ -449,14 +448,6 @@ async def get_model(
     return await load_chat_model(
         model_name, config={"openai_api_url": openai_url, "openai_api_key": openai_key, "temperature": temperature, **chat_model_kwargs}
     )
-
-
-def get_ssh_host_and_port(service_name: str) -> tuple[str, int]:
-    """Get the SSH host and port for a service from SSH URI in .env file."""
-    runtime = get_runtime(Context)
-    uri = getattr(runtime.context, f"{service_name.replace('-', '_')}_ssh_uri")
-    host, port = uri.replace("ssh://", "").rsplit(":", 1)
-    return host, int(port)
 
 
 async def get_database_mapping_json(
