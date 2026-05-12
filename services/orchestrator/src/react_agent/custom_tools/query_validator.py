@@ -10,8 +10,10 @@ from typing import Any, Awaitable, Literal, cast
 
 import orjson
 from deepdiff import DeepDiff
+from langchain.messages import HumanMessage, ToolMessage
 from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
+from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from react_agent.constants import (
@@ -20,10 +22,17 @@ from react_agent.constants import (
     JavaFramework,
     SourceFramework,
     TargetFramework,
+    TranslationType,
 )
 from react_agent.context import Context
-from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
-from react_agent.custom_tools.java_validator import validate_java_code
+from react_agent.custom_tools.dotnet_validator import (
+    compile_and_run_dotnet,
+    validate_dotnet_code,
+)
+from react_agent.custom_tools.java_validator import (
+    compile_and_run_java,
+    validate_java_code,
+)
 from react_agent.state import State
 from react_agent.utils.types import QueryEquivalenceDeepDiff
 
@@ -95,91 +104,103 @@ class QueryEquivalenceInput(BaseModel):
             "[Target Query Validation Passed] followed by JSON summary."
         ),
     )
-    mapping_json: dict[str, Any] | None = Field(
-        default=None,
-        exclude=True,
-        description=(
-            "Mapping in JSON format. Example: "
-            '{"nodes":{"Customer":{"propertyMappings":[{"sourceColumn":"CustomerID","targetProperty":"customerId"}]}},'
-            '"relationships":{"PEOPLE":[{"propertyMappings":[{"sourceColumn":"LastEditedBy","targetProperty":"lastEditedBy"}]}]}}'
-        ),
-    )
 
 
 # @tool("validate_source_query", args_schema=SourceQueryInput)
 @tool
 async def validate_source_query(
     validation_harness_code: str,
-    runtime: ToolRuntime[Context, State],
-) -> dict[Literal["output", "validation_results"], str | dict[str, Any]]:
+    runtime: ToolRuntime,
+) -> list[Any] | str:
     """Validate source query execution metadata."""
+    runtime: ToolRuntime[Context, State] = runtime  # ty:ignore[invalid-assignment]
     src_framework = cast(FrameworkEnum, runtime.state.source_target)
     
     output, entrypoint_json = "Compilation Failed", ""
+    translation_type = cast(TranslationType, runtime.state.translation_type)
     if src_framework.value in DotnetFramework:
-        output, entrypoint_json = await validate_dotnet_code.ainvoke(
-            {
-                "source_code": validation_harness_code.strip(),
-                "framework": DotnetFramework(src_framework.value),
-            }
+        output, entrypoint_json = await compile_and_run_dotnet(
+            validation_harness_code.strip(),
+            DotnetFramework(src_framework.value),
+            translation_type
         )
     elif src_framework.value in JavaFramework:
-        output, entrypoint_json = await validate_java_code.ainvoke(
-            {
-                "source_code": validation_harness_code.strip(),
-                "framework": JavaFramework(src_framework.value),
-                "entry_type_name": runtime.state.source_validation_entry_type_name or "ValidationEntryPoint",
-            }
+        output, entrypoint_json = await compile_and_run_java(
+            validation_harness_code.strip(),
+            JavaFramework(src_framework.value),
+            runtime.state.source_validation_entry_type_name or "ValidationEntryPoint",
+            translation_type
         )
 
     if "Compilation Failed" in output:
-        return {"output": f"[Source Query Validation Failed]\\n{output}"}
+        return f"[Source Query Validation Failed]\\n{output}"
     else:
-        if "===JSON ERROR===" not in entrypoint_json:
+        if entrypoint_json and "===JSON ERROR===" not in entrypoint_json:
             try:
                 parsed: dict[str, Any] = orjson.loads(entrypoint_json)
-                return {"output": f"[Source Query Validation Passed]\\n{output}", "validation_results": parsed}
-            except json.JSONDecodeError:
-                return {"output": f"[Source Query Validation Failed] Could not parse JSON output.\\n{output}"}
-        return {"output": f"[Source Query Validation Failed] No JSON output.\\n{output}"}
+                return Command(
+                    update={
+                        "source_query_validation_results": parsed,
+                        "translation_messages": [
+                            ToolMessage(
+                                content=f"[Source Query Validation Passed]\\n{output}",
+                                tool_call_id=runtime.tool_call_id
+                            )
+                        ]
+                    }
+                )
+            except orjson.JSONDecodeError:
+                return f"[Source Query Validation Failed] Could not parse JSON output.\\n{output}"
+        return f"[Source Query Validation Failed] No JSON output.\\n{output}"
+
 
 
 # @tool("validate_target_query", args_schema=TargetQueryInput)
 @tool
 async def validate_target_query(
     validation_harness_code: str,
-    runtime: ToolRuntime[Context, State],
-) -> dict[Literal["output", "validation_results"], str | dict[str, Any]]:
+    runtime: ToolRuntime,
+) -> Command | str:
     """Validate target query execution metadata via java_validator."""
+    runtime: ToolRuntime[Context, State] = runtime  # ty:ignore[invalid-assignment]
     tgt_framework = cast(FrameworkEnum, runtime.state.destination_target)
 
     output, entrypoint_json = "Compilation Failed", ""
+    translation_type = cast(TranslationType, runtime.state.translation_type)
     if tgt_framework.value in DotnetFramework:
-        output, entrypoint_json = await validate_dotnet_code.ainvoke(
-            {
-                "source_code": validation_harness_code.strip(),
-                "framework": DotnetFramework(tgt_framework.value),
-            }
+        output, entrypoint_json = await compile_and_run_dotnet(
+            validation_harness_code.strip(),
+            DotnetFramework(tgt_framework.value),
+            translation_type
         )
     elif tgt_framework.value in JavaFramework:
-        output, entrypoint_json = await validate_java_code.ainvoke(
-            {
-                "source_code": validation_harness_code.strip(),
-                "framework": JavaFramework(tgt_framework.value),
-                "entry_type_name": runtime.state.target_validation_entry_type_name or "ValidationEntryPoint",
-            }
+        output, entrypoint_json = await compile_and_run_java(
+            validation_harness_code.strip(),
+            JavaFramework(tgt_framework.value),
+            runtime.state.target_validation_entry_type_name or "ValidationEntryPoint",
+            translation_type
         )
 
     if "Compilation Failed" in output:
-        return {"output": f"[Target Query Validation Failed]\\n{output}"}
+        return f"[Target Query Validation Failed]\\n{output}"
     else:
-        if "===JSON ERROR===" not in entrypoint_json:
+        if entrypoint_json and "===JSON ERROR===" not in entrypoint_json:
             try:
                 parsed: dict[str, Any] = orjson.loads(entrypoint_json)
-                return {"output": f"[Target Query Validation Passed]\\n{output}", "validation_results": parsed}
-            except json.JSONDecodeError:
-                return {"output": f"[Target Query Validation Failed] Could not parse JSON output.\\n{output}"}
-        return {"output": f"[Target Query Validation Failed] No JSON output.\\n{output}"}
+                return Command(
+                    update={
+                        "target_query_validation_results": parsed,
+                        "translation_messages": [
+                            ToolMessage(
+                                content=f"[Target Query Validation Passed]\\n{output}",
+                                tool_call_id=runtime.tool_call_id
+                            )
+                        ]
+                    }
+                )
+            except orjson.JSONDecodeError:
+                return f"[Target Query Validation Failed] Could not parse JSON output.\\n{output}"
+        return f"[Target Query Validation Failed] No JSON output.\\n{output}"
 
 
 def _check_validation_markers(
@@ -200,9 +221,10 @@ def _check_validation_markers(
 async def check_query_equivalence(
     source_validation_output: str,
     target_validation_output: str,
-    runtime: ToolRuntime[Context, State],
+    runtime: ToolRuntime,
 ) -> str:
     """Compare source and target query metadata for logical equivalence."""
+    runtime: ToolRuntime[Context, State] = runtime  # ty:ignore[invalid-assignment]
     output = _check_validation_markers(
         source_validation_output,
         "[Source Query Validation Passed]",

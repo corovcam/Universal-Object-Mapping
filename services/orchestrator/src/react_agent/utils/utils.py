@@ -375,7 +375,7 @@ async def load_chat_model(
                 or "reasoning_output" not in p_kwargs
             ):
                 creator_map = get_model_creator_map()
-                creator = creator_map.get(AvailableModel(model))
+                creator = creator_map.get(AvailableModel(fully_specified_name))
                 if creator:
                     gateway_url = (
                         f"https://ai-gateway.vercel.sh/v1/models/{creator}/{model}"
@@ -489,7 +489,7 @@ async def create_example_for_prompt(
     return example
 
 
-def override_pydantic_model_schema(model_cls: type[BaseModel], overrides: dict[str, dict[str, Any]]) -> type[BaseModel]:
+def override_pydantic_model_schema(model_cls: type[BaseModel], overrides: dict[str, dict[str, Any]], model_name: str | None = None) -> type[BaseModel]:
     """Override the schema of a Pydantic model's fields."""
     new_fields = {}
     for f_name, f_info in model_cls.model_fields.items():
@@ -504,7 +504,7 @@ def override_pydantic_model_schema(model_cls: type[BaseModel], overrides: dict[s
             None,
         )
     return create_model(
-        model_cls.__name__,
+        model_name or model_cls.__name__,
         __base__=model_cls,
         **new_fields,
     )
