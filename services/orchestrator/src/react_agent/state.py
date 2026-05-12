@@ -59,7 +59,9 @@ class OutputState:
 
     translated_schema_code: str | None = field(default=None)
     translated_query_code: str | None = field(default=None)
+    source_validation_schema_code: str | None = field(default=None)
     source_validation_harness_code: str | None = field(default=None)
+    target_validation_schema_code: str | None = field(default=None)
     target_validation_harness_code: str | None = field(default=None)
     explanation_message: str | None = field(default=None)
 

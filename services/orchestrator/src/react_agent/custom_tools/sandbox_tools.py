@@ -2,7 +2,7 @@
 
 import logging
 
-from daytona import AsyncDaytona, AsyncSandbox, DaytonaNotFoundError
+from daytona import AsyncDaytona, DaytonaNotFoundError
 from langchain_core.tools import tool
 
 from react_agent.constants import SandboxType
