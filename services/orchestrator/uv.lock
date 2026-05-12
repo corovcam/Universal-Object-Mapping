@@ -1868,6 +1868,9 @@ wheels = [
 httpx = [
     { name = "opentelemetry-instrumentation-httpx" },
 ]
+requests = [
+    { name = "opentelemetry-instrumentation-requests" },
+]
 
 [[package]]
 name = "markdown-it-py"
@@ -2425,6 +2428,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/cd/2a/e2becd55e33c29d1d9ef76e2579040ed1951cb33bacba259f6aff2fdd2a6/opentelemetry_instrumentation_httpx-0.61b0.tar.gz", hash = "sha256:6569ec097946c5551c2a4252f74c98666addd1bf047c1dde6b4ef426719ff8dd", size = 24104, upload-time = "2026-03-04T14:20:34.752Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/af/88/dde310dce56e2d85cf1a09507f5888544955309edc4b8d22971d6d3d1417/opentelemetry_instrumentation_httpx-0.61b0-py3-none-any.whl", hash = "sha256:dee05c93a6593a5dc3ae5d9d5c01df8b4e2c5d02e49275e5558534ee46343d5e", size = 17198, upload-time = "2026-03-04T14:19:33.585Z" },
+]
+
+[[package]]
+name = "opentelemetry-instrumentation-requests"
+version = "0.61b0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-util-http" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/c7/7a47cb85c7aa93a9c820552e414889185bcf91245271d12e5d443e5f834d/opentelemetry_instrumentation_requests-0.61b0.tar.gz", hash = "sha256:15f879ce8fb206bd7e6fdc61663ea63481040a845218c0cf42902ce70bd7e9d9", size = 18379, upload-time = "2026-03-04T14:20:46.959Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/a1/a7a133b273d1f53950f16a370fc94367eff472c9c2576e8e9e28c62dcc9f/opentelemetry_instrumentation_requests-0.61b0-py3-none-any.whl", hash = "sha256:cce19b379949fe637eb73ba39b02c57d2d0805447ca6d86534aa33fcb141f683", size = 14207, upload-time = "2026-03-04T14:19:51.765Z" },
 ]
 
 [[package]]
@@ -3714,7 +3732,7 @@ dependencies = [
     { name = "langfuse" },
     { name = "langgraph" },
     { name = "langgraph-checkpoint-redis" },
-    { name = "logfire", extra = ["httpx"] },
+    { name = "logfire", extra = ["httpx", "requests"] },
     { name = "ollama" },
     { name = "orjson" },
     { name = "pydantic" },
@@ -3761,7 +3779,7 @@ requires-dist = [
     { name = "langfuse", specifier = ">=4.5.1" },
     { name = "langgraph", specifier = ">=1.1.10" },
     { name = "langgraph-checkpoint-redis", specifier = ">=0.4.1" },
-    { name = "logfire", extras = ["httpx"], specifier = ">=4.32.1" },
+    { name = "logfire", extras = ["httpx", "requests"], specifier = ">=4.32.1" },
     { name = "ollama", specifier = ">=0.6.2" },
     { name = "orjson", specifier = ">=3.11.8" },
     { name = "pydantic", specifier = ">=2.13.3" },

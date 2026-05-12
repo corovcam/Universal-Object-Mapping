@@ -30,7 +30,7 @@ dependencies = [
     "types-aiofiles>=25.1.0.20260409",
     "orjson>=3.11.8",
     "deepdiff[optimize]>=9.0.0",
-    "logfire[httpx]>=4.32.1",
+    "logfire[httpx,requests]>=4.32.1",
     "daytona>=0.171.0",
 ]
 # external-dependencies = [
@@ -124,6 +124,3 @@ include = ["src", "tests"]
 venvPath = "."
 venv = ".venv"
 reportUnnecessaryTypeIgnoreComment = "none"
-
-[tool.logfire]
-pydantic_plugin_record = "all"

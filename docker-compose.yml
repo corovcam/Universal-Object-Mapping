@@ -73,6 +73,9 @@ services:
     restart: unless-stopped
     volumes:
       - mssql_data:/var/opt/mssql
+    networks:
+      - default
+      - daytona-uom
 
   mongodb:
     image: mongo:8.2.6
@@ -88,6 +91,9 @@ services:
     volumes:
       - mongodb_data:/data/db
       - ./services/etl/mongodb/init-mongodb.sh:/docker-entrypoint-initdb.d/init-mongodb.sh
+    networks:
+      - default
+      - daytona-uom
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       start_period: 10s
@@ -112,6 +118,9 @@ services:
     volumes:
       - neo4j_data:/data
       - ./services/etl/neo4j:/neo4j-etl
+    networks:
+      - default
+      - daytona-uom
     healthcheck:
       test:
         [
@@ -179,3 +188,8 @@ volumes:
   neo4j_data:
   postgres_data:
   mongodb_migrator_data:
+
+networks:
+  daytona-uom:
+    external: true
+    name: daytona-uom
