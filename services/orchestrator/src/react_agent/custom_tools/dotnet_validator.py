@@ -95,11 +95,11 @@ fi
             else:
                 json_part = f"\n===JSON ERROR===\nFailed to fetch JSON from {remote_path}."
 
-            return f"[Dotnet Validation Passed] Validation successful. Framework targeted: {framework.value}\n{output[-1500:]}", json_part
+            return f"[Dotnet Validation Passed] Validation successful. Framework targeted: {framework.value}\n{output}", json_part
         else:
-            return f"[Dotnet Validation Failed] No JSON path found in output.\n{output[-2000:]}", None
+            return f"[Dotnet Validation Failed] No JSON path found in output.\n{output}", None
     else:
-        return f"[Dotnet Validation Failed]\n{output[-2000:]}", None
+        return f"[Dotnet Validation Failed]\n{output}", None
 
 
 @tool("validate_dotnet_code", args_schema=DotnetValidationInput)

@@ -217,7 +217,8 @@ def _check_validation_markers(
         logger.warning("Validation output does not contain expected markers. Output: %s", validation_output)
 
 
-@tool("check_query_equivalence", args_schema=QueryEquivalenceInput)
+# @tool("check_query_equivalence", args_schema=QueryEquivalenceInput)
+@tool
 async def check_query_equivalence(
     source_validation_output: str,
     target_validation_output: str,
@@ -273,15 +274,15 @@ async def check_query_equivalence(
             diff_first = DeepDiff(src_first, tgt_first, ignore_order=True, report_repetition=True, significant_digits=3, cutoff_intersection_for_pairs=1, cutoff_distance_for_pairs=1, get_deep_distance=True)
             diff_last = DeepDiff(src_last, tgt_last, ignore_order=True, report_repetition=True, significant_digits=3, cutoff_intersection_for_pairs=1, cutoff_distance_for_pairs=1, get_deep_distance=True)
 
-            # diff_swapped_first = DeepDiff(src_first, tgt_last, ignore_order=True, report_repetition=True, significant_digits=3, get_deep_distance=True)
-            # diff_swapped_last = DeepDiff(src_last, tgt_first, ignore_order=True, report_repetition=True, significant_digits=3, get_deep_distance=True)
-
-            # normal_empty = not diff_first and not diff_last
-            # swapped_empty = not diff_swapped_first and not diff_swapped_last
-
             if not count_diff and diff_first.get("deep_distance") == 0 and diff_last.get("deep_distance") == 0:
                 return {}
-            
+
+            diff_swapped_first = DeepDiff(src_first, tgt_last, ignore_order=True, report_repetition=True, significant_digits=3, cutoff_intersection_for_pairs=1, cutoff_distance_for_pairs=1, get_deep_distance=True)
+            diff_swapped_last = DeepDiff(src_last, tgt_first, ignore_order=True, report_repetition=True, significant_digits=3, cutoff_intersection_for_pairs=1, cutoff_distance_for_pairs=1, get_deep_distance=True)
+
+            if not count_diff and diff_swapped_first.get("deep_distance") == 0 and diff_swapped_last.get("deep_distance") == 0:
+                return {}
+
             sample_diffs = OrderedDict((
                 ("deepdiff_mapping", { "old": runtime.state.source_target or "source", "new": runtime.state.destination_target or "target" }),
                 ("countDiff", count_diff.to_json()), 
