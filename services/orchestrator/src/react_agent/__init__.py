@@ -17,26 +17,7 @@ logfire.configure(
     scrubbing=False,
 )
 # logfire.install_auto_tracing(modules=['react_agent'], min_duration=0.01, check_imported_modules='ignore')
-logfire.instrument_pydantic(
-    record="failure",
-    # exclude={"Projects"}
-    # exclude={
-    #     "AIMessageChunk",
-    #     "nullable",
-    #     "ChatGenerationChunk",
-    #     "AIMessage",
-    #     "call",
-    #     "ApiResponse",
-    #     "Sandbox",
-    #     "BuildInfo",
-    #     "RunTree",
-    #     "AsyncSandbox",
-    #     "Projects",
-    #     "langfuse",
-    #     "openai",
-    #     "langchain",
-    # }
-)
+logfire.instrument_pydantic(record="failure")
 logfire.instrument_openai(suppress_other_instrumentation=False)
 logfire.instrument_requests(capture_all=True)
 logfire.instrument_httpx(capture_all=True)

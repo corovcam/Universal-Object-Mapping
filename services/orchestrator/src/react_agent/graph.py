@@ -307,7 +307,6 @@ async def extract_input(
     # structured_llm = model.with_structured_output(ExtractionOutput)
 
     system_prompt = SYSTEM_PROMPT_EXTRACTION.format(
-        system_time=datetime.now(tz=UTC).isoformat(),
         origin_frameworks=[f.value for f in SourceFramework],
         destination_frameworks=[f.value for f in TargetFramework],
     )
@@ -370,7 +369,7 @@ async def schema_inspection(
                 "schema_context": "No database tools available. Schema inspection skipped."
             }
 
-        model = await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING, temperature=0.4)
+        model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0.8)
 
         system_prompt = SYSTEM_PROMPT_SCHEMA_INSPECTOR.format(
             system_time=datetime.now(tz=UTC).isoformat(),
@@ -385,10 +384,10 @@ async def schema_inspection(
             middleware=[
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
-                    await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0.4),
-                    await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0.4),
+                    await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING, temperature=0.8),
+                    await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0.8),
                     await get_model(
-                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0.4
+                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0.8
                     ),
                 ),
                 ToolRetryMiddleware(),
@@ -459,8 +458,7 @@ async def translation_agent(
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
-                await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0),
-                await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0),
+                await get_model(config, runtime, AvailableModel.EINFRA_CODER, temperature=0),
                 await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
             ),
             ToolRetryMiddleware(),
@@ -855,7 +853,7 @@ async def build_graph():
     builder.add_node(extract_input, retry_policy=RetryPolicy(max_attempts=3))  # pyright: ignore[reportArgumentType]
     builder.add_node(
         schema_inspection, # pyright: ignore[reportArgumentType]
-        cache_policy=CachePolicy(ttl=300),
+        cache_policy=CachePolicy(ttl=900),
         retry_policy=RetryPolicy(max_attempts=3),
     )
     builder.add_node(
