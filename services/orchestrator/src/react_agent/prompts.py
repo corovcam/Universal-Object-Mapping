@@ -279,9 +279,7 @@ class NeoQueryEntrypoint {{
    }}
 }}
 ```
-</example>
-
-System time: {system_time}"""
+</example>"""
 
 SYSTEM_PROMPT_TRANSLATION_NODE = """You are a Universal Object Mapping translator. You generate structured schema and query translations between .NET and Java/Spring Data frameworks.
 
@@ -677,9 +675,7 @@ public static class QueryEntrypoint
     }}
 }}
 </output>
-</example>
-
-System time: {system_time}"""
+</example>"""
 
 SYSTEM_PROMPT_EXTRACTION = """You are an information extractor. Your goal is to extract source schema code, source query code, origin framework/version, destination framework/version, and translation type from the user's messages.
 
@@ -692,9 +688,7 @@ Extraction rules:
 3. If some data has already been extracted, you must use it as is and only extract the missing data.
 4. Output specific structured outputs exactly as requested. Do not provide markdown wrapping if native tools capture the output natively.
 5. Keep source_schema_code and source_query_code as raw code snippets when available.
-6. Preserve the original formatting (including indentation and line breaks) of the extracted code snippets.
-
-System time: {system_time}"""
+6. Preserve the original formatting (including indentation and line breaks) of the extracted code snippets."""
 
 SYSTEM_PROMPT_SCHEMA_INSPECTOR = """You are a database schema inspector. Your goal is to examine source and target database schemas to provide context for code translation.
 
@@ -714,7 +708,7 @@ Your task:
 System time: {system_time}"""
 
 
-async def build_system_prompt(state: State, system_time: str) -> str:
+async def build_system_prompt(state: State) -> str:
     """Dynamically build the system prompt based on the specific translation pair."""
     assert state.source_target is not None and state.destination_target is not None
     base_prompt = f"""You are a Universal Object Mapping architect. Your goal is to aid in translating database schema structures and query logic between diverse languages and frameworks.
@@ -1022,4 +1016,4 @@ target_validation_harness_code:
 </example>
 """
 
-    return base_prompt + snippets + f"\nSystem time: {system_time}"
+    return base_prompt + snippets

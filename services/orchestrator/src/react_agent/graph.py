@@ -369,7 +369,7 @@ async def schema_inspection(
                 "schema_context": "No database tools available. Schema inspection skipped."
             }
 
-        model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0.8)
+        model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0)
 
         system_prompt = SYSTEM_PROMPT_SCHEMA_INSPECTOR.format(
             system_time=datetime.now(tz=UTC).isoformat(),
@@ -384,10 +384,10 @@ async def schema_inspection(
             middleware=[
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
-                    await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING, temperature=0.8),
-                    await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0.8),
+                    await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING, temperature=0),
+                    await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0),
                     await get_model(
-                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0.8
+                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0
                     ),
                 ),
                 ToolRetryMiddleware(),
@@ -443,11 +443,11 @@ async def translation_agent(
 
     !! DEPRECATED
     """
-    model = await get_model(config, runtime)
+    model = await get_model(config, runtime, temperature=0)
 
     all_tools = TOOLS
 
-    system_prompt = await build_system_prompt(state, datetime.now(tz=UTC).isoformat())
+    system_prompt = await build_system_prompt(state)
 
     # Create the ReAct agent
     agent = create_agent(
@@ -458,7 +458,7 @@ async def translation_agent(
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
-                await get_model(config, runtime, AvailableModel.EINFRA_CODER, temperature=0),
+                await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0),
                 await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
             ),
             ToolRetryMiddleware(),
@@ -555,7 +555,7 @@ async def generate_translation_node(
     
     model = await get_model(config, runtime, temperature=0)
 
-    system_prompt = await build_system_prompt(state, datetime.now(tz=UTC).isoformat())
+    system_prompt = await build_system_prompt(state)
 
     message = f"""Translate the following Source Code ({"schema/query" if state.translation_type and state.translation_type.value == TranslationType.BOTH else (state.translation_type.value if state.translation_type else "schema")}) from {state.source_target.value if state.source_target else "Unknown"}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value if state.destination_target else "Unknown"}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 {f"\nDatabase Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}---
@@ -680,15 +680,15 @@ def prep_query_equivalence(state: State) -> dict[str, Any]:
 
 
 validate_schema_node = ToolNode(
-    [validate_dotnet_code, validate_java_code], messages_key="translation_messages"
+    [validate_dotnet_code, validate_java_code], name="validate_schema_node", messages_key="translation_messages"
 )
 
 validate_query_node = ToolNode(
-    [validate_source_query, validate_target_query], messages_key="translation_messages"
+    [validate_source_query, validate_target_query], name="validate_query_node", messages_key="translation_messages"
 )
 
 check_query_equivalence_node = ToolNode(
-    [check_query_equivalence], messages_key="translation_messages"
+    [check_query_equivalence], name="check_query_equivalence_node", messages_key="translation_messages"
 )
 
 
@@ -850,26 +850,54 @@ async def build_graph():
         context_schema=Context,
     )
 
-    builder.add_node(extract_input, retry_policy=RetryPolicy(max_attempts=3))  # pyright: ignore[reportArgumentType]
     builder.add_node(
-        schema_inspection, # pyright: ignore[reportArgumentType]
+        extract_input,
+        cache_policy=CachePolicy(),
+        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    )
+    builder.add_node(
+        schema_inspection,
         cache_policy=CachePolicy(ttl=900),
-        retry_policy=RetryPolicy(max_attempts=3),
+        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
     )
     builder.add_node(
-        generate_translation_node, # pyright: ignore[reportArgumentType]
-        cache_policy=CachePolicy(ttl=300),
-        retry_policy=RetryPolicy(max_attempts=3),
+        generate_translation_node,
+        cache_policy=CachePolicy(),
+        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
     )
-    builder.add_node(human_intervention_node) # pyright: ignore[reportArgumentType]
+    builder.add_node(
+        human_intervention_node,
+        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    )
 
-    builder.add_node("prep_schema_validation", prep_schema_validation)
-    builder.add_node("prep_query_validation", prep_query_validation)
-    builder.add_node("validate_schema_node", validate_schema_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
-    builder.add_node("validate_query_node", validate_query_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
-    builder.add_node("prep_query_equivalence", prep_query_equivalence)
-    builder.add_node("check_query_equivalence_node", check_query_equivalence_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
-    builder.add_node(evaluation_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
+    builder.add_node(
+        prep_schema_validation,
+        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    )
+    builder.add_node(
+        prep_query_validation,
+        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    )
+    builder.add_node(
+        validate_schema_node,
+        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    )
+    builder.add_node(
+        validate_query_node,
+        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    )
+    builder.add_node(
+        prep_query_equivalence,
+        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    )
+    builder.add_node(
+        check_query_equivalence_node,
+        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    )
+    builder.add_node(
+        evaluation_node,
+        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    )
 
     builder.add_conditional_edges(START, should_extract_input)
     builder.add_conditional_edges("extract_input", should_extract_input)
