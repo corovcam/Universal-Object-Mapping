@@ -10,6 +10,7 @@ import os
 from datetime import UTC, datetime
 from typing import Any, Literal, Union, cast
 
+import logfire
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
@@ -822,108 +823,116 @@ def route_post_schema_validation(
     return "__end__"
 
 
-async def build_graph():
-    """Build the LangGraph StateGraph with the defined nodes and edges, and return the graph instance."""
-    # Observability
-    langfuse = get_client()
+# Observability
+langfuse = get_client()
 
-    # Verify connection
-    if langfuse.auth_check():
-        logger.info("Langfuse client is authenticated and ready!")
-    else:
-        logger.error(
-            "Langfuse authentication failed. Please check your credentials and host."
-        )
-
-    # Initialize Langfuse CallbackHandler for Langchain (tracing)
-    langfuse_handler = CallbackHandler()
-
-    # Build the graph
-
-    # checkpointer = InMemorySaver()
-    # store = InMemoryStore()
-    cache = InMemoryCache()
-    builder = StateGraph(
-        State,
-        input_schema=InputState,
-        output_schema=OutputState,
-        context_schema=Context,
+# Verify connection
+if langfuse.auth_check():
+    logger.info("Langfuse client is authenticated and ready!")
+else:
+    logger.error(
+        "Langfuse authentication failed. Please check your credentials and host."
     )
 
-    builder.add_node(
-        extract_input,
-        cache_policy=CachePolicy(),
-        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
-    )
-    builder.add_node(
-        schema_inspection,
-        cache_policy=CachePolicy(ttl=900),
-        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
-    )
-    builder.add_node(
-        generate_translation_node,
-        cache_policy=CachePolicy(),
-        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
-    )
-    builder.add_node(
-        human_intervention_node,
-        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
-    )
+# Initialize Langfuse CallbackHandler for Langchain (tracing)
+langfuse_handler = CallbackHandler()
 
-    builder.add_node(
-        prep_schema_validation,
-        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
-    )
-    builder.add_node(
-        prep_query_validation,
-        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
-    )
-    builder.add_node(
-        validate_schema_node,
-        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
-    )
-    builder.add_node(
-        validate_query_node,
-        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
-    )
-    builder.add_node(
-        prep_query_equivalence,
-        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
-    )
-    builder.add_node(
-        check_query_equivalence_node,
-        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
-    )
-    builder.add_node(
-        evaluation_node,
-        retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
-    )
+logfire.configure(
+    # sampling=logfire.SamplingOptions.level_or_duration(background_rate=0.3),
+    console=False,
+    scrubbing=False,
+)
+# logfire.install_auto_tracing(modules=['react_agent'], min_duration=0.01, check_imported_modules='ignore')
+logfire.instrument_openai(suppress_other_instrumentation=False)
+logfire.instrument_requests(capture_all=True)
+logfire.instrument_httpx(capture_all=True)
+logfire.instrument_aiohttp_client(capture_all=True)
+logging.basicConfig(handlers=[logfire.LogfireLoggingHandler()])
 
-    builder.add_conditional_edges(START, should_extract_input)
-    builder.add_conditional_edges("extract_input", should_extract_input)
-    builder.add_edge("schema_inspection", "generate_translation_node")
+# Build the graph
 
-    builder.add_conditional_edges("generate_translation_node", route_post_translation)
-    builder.add_edge("prep_schema_validation", "validate_schema_node")
-    builder.add_conditional_edges("validate_schema_node", route_post_schema_validation)
-    
-    builder.add_edge("prep_query_validation", "validate_query_node")
-    builder.add_conditional_edges("validate_query_node", route_post_query_validation)
-    builder.add_edge("prep_query_equivalence", "check_query_equivalence_node")
-    builder.add_edge("check_query_equivalence_node", "evaluation_node")
-    
-    builder.add_conditional_edges("evaluation_node", route_post_evaluation)
-    builder.add_edge("human_intervention_node", "generate_translation_node")
+# checkpointer = InMemorySaver()
+# store = InMemoryStore()
+cache = InMemoryCache()
+builder = StateGraph(
+    State,
+    input_schema=InputState,
+    output_schema=OutputState,
+    context_schema=Context,
+)
 
-    graph = builder.compile(
-        name="UOM Orchestrator Workflow",
-        interrupt_before=["human_intervention_node"],
-        # checkpointer=checkpointer,
-        # store=store,
-        cache=cache,
-        # debug=True if os.getenv("DEVELOPMENT") else False,
-    ).with_config({"callbacks": CallbackManager([langfuse_handler, LoggingCallbackHandler()])})
-    
-    return graph
+builder.add_node(
+    extract_input,
+    cache_policy=CachePolicy(),
+    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+)
+builder.add_node(
+    schema_inspection,
+    cache_policy=CachePolicy(ttl=900),
+    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+)
+builder.add_node(
+    generate_translation_node,
+    cache_policy=CachePolicy(),
+    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+)
+builder.add_node(
+    human_intervention_node,
+    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+)
+
+builder.add_node(
+    prep_schema_validation,
+    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+)
+builder.add_node(
+    prep_query_validation,
+    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+)
+builder.add_node(
+    validate_schema_node,
+    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+)
+builder.add_node(
+    validate_query_node,
+    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+)
+builder.add_node(
+    prep_query_equivalence,
+    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+)
+builder.add_node(
+    check_query_equivalence_node,
+    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+)
+builder.add_node(
+    evaluation_node,
+    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+)
+
+builder.add_conditional_edges(START, should_extract_input)
+builder.add_conditional_edges("extract_input", should_extract_input)
+builder.add_edge("schema_inspection", "generate_translation_node")
+
+builder.add_conditional_edges("generate_translation_node", route_post_translation)
+builder.add_edge("prep_schema_validation", "validate_schema_node")
+builder.add_conditional_edges("validate_schema_node", route_post_schema_validation)
+
+builder.add_edge("prep_query_validation", "validate_query_node")
+builder.add_conditional_edges("validate_query_node", route_post_query_validation)
+builder.add_edge("prep_query_equivalence", "check_query_equivalence_node")
+builder.add_edge("check_query_equivalence_node", "evaluation_node")
+
+builder.add_conditional_edges("evaluation_node", route_post_evaluation)
+builder.add_edge("human_intervention_node", "generate_translation_node")
+
+graph = builder.compile(
+    name="UOM Orchestrator Workflow",
+    interrupt_before=["human_intervention_node"],
+    # checkpointer=checkpointer,
+    # store=store,
+    cache=cache,
+    # debug=True if os.getenv("DEVELOPMENT") else False,
+).with_config({"callbacks": CallbackManager([langfuse_handler, LoggingCallbackHandler()])})
 
 # logger.info(graph.get_graph().draw_mermaid())
