@@ -1,5 +1,6 @@
 # pyright: ignore[reportArgumentType]
 # ty:ignore[invalid-argument-type]
+# ty:ignore[invalid-type-form]
 
 """Define the Universal Object Mapping orchestrator graph."""
 import asyncio
@@ -9,11 +10,6 @@ import os
 from datetime import UTC, datetime
 from typing import Any, Literal, Union, cast
 
-import logfire
-from daytona import (
-    AsyncDaytona,
-    DaytonaConfig,
-)
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
@@ -23,29 +19,40 @@ from langchain.agents.middleware import (
     ToolRetryMiddleware,
 )
 from langchain.agents.structured_output import ProviderStrategy
+from langchain.messages import AIMessage
 from langchain_core.callbacks import CallbackManager
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 from langgraph.cache.memory import InMemoryCache
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import START, StateGraph
+from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
+from langgraph.store.memory import InMemoryStore
 from langgraph.types import CachePolicy, RetryPolicy
 from pydantic import BaseModel, Field, model_validator
+from pydantic.experimental.missing_sentinel import MISSING
 
 from react_agent.constants import (
     AvailableModel,
     DotnetFramework,
     FrameworkEnum,
     JavaFramework,
-    SandboxType,
     SourceFramework,
     TargetFramework,
     TranslationType,
 )
-from react_agent.context import Context, ValidationSandbox
+from react_agent.context import Context
+from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
+from react_agent.custom_tools.java_validator import validate_java_code
 from react_agent.custom_tools.mcp_database import load_database_tools
+from react_agent.custom_tools.query_validator import (
+    check_query_equivalence,
+    validate_source_query,
+    validate_target_query,
+)
 from react_agent.prompts import (
     SYSTEM_PROMPT_EXTRACTION,
     SYSTEM_PROMPT_SCHEMA_INSPECTOR,
@@ -69,25 +76,25 @@ from react_agent.utils.request_logging import LoggingCallbackHandler
 from react_agent.utils.utils import override_pydantic_model_schema
 
 logger = logging.getLogger(__name__)
-if os.getenv("DEVELOPMENT"):
-    logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
 
 
 class ExtractionOutput(BaseModel):
     """Structured output for identifying user intent from messages."""
 
-    source_schema_code: Union[str, None] = Field(
-        description="The source schema code. CRITICAL: Preserve all original newlines (\\n) and indentation. Do not flatten the code into a single line.",
+    source_schema_code: Union[list[str], str, None] = Field(
+        description="The source schema code. Return as a list of strings (one string per line) to preserve all original newlines and indentation.",
         min_length=1,
     )
-    source_query_code: Union[str, None] = Field(
-        description="The source query code. CRITICAL: Preserve all original newlines (\\n) and indentation. Do not flatten the code into a single line.",
+    source_query_code: Union[list[str], str, None] = Field(
+        description="The source query code. Return as a list of strings (one string per line) to preserve all original newlines and indentation.",
         min_length=1,
     )
     translation_type: TranslationType = Field(
         description="The type of translation to perform.",
     )
-    source_target: FrameworkEnum = Field(description="The identified origin framework.")
+    source_target: FrameworkEnum = Field(
+        description="The identified origin framework."
+    )
     source_target_version: Union[str, None] = Field(
         description="The identified origin framework version."
     )
@@ -97,70 +104,92 @@ class ExtractionOutput(BaseModel):
     destination_target_version: Union[str, None] = Field(
         description="The identified target framework version."
     )
+    
+    @model_validator(mode='after')
+    def join_lists(self):
+        if isinstance(self.source_schema_code, list):
+            self.source_schema_code = "\n".join(self.source_schema_code)
+        if isinstance(self.source_query_code, list):
+            self.source_query_code = "\n".join(self.source_query_code)
+        return self
 
 
 class BaseTranslationOutput(BaseModel):
     """Structured output for the translated schema and/or queries."""
 
-    translated_schema_code: str = Field(
+    translated_schema_code: Union[list[str], str] = Field(
         min_length=1,
-        description="The precise translated schema definitions (entities/models) and context/session/config/bootstrap setup with runtime configs. Plain code only. Do not include usage queries. This corresponds to the example code below `--- Schema and Related Settings ---` comment. See examples in target_validation_schema_code description."
+        description="The precise translated schema definitions (entities/models) and context/session/config/bootstrap setup with runtime configs. Plain code only. Do not include usage queries. This corresponds to the example code below `--- Schema and Related Settings ---` comment. See examples in target_validation_schema_code description. Return as a list of strings (one string per line)."
     )
-    translated_query_code: str | None = Field(
+    translated_query_code: Union[list[str], str] = Field(
         min_length=1,
         description=(
             "The precise translated production queries only. Keep query semantics and method shape equivalent to source query "
             "code. Plain code only. Do not include schema definitions, validation harness helpers, or synthetic validator-only "
-            "parameters unless they already exist in source query code. This corresponds to the example code methods named `QueryX` or `queryX` inside main entry point class or in own classes. See examples in target_validation_harness_code description."
+            "parameters unless they already exist in source query code. This corresponds to the example code methods named `QueryX` or `queryX` inside main entry point class or in own classes. See examples in target_validation_harness_code description. Return as a list of strings (one string per line)."
         )
     )
-    source_validation_schema_code: str | None = Field(
+    source_validation_schema_code: Union[list[str], str] = Field(
         min_length=1,
         description="Source schema validation code. This should include imports, serialization, runtime config, context/session/config/bootstrap setup, and any other code needed to run the query, but should keep "
-        "the Schema and Related Settings logic equivalent to the original source_schema_code (without JSON serialization related annotations). Should be fully valid and runnable code with entrypoint. Include simple one-entity fetch queries to validate each entity (see examples). Do not include source query related code here. See examples."
+        "the Schema and Related Settings logic equivalent to the original source_schema_code (without JSON serialization related annotations). Should be fully valid and runnable code with entrypoint. Include simple one-entity fetch queries to validate each entity (see examples). Do not include source query related code here. See examples. Return as a list of strings (one string per line)."
     )
-    source_validation_harness_code: str | None = Field(
+    source_validation_harness_code: Union[list[str], str] = Field(
         min_length=1,
         description=(
             "The full execution harness code for the SOURCE queries, including the source schema, query methods, any necessary helper classes/records, and the main entry point "
-            "that executes the source queries and writes the resulting JSON to the environment path. See examples."
+            "that executes the source queries and writes the resulting JSON to the environment path. See examples. Return as a list of strings (one string per line)."
         )
     )
     source_validation_entry_type_name: str = Field(
         min_length=1,
-        description="The name of the main entry point type (e.g., class) in the source validation  code. This is needed to run the code and should be declared in the source_validation_schema_code or source_validation_harness_code. See examples."
+        description="The name of the main entry point type (e.g., class) in the source validation code. This is needed to run the code and should be declared in the source_validation_schema_code or source_validation_harness_code. Type name should be just the name of the class/type, without namespace or module prefix. Examples: `EFCoreQueryEntrypoint`, `NHibernateQueryEntrypoint`, `DapperQueryEntrypoint`"
     )
-    target_validation_schema_code: str | None = Field(
+    target_validation_schema_code: Union[list[str], str] = Field(
         min_length=1,
         description="Target schema validation code. This should include imports, serialization, runtime config, context/session/config/bootstrap setup, and any other code needed to run the query, but should keep "
-        "the Schema and Related Settings logic equivalent to the original translated_schema_code (without JSON serialization related annotations). Should be fully valid and runnable code with entrypoint. Include simple one-entity fetch queries to validate each entity (see examples). Do not include target query related code here.",
+        "the Schema and Related Settings logic equivalent to the original translated_schema_code (without JSON serialization related annotations). Should be fully valid and runnable code with entrypoint. Include simple one-entity fetch queries to validate each entity (see examples). Do not include target query related code here. Return as a list of strings (one string per line)."
     )
-    target_validation_harness_code: str | None = Field(
+    target_validation_harness_code: Union[list[str], str] = Field(
         min_length=1,
         description=(
             "The full execution harness code for the translated TARGET queries, including the translated query methods, any necessary helper classes/records, and the main entry point "
-            "that executes the target queries and writes the resulting JSON to the environment path. See examples."
+            "that executes the target queries and writes the resulting JSON to the environment path. See examples. Return as a list of strings (one string per line)."
         )
     )
     target_validation_entry_type_name: str = Field(
         min_length=1,
-        description="The name of the main entry point type (e.g., class) in the target validation code. This is needed to run the code and should be declared in the source_validation_schema_code or target_validation_harness_code. See examples."
+        description="The name of the main entry point type (e.g., class) in the target validation code. This is needed to run the code and should be declared in the source_validation_schema_code or target_validation_harness_code. Type name should be just the name of the class/type, without namespace or module prefix. Examples: `MongoQueryEntrypoint`, `Neo4jQueryEntrypoint`"
     )
     
     @model_validator(mode='after')
     def check_entrypoint_names(self):
+        # First, join any list fields into strings
+        if isinstance(self.translated_schema_code, list):
+            self.translated_schema_code = "\n".join(self.translated_schema_code)
+        if isinstance(self.translated_query_code, list):
+            self.translated_query_code = "\n".join(self.translated_query_code)
+        if isinstance(self.source_validation_schema_code, list):
+            self.source_validation_schema_code = "\n".join(self.source_validation_schema_code)
+        if isinstance(self.source_validation_harness_code, list):
+            self.source_validation_harness_code = "\n".join(self.source_validation_harness_code)
+        if isinstance(self.target_validation_schema_code, list):
+            self.target_validation_schema_code = "\n".join(self.target_validation_schema_code)
+        if isinstance(self.target_validation_harness_code, list):
+            self.target_validation_harness_code = "\n".join(self.target_validation_harness_code)
+
         errors = []
         if "source_validation_harness_code" in self.__dict__:
-            if self.source_validation_harness_code and self.source_validation_entry_type_name not in self.source_validation_harness_code:
+            if self.source_validation_harness_code is not None and self.source_validation_entry_type_name not in self.source_validation_harness_code:
                 errors.append(ValueError("source_validation_entry_type_name must be declared in source_validation_harness_code."))
         if "source_validation_schema_code" in self.__dict__:
-            if self.source_validation_schema_code and self.source_validation_entry_type_name not in self.source_validation_schema_code:
+            if self.source_validation_schema_code is not None and self.source_validation_entry_type_name not in self.source_validation_schema_code:
                 errors.append(ValueError("source_validation_entry_type_name must be declared in source_validation_schema_code."))
         if "target_validation_harness_code" in self.__dict__:
-            if self.target_validation_harness_code and self.target_validation_entry_type_name not in self.target_validation_harness_code:
+            if self.target_validation_harness_code is not None and self.target_validation_entry_type_name not in self.target_validation_harness_code:
                 errors.append(ValueError("target_validation_entry_type_name must be declared in target_validation_harness_code."))
         if "target_validation_schema_code" in self.__dict__:
-            if self.target_validation_schema_code and self.target_validation_entry_type_name not in self.target_validation_schema_code:
+            if self.target_validation_schema_code is not None and self.target_validation_entry_type_name not in self.target_validation_schema_code:
                 errors.append(ValueError("target_validation_entry_type_name must be declared in target_validation_schema_code."))
         if errors:
             raise ExceptionGroup("Validation entry type name checks failed", errors)
@@ -175,13 +204,14 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
     if state.translation_type == TranslationType.SCHEMA:
         output_schema_overrides = {
             "translated_query_code": {
+                "annotation": None | MISSING,
                 "attributes": {
-                    "default": None,
+                    "default": MISSING,
                     "exclude": True,
                 }
             },
             "source_validation_schema_code": {
-                "annotation": str,
+                "annotation": Union[list[str], str],
                 "attributes": {
                     "description": base_model_fields["source_validation_schema_code"].description + 
                     await create_example_for_prompt(state.source_target, True) 
@@ -189,13 +219,14 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
                 }
             },
             "source_validation_harness_code": {
+                "annotation": None | MISSING,
                 "attributes": {
-                    "default": None,
+                    "default": MISSING,
                     "exclude": True,
                 }
             },
             "target_validation_schema_code": {
-                "annotation": str,
+                "annotation": Union[list[str], str],
                 "attributes": {
                     "description": base_model_fields["target_validation_schema_code"].description + 
                     await create_example_for_prompt(state.destination_target, True) 
@@ -203,8 +234,9 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
                 }
             },
             "target_validation_harness_code": {
+                "annotation": None | MISSING,
                 "attributes": {
-                    "default": None,
+                    "default": MISSING,
                     "exclude": True,
                 }
             }
@@ -212,13 +244,14 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
     elif state.translation_type == TranslationType.QUERY or state.translation_type == TranslationType.BOTH:
         output_schema_overrides = {
             "source_validation_schema_code": {
+                "annotation": None | MISSING,
                 "attributes": {
-                    "default": None,
+                    "default": MISSING,
                     "exclude": True,
                 }
             },
             "source_validation_harness_code": {
-                "annotation": str,
+                "annotation": Union[list[str], str],
                 "attributes": {
                     "description": base_model_fields["source_validation_harness_code"].description + 
                     await create_example_for_prompt(state.source_target, False) 
@@ -226,13 +259,14 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
                 }
             },
             "target_validation_schema_code": {
+                "annotation": None | MISSING,
                 "attributes": {
-                    "default": None,
+                    "default": MISSING,
                     "exclude": True,
                 }
             },
             "target_validation_harness_code": {
-                "annotation": str,
+                "annotation": Union[list[str], str],
                 "attributes": {
                     "description": base_model_fields["target_validation_harness_code"].description + 
                     await create_example_for_prompt(state.destination_target, False) 
@@ -240,7 +274,7 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
                 }
             }
         }
-    return override_pydantic_model_schema(BaseTranslationOutput, output_schema_overrides)
+    return override_pydantic_model_schema(BaseTranslationOutput, output_schema_overrides, model_name="TranslationOutput")
 
 
 def is_input_extracted(state: State) -> bool:
@@ -281,7 +315,7 @@ async def extract_input(
     extraction_agent = create_agent(
         await get_model(config, runtime, AvailableModel.EINFRA_QWEN3_CODER_30B, temperature=0),
         system_prompt=system_prompt,
-        response_format=ProviderStrategy(ExtractionOutput, strict=True),
+        response_format=ExtractionOutput,
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
@@ -420,7 +454,7 @@ async def translation_agent(
     agent = create_agent(
         model,
         tools=all_tools,
-        response_format=ProviderStrategy(BaseTranslationOutput, strict=True),
+        response_format=BaseTranslationOutput,
         system_prompt=system_prompt,
         middleware=[
             ModelRetryMiddleware(),
@@ -510,7 +544,7 @@ Source Code:
         "messages": response["messages"],
         "translation_messages": response["messages"],
     }
-    updates.update(output.model_dump(exclude_unset=True, exclude_defaults=True))
+    updates.update(output.model_dump(warnings="error", exclude_unset=True))
 
     return updates
 
@@ -518,11 +552,10 @@ Source Code:
 async def generate_translation_node(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ) -> dict[str, Any]:
-    """Deterministically generate the translation using structured LLM output."""
+    """Deterministically generate the translation using structured LLM output via a React Agent without tools."""
     TranslationOutput = await _create_translation_output_model(state)
     
-    model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0)
-    structured_llm = model.with_structured_output(TranslationOutput, strict=True)
+    model = await get_model(config, runtime, temperature=0)
 
     system_prompt = await build_system_prompt(state, datetime.now(tz=UTC).isoformat())
 
@@ -532,34 +565,44 @@ Source Code:
 {f"<source_schema_code>\n{state.source_schema_code}\n</source_schema_code>" if state.source_schema_code else ""}{f"\n<source_query_code>\n{state.source_query_code}\n</source_query_code>" if state.source_query_code else ""}
 """
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        *state.translation_messages,
-    ]
-    if len(state.translation_messages) == 0:
-        messages.append(HumanMessage(content=message))
+    agent = create_agent(
+        model,
+        response_format=TranslationOutput,
+        system_prompt=system_prompt,
+        middleware=[
+            ModelRetryMiddleware(),
+            ModelFallbackMiddleware(
+                await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0),
+                await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0),
+                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
+            ),
+            ToolRetryMiddleware(),
+        ],
+    )
 
-    # Invoke LLM
-    response = await structured_llm.ainvoke(messages)
+    # Invoke the agent
+    response = await agent.ainvoke(
+        {
+            "messages": [*state.translation_messages]
+            if len(state.translation_messages) > 0
+            else [HumanMessage(content=message)]
+        }
+    )
 
     updates: dict[str, Any] = {
         "translation_loop_count": state.translation_loop_count + 1,
     }
 
-    if not isinstance(response, TranslationOutput):
+    if "structured_response" not in response:
         logger.warning("LLM did not return TranslationOutput properly.")
         return updates
 
-    updates.update(response.model_dump(exclude_unset=True))
+    output = response["structured_response"]
+    updates.update(output.model_dump(warnings="error", exclude_unset=True))
 
-    # Add AI response to the history so next iterations have the context
-    from langchain_core.messages import AIMessage
-
-    updates["translation_messages"] = [
-        AIMessage(
-            content="Generated translation. Commencing deterministic validation..."
-        )
-    ]
+    updates["translation_messages"] = AIMessage(
+        content="Generated translation. Commencing deterministic validation..."
+    )
 
     return updates
 
@@ -571,108 +614,95 @@ async def human_intervention_node(
     return {}
 
 
-async def validate_schema_node(
-    state: State, config: RunnableConfig, runtime: Runtime[Context]
-) -> dict[str, Any]:
-    """Execute schema validation deterministically outside the LLM."""
-    from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
-    from react_agent.custom_tools.java_validator import validate_java_code
-
-    code = state.target_validation_harness_code
-    if not code:
-        return {}
-
+def prep_schema_validation(state: State) -> dict[str, Any]:
+    """Inject ToolCalls into state for schema validation."""
+    tool_calls = []
     target = state.destination_target
-    if not target:
-        return {}
+    if target and target.value in DotnetFramework:
+        tool_calls.append({
+            "name": "validate_dotnet_code",
+            "args": {
+                "source_code": state.target_validation_harness_code.strip() if state.target_validation_harness_code else "",
+                "framework": target.value,
+            },
+            "id": "schema_val_1",
+            "type": "tool_call"
+        })
+    elif target and target.value in JavaFramework:
+        tool_calls.append({
+            "name": "validate_java_code",
+            "args": {
+                "source_code": state.target_validation_harness_code.strip() if state.target_validation_harness_code else "",
+                "framework": target.value,
+                "entry_type_name": state.target_validation_entry_type_name or "ValidationEntryPoint",
+            },
+            "id": "schema_val_1",
+            "type": "tool_call"
+        })
+    return {"translation_messages": [AIMessage(content="", tool_calls=tool_calls)]}
+
+
+def prep_query_validation(state: State) -> dict[str, Any]:
+    """Inject ToolCalls into state for parallel query validation."""
+    tool_calls = [
+        {
+            "name": "validate_source_query",
+            "args": {"validation_harness_code": state.source_validation_harness_code or ""},
+            "id": "query_val_1",
+            "type": "tool_call"
+        },
+        {
+            "name": "validate_target_query",
+            "args": {"validation_harness_code": state.target_validation_harness_code or ""},
+            "id": "query_val_2",
+            "type": "tool_call"
+        }
+    ]
+    return {"translation_messages": [AIMessage(content="", tool_calls=tool_calls)]}
+
+
+def prep_query_equivalence(state: State) -> dict[str, Any]:
+    """Inject ToolCall for check_query_equivalence if both validations passed."""
+    last_msgs = state.translation_messages[-2:] if len(state.translation_messages) >= 2 else []
+    src_str = str(last_msgs[0].content) if len(last_msgs) >= 2 else ""
+    tgt_str = str(last_msgs[1].content) if len(last_msgs) >= 2 else ""
     
-    result: dict[Literal["output", "json"], str] = {}
-    if target.value in DotnetFramework:
-        result = await validate_dotnet_code.ainvoke(
-            {
-                "source_code": code.strip(),
-                "framework": DotnetFramework(target.value),
-            }
-        )
-    elif target.value in JavaFramework:
-        result= await validate_java_code.ainvoke(
-            {
-                "source_code": code.strip(),
-                "framework": JavaFramework(target.value),
-                "entry_type_name": state.target_validation_entry_type_name,
-            }
-        )
-
-    return {"translation_messages": [HumanMessage(content=str(result["output"]))]}
-
-
-async def validate_query_node(
-    state: State, config: RunnableConfig, runtime: Runtime[Context]
-) -> dict[str, Any]:
-    """Execute query validation tools in parallel deterministically outside the LLM."""
-    from react_agent.custom_tools.query_validator import (
-        check_query_equivalence,
-        validate_source_query,
-        validate_target_query,
-    )
-
-    msgs = []
-
-    if not state.translated_query_code:
-        return {}
-
-    if not state.source_target or not state.destination_target:
-        return {}
-
-    src_task = validate_source_query.ainvoke(
+    tool_calls = [
         {
-            "validation_harness_code": state.source_validation_harness_code,
-        }
-    )
-
-    tgt_task = validate_target_query.ainvoke(
-        {
-            "validation_harness_code": state.target_validation_harness_code ,
-        }
-    )
-
-    src_res, tgt_res = await asyncio.gather(src_task, tgt_task, return_exceptions=True)
-
-    src_str = (
-        str(src_res)
-        if not isinstance(src_res, Exception)
-        else f"[Source Query Validation Failed] {src_res}"
-    )
-    tgt_str = (
-        str(tgt_res)
-        if not isinstance(tgt_res, Exception)
-        else f"[Target Query Validation Failed] {tgt_res}"
-    )
-
-    msgs.append(HumanMessage(content=src_str))
-    msgs.append(HumanMessage(content=tgt_str))
-
-    if (
-        "[Source Query Validation Passed]" in src_str
-        and "[Target Query Validation Passed]" in tgt_str
-    ):
-        database_mapping = await get_database_mapping_json(state.destination_target)
-
-        equiv_res = await check_query_equivalence.ainvoke(
-            {
+            "name": "check_query_equivalence",
+            "args": {
                 "source_validation_output": src_str,
                 "target_validation_output": tgt_str,
-                "mapping_json": database_mapping,
-            }
-        )
-        equiv_str = (
-            str(equiv_res)
-            if not isinstance(equiv_res, Exception)
-            else f"Error: {equiv_res}"
-        )
-        msgs.append(HumanMessage(content=equiv_str))
+            },
+            "id": "query_equiv_1",
+            "type": "tool_call"
+        }
+    ]
+    return {"translation_messages": [AIMessage(content="", tool_calls=tool_calls)]}
 
-    return {"translation_messages": msgs}
+
+validate_schema_node = ToolNode(
+    [validate_dotnet_code, validate_java_code], messages_key="translation_messages"
+)
+
+validate_query_node = ToolNode(
+    [validate_source_query, validate_target_query], messages_key="translation_messages"
+)
+
+check_query_equivalence_node = ToolNode(
+    [check_query_equivalence], messages_key="translation_messages"
+)
+
+
+def route_post_query_validation(state: State) -> Literal["prep_query_equivalence", "evaluation_node"]:
+    """Route to equivalence check if validations passed, else skip to evaluation."""
+    last_msgs = state.translation_messages[-2:] if len(state.translation_messages) >= 2 else []
+    if len(last_msgs) >= 2 and state.translation_type in [TranslationType.QUERY, TranslationType.BOTH]:
+        src_str = str(last_msgs[0].content)
+        tgt_str = str(last_msgs[1].content)
+        if "[Source Query Validation Passed]" in src_str and "[Target Query Validation Passed]" in tgt_str:
+            return "prep_query_equivalence"
+    return "evaluation_node"
 
 
 class EvaluationOutput(BaseModel):
@@ -687,16 +717,11 @@ async def evaluation_node(
 ) -> dict[str, Any]:
     """Evaluate validation outputs and deepdiff results to decide on translation acceptance."""
     model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6)
-    structured_llm = model.with_structured_output(EvaluationOutput)
 
-    last_msgs_str = (
-        [
-            msg.content if isinstance(msg.content, str) else str(msg.content)
-            for msg in state.translation_messages[-3:]
-        ]
-        if len(state.translation_messages) >= 3
-        else []
-    )
+    last_msgs_str = [
+        msg.content if isinstance(msg.content, str) else str(msg.content)
+        for msg in state.translation_messages[-4:]
+    ]
 
     prompt = f"""Evaluate the following validation results for a schema/query translation.
 Based on the validation output and DeepDiff equivalence results, decide if the translation is ACCEPTABLE or if it should be REJECTED and retried.
@@ -705,9 +730,22 @@ Validation Results:
 {chr(10).join(last_msgs_str)}
 Is the translation logically equivalent and syntactically valid? Provide your reasoning and output ACCEPT or REJECT.
 """
+    agent = create_agent(
+        model,
+        response_format=EvaluationOutput,
+        middleware=[
+            ModelRetryMiddleware(),
+            ModelFallbackMiddleware(
+                await get_model(config, runtime, AvailableModel.EINFRA_THINKER),
+                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B),
+            ),
+            ToolRetryMiddleware(),
+        ],
+    )
+
     try:
-        response = await structured_llm.ainvoke([{"role": "user", "content": prompt}])
-        if not isinstance(response, EvaluationOutput):
+        response = await agent.ainvoke({"messages": [HumanMessage(content=prompt)]})
+        if "structured_response" not in response:
             return {
                 "translation_messages": [
                     HumanMessage(
@@ -716,11 +754,11 @@ Is the translation logically equivalent and syntactically valid? Provide your re
                 ]
             }
 
+        output = response["structured_response"]
+
         return {
-            "explanation_message": response.explanation,
-            "translation_messages": [
-                HumanMessage(content=f"[{response.decision}] {response.explanation}")
-            ],
+            "explanation_message": output.explanation,
+            "translation_messages": [HumanMessage(content=f"[{output.decision}] {output.explanation}")]
         }
     except Exception as e:
         logger.error(f"Evaluation node failed: {e}")
@@ -757,22 +795,22 @@ def should_extract_input(state: State) -> Literal["schema_inspection", "extract_
 
 def route_post_translation(
     state: State,
-) -> Literal["validate_schema_node", "validate_query_node"]:
-    """Route from translation generator to the first applicable validation node."""
+) -> Literal["prep_schema_validation", "prep_query_validation"]:
+    """Route from translation generator to the first applicable validation prep node."""
     if state.translation_type == TranslationType.SCHEMA:
-        return "validate_schema_node"
-    return "validate_query_node"
+        return "prep_schema_validation"
+    return "prep_query_validation"
 
 
 def route_post_schema_validation(
     state: State,
 ) -> Literal[
-    "validate_query_node",
+    "prep_query_validation",
     "generate_translation_node",
     "human_intervention_node",
     "__end__",
 ]:
-    """Route from validate_schema to validate_query or handle validation failure."""
+    """Route from validate_schema to validate_query prep or handle validation failure."""
     last_msg = (
         state.translation_messages[-1].content if state.translation_messages else ""
     )
@@ -782,10 +820,11 @@ def route_post_schema_validation(
         return "generate_translation_node"
 
     if state.translation_type == TranslationType.BOTH:
-        return "validate_query_node"
+        return "prep_query_validation"
     return "__end__"
 
-async def build_graph(**kwargs):
+
+async def build_graph():
     """Build the LangGraph StateGraph with the defined nodes and edges, and return the graph instance."""
     # Observability
     langfuse = get_client()
@@ -800,12 +839,6 @@ async def build_graph(**kwargs):
 
     # Initialize Langfuse CallbackHandler for Langchain (tracing)
     langfuse_handler = CallbackHandler()
-
-    logfire.configure()
-    logfire.instrument_openai()
-    logfire.instrument_httpx()
-    logfire.instrument_aiohttp_client()
-    logging.basicConfig(handlers=[logfire.LogfireLoggingHandler()])
 
     # Build the graph
 
@@ -832,8 +865,12 @@ async def build_graph(**kwargs):
     )
     builder.add_node(human_intervention_node) # pyright: ignore[reportArgumentType]
 
-    builder.add_node(validate_schema_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
-    builder.add_node(validate_query_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
+    builder.add_node("prep_schema_validation", prep_schema_validation)
+    builder.add_node("prep_query_validation", prep_query_validation)
+    builder.add_node("validate_schema_node", validate_schema_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
+    builder.add_node("validate_query_node", validate_query_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
+    builder.add_node("prep_query_equivalence", prep_query_equivalence)
+    builder.add_node("check_query_equivalence_node", check_query_equivalence_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
     builder.add_node(evaluation_node, retry_policy=RetryPolicy(max_attempts=3)) # pyright: ignore[reportArgumentType]
 
     builder.add_conditional_edges(START, should_extract_input)
@@ -841,27 +878,26 @@ async def build_graph(**kwargs):
     builder.add_edge("schema_inspection", "generate_translation_node")
 
     builder.add_conditional_edges("generate_translation_node", route_post_translation)
+    builder.add_edge("prep_schema_validation", "validate_schema_node")
     builder.add_conditional_edges("validate_schema_node", route_post_schema_validation)
-    builder.add_edge("validate_query_node", "evaluation_node")
+    
+    builder.add_edge("prep_query_validation", "validate_query_node")
+    builder.add_conditional_edges("validate_query_node", route_post_query_validation)
+    builder.add_edge("prep_query_equivalence", "check_query_equivalence_node")
+    builder.add_edge("check_query_equivalence_node", "evaluation_node")
+    
     builder.add_conditional_edges("evaluation_node", route_post_evaluation)
     builder.add_edge("human_intervention_node", "generate_translation_node")
-    
-    # Initialize the Daytona client
-    async with AsyncDaytona() as daytona:
-        # Create the Sandbox instances
-        for sandbox_type in SandboxType:
-            await ValidationSandbox.create_validation_sandbox(daytona, sandbox_type)
 
-        graph = builder.compile(
-            name="UOM Orchestrator Workflow",
-            interrupt_before=["human_intervention_node"],
-            # checkpointer=checkpointer,
-            # store=store,
-            cache=cache,
-            # debug=True if os.getenv("DEVELOPMENT") else False,
-            **kwargs
-        ).with_config({"callbacks": CallbackManager([langfuse_handler, LoggingCallbackHandler()])})
-        
-        return graph
+    graph = builder.compile(
+        name="UOM Orchestrator Workflow",
+        interrupt_before=["human_intervention_node"],
+        # checkpointer=checkpointer,
+        # store=store,
+        cache=cache,
+        # debug=True if os.getenv("DEVELOPMENT") else False,
+    ).with_config({"callbacks": CallbackManager([langfuse_handler, LoggingCallbackHandler()])})
+    
+    return graph
 
 # logger.info(graph.get_graph().draw_mermaid())
