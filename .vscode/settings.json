@@ -24,9 +24,9 @@
     "${workspaceFolder}/services/orchestrator/tests"
   ],
   "python.analysis.inlayHints.pytestParameters": true,
-  "python.languageServer": "Pylance",
+  // "python.languageServer": "Pylance",
   // if using Pylance in VSCode
-  "ty.disableLanguageServices": true,
+  "ty.disableLanguageServices": false,
   "sqltools.connections": [
     {
       "ssh": "Disabled",

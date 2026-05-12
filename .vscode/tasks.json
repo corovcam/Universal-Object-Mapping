@@ -43,5 +43,17 @@
       "command": "sudo mkdir /run/user/1000 && sudo chown -R $USER:$USER /run/user/1000",
       "problemMatcher": []
     },
+    {
+      "label": "Setup Windows proxy DNS for Daytona",
+      "type": "shell",
+      "command": "sudo.exe powershell -ExecutionPolicy Bypass -File ./services/orchestrator/scripts/daytona-setup-proxy-dns.ps1",
+      "problemMatcher": []
+    },
+    {
+      "label": "Reset Windows proxy DNS for Daytona",
+      "type": "shell",
+      "command": "sudo.exe powershell -ExecutionPolicy Bypass -File ./services/orchestrator/scripts/daytona-reset-proxy-dns.ps1",
+      "problemMatcher": []
+    },
   ]
 }
