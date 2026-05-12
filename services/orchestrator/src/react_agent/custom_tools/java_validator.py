@@ -104,11 +104,11 @@ fi
             else:
                 json_part = f"\n===JSON ERROR===\nFailed to fetch JSON from {remote_path}."
 
-            return f"[Java Validation Passed] Validation successful. Framework targeted: {framework.value}\n{output[-1500:]}", json_part
+            return f"[Java Validation Passed] Validation successful. Framework targeted: {framework.value}\n{output}", json_part
         else:
-            return f"[Java Validation Failed] No JSON path found in output.\n{output[-2000:]}", None
+            return f"[Java Validation Failed] No JSON path found in output.\n{output}", None
     else:
-        return f"[Java Validation Failed]\n{output[-2000:]}", None
+        return f"[Java Validation Failed]\n{output}", None
 
 
 @tool("validate_java_code", args_schema=JavaValidationInput)
