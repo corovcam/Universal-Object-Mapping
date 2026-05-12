@@ -3,9 +3,6 @@
 Loads tools from the running MCP Toolbox for Databases server, which provides
 prebuilt tools for MSSQL and Neo4j, plus custom MongoDB tools defined in
 database_tools.yaml.
-
-Also provides a native Python tool for listing MongoDB collections, since
-the genai-toolbox does not support $listCollections as an aggregate stage.
 """
 
 import logging
@@ -14,42 +11,15 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
 from anyio import BrokenResourceError
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.runtime import get_runtime
-from pymongo import AsyncMongoClient
 from toolbox_langchain import ToolboxClient
 
 from react_agent.context import Context
 
 logger = logging.getLogger(__name__)
-
-
-@tool("list_mongodb_collections")
-async def list_mongodb_collections() -> str:
-    """List all collection names in the MongoDB database.
-
-    Use this tool first to discover which collections exist before
-    inspecting their schemas or querying documents.
-    """
-    runtime = get_runtime(Context)
-    uri = runtime.context.mongodb_uri
-    db_name = runtime.context.mongodb_database
-
-    try:
-        async with AsyncMongoClient(uri) as client:
-            db = client[db_name]
-            collections = await db.list_collection_names()
-        logger.info("Collections in '%s': %s", db_name, collections)
-
-        if not collections:
-            return f"No collections found in database '{db_name}'."
-
-        return f"Collections in '{db_name}': {collections}"
-    except Exception as e:
-        logger.warning("Failed to list MongoDB collections.", exc_info=True)
-        return f"Error listing collections: {e}"
 
 
 @asynccontextmanager
