@@ -315,7 +315,7 @@ async def extract_input(
     extraction_agent = create_agent(
         await get_model(config, runtime, AvailableModel.EINFRA_QWEN3_CODER_30B, temperature=0),
         system_prompt=system_prompt,
-        response_format=ExtractionOutput,
+        response_format=ProviderStrategy(ExtractionOutput, strict=True),
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
@@ -454,7 +454,7 @@ async def translation_agent(
     agent = create_agent(
         model,
         tools=all_tools,
-        response_format=BaseTranslationOutput,
+        response_format=ProviderStrategy(BaseTranslationOutput, strict=True),
         system_prompt=system_prompt,
         middleware=[
             ModelRetryMiddleware(),
@@ -566,7 +566,7 @@ Source Code:
 
     agent = create_agent(
         model,
-        response_format=TranslationOutput,
+        response_format=ProviderStrategy(TranslationOutput, strict=True),
         system_prompt=system_prompt,
         middleware=[
             ModelRetryMiddleware(),
@@ -731,7 +731,7 @@ Is the translation logically equivalent and syntactically valid? Provide your re
 """
     agent = create_agent(
         model,
-        response_format=EvaluationOutput,
+        response_format=ProviderStrategy(EvaluationOutput, strict=True),
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
