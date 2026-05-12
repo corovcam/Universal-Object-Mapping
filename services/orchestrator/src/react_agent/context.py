@@ -131,6 +131,11 @@ class ValidationSandbox:
             # .add_local_file(os.path.join(os.getenv("CONTEXT_ABSOLUTE_PATH", ""), "/snippets/mongo-pom.xml") if os.getenv("CONTEXT_ABSOLUTE_PATH") else os.path.join(os.getcwd(), "src/context/snippets/mongo-pom.xml"), "mongo-pom.xml")
             # .dockerfile(),
     }
+    
+    @staticmethod
+    async def get_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType) -> AsyncSandbox:
+        await ValidationSandbox.initialize_validation_sandbox(daytona, sandbox_type)
+        return ValidationSandbox.SANDBOXES[sandbox_type]
   
     @staticmethod
     async def initialize_validation_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType) -> None:

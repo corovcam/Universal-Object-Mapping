@@ -3,14 +3,22 @@ import base64
 import logging
 import os
 from datetime import datetime
-from typing import Literal, cast
+from typing import cast
 
 from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from react_agent.constants import FrameworkEnum, JavaFramework, TranslationType
-from react_agent.custom_tools.ssh_tools import execute_in_sandbox, scp_from_sandbox
+from react_agent.constants import (
+    FrameworkEnum,
+    JavaFramework,
+    SandboxType,
+    TranslationType,
+)
+from react_agent.custom_tools.sandbox_tools import (
+    download_file_from_sandbox,
+    execute_in_sandbox,
+)
 from react_agent.utils.utils import get_framework_config_content
 
 logger = logging.getLogger(__name__)
@@ -62,44 +70,45 @@ mkdir -p "{results_dir}"
 echo "{pom_b64}" | base64 -d > "{sandbox_dir}/pom.xml"
 echo "{java_b64}" | base64 -d > "{src_dir}/{entry_type_name}.java"
 cd "{sandbox_dir}"
-mvn -B --no-transfer-progress dependency:resolve clean compile
+mvn -q -B --no-transfer-progress dependency:resolve clean compile
 """
     if source_code.strip():
-        script += f"mvn -B --no-transfer-progress exec:java -Dexec.mainClass=\"uom.services.{entry_type_name}\" -Dexec.classpathScope=compile"
+        script += f"mvn -q -B --no-transfer-progress exec:java -Dexec.mainClass=\"uom.services.{entry_type_name}\" -Dexec.classpathScope=compile"
         if translation_type in [TranslationType.QUERY, TranslationType.BOTH]:
             script += f"""
 NEWEST_JSON=$(ls -t "{results_dir}"/*.json 2>/dev/null | head -n 1)
 if [ -n "$NEWEST_JSON" ]; then
-    echo "JSON_PATH=$NEWEST_JSON"
+    printf "\nJSON_PATH=%s\n" "$NEWEST_JSON"
 fi
 """
 
     try:
-        output = await execute_in_sandbox.ainvoke(
-            {"service_name": "java-service", "command": script}
+        result = await execute_in_sandbox.ainvoke(
+            {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "command": script}
         )
+        output: str = result[0]
+        exit_code: int = result[1]
     except Exception as e:
         logger.error("[Error] Java sandbox execution failed", exc_info=True)
         return f"[Error] Java sandbox execution failed: {e}", None
 
-    if "BUILD SUCCESS" in output:
-        json_part = None
-        json_path_line = [
-            line for line in output.splitlines() if line.startswith("JSON_PATH=")
-        ]
-        if json_path_line:
-            remote_path = json_path_line[0].split("=")[1].strip()
-            json_content = await scp_from_sandbox.ainvoke(
-                {"service_name": "java-service", "remote_path": remote_path}
+    json_path_line = next((line for line in reversed(output.splitlines()) if line.startswith("JSON_PATH=")), None)
+    if exit_code == 0:
+        if json_path_line is not None:
+            remote_path = json_path_line.split("=")[1].strip()
+            json_content = await download_file_from_sandbox.ainvoke(
+                {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "remote_path": remote_path}
             )
-            if not json_content.startswith("[SCP Error]"):
+            if not json_content.startswith("[Daytona Error]"):
                 json_part = json_content
             else:
-                json_part = f"\\n===JSON ERROR===\\nFailed to fetch JSON from {remote_path}."
-        
-        return f"[Java Validation Passed] Validation successful. Framework targeted: {framework.value}\\n{output[-1500:]}", json_part
+                json_part = f"\n===JSON ERROR===\nFailed to fetch JSON from {remote_path}."
+
+            return f"[Java Validation Passed] Validation successful. Framework targeted: {framework.value}\n{output[-1500:]}", json_part
+        else:
+            return f"[Java Validation Failed] No JSON path found in output.\n{output[-2000:]}", None
     else:
-        return f"[Java Compilation Failed] {output[-2000:]}", None
+        return f"[Java Validation Failed]\n{output[-2000:]}", None
 
 
 @tool("validate_java_code", args_schema=JavaValidationInput)

@@ -3,14 +3,22 @@ import base64
 import logging
 import os
 from datetime import datetime
-from typing import Literal, cast
+from typing import cast
 
 from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from react_agent.constants import DotnetFramework, FrameworkEnum, TranslationType
-from react_agent.custom_tools.ssh_tools import execute_in_sandbox, scp_from_sandbox
+from react_agent.constants import (
+    DotnetFramework,
+    FrameworkEnum,
+    SandboxType,
+    TranslationType,
+)
+from react_agent.custom_tools.sandbox_tools import (
+    download_file_from_sandbox,
+    execute_in_sandbox,
+)
 from react_agent.utils.utils import get_framework_config_content
 
 logger = logging.getLogger(__name__)
@@ -61,36 +69,37 @@ dotnet build
 # Output newest json file path
 NEWEST_JSON=$(ls -t "{results_dir}"/*.json 2>/dev/null | head -n 1)
 if [ -n "$NEWEST_JSON" ]; then
-    echo "JSON_PATH=$NEWEST_JSON"
+    printf "\nJSON_PATH=%s\n" "$NEWEST_JSON"
 fi
 """
 
     try:
-        output = await execute_in_sandbox.ainvoke(
-            {"service_name": "dotnet-service", "command": script}
+        result = await execute_in_sandbox.ainvoke(
+            {"sandbox_type": SandboxType.DOTNET_10_SANDBOX, "command": script}
         )
+        output: str = result[0]
+        exit_code: int = result[1]
     except Exception as e:
         logger.error("[Error] Dotnet sandbox execution failed", exc_info=True)
         return f"[Error] Dotnet sandbox execution failed: {e}", None
 
-    if "Build succeeded" in output:
-        json_part = None
-        json_path_line = [
-            line for line in output.splitlines() if line.startswith("JSON_PATH=")
-        ]
-        if json_path_line:
-            remote_path = json_path_line[0].split("=")[1].strip()
-            json_content = await scp_from_sandbox.ainvoke(
-                {"service_name": "dotnet-service", "remote_path": remote_path}
+    json_path_line = next((line for line in reversed(output.splitlines()) if line.startswith("JSON_PATH=")), None)
+    if exit_code == 0:
+        if json_path_line is not None:
+            remote_path = json_path_line.split("=")[1].strip()
+            json_content = await download_file_from_sandbox.ainvoke(
+                {"sandbox_type": SandboxType.DOTNET_10_SANDBOX, "remote_path": remote_path}
             )
-            if not json_content.startswith("[SCP Error]"):
+            if not json_content.startswith("[Daytona Error]"):
                 json_part = json_content
             else:
-                json_part = f"\\n===JSON ERROR===\\nFailed to fetch JSON from {remote_path}."
+                json_part = f"\n===JSON ERROR===\nFailed to fetch JSON from {remote_path}."
 
-        return f"[Dotnet Validation Passed] Validation successful. Framework targeted: {framework.value}\\n{output[-1500:]}", json_part
+            return f"[Dotnet Validation Passed] Validation successful. Framework targeted: {framework.value}\n{output[-1500:]}", json_part
+        else:
+            return f"[Dotnet Validation Failed] No JSON path found in output.\n{output[-2000:]}", None
     else:
-        return f"[Dotnet Compilation Failed] {output[-2000:]}", None
+        return f"[Dotnet Validation Failed]\n{output[-2000:]}", None
 
 
 @tool("validate_dotnet_code", args_schema=DotnetValidationInput)
