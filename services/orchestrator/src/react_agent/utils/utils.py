@@ -2,7 +2,7 @@
 import logging
 import os
 import re
-from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 import aiofiles
 import httpx
@@ -24,9 +24,7 @@ from react_agent.constants import (
 )
 from react_agent.context import Context
 from react_agent.utils.request_logging import LLMRequestLogger
-
-if TYPE_CHECKING:
-    from react_agent.utils.types import FrameworkType
+from react_agent.utils.types import FrameworkType
 
 logger = logging.getLogger(__name__)
 llm_request_logger = LLMRequestLogger()

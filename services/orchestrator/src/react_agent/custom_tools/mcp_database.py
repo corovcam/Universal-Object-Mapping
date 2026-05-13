@@ -35,31 +35,12 @@ async def load_database_tools() -> AsyncGenerator[list[BaseTool], None]:
     """
     runtime = get_runtime(Context)
     toolbox_uri = runtime.context.db_toolbox_uri
+    mongodb_mcp_uri = runtime.context.mongodb_mcp_uri
 
     custom_db_mcp_servers: dict[str, Any] = {
         "mongodb": {
-            "transport": "stdio",
-            "command": "npx",
-            "args": ["-y", "mongodb-mcp-server@latest", "--readOnly"],
-            "env": {
-                "MDB_MCP_CONNECTION_STRING": runtime.context.mongodb_uri,
-                "MDB_MCP_DISABLED_TOOLS": "create,update,delete,switch-connection,atlas-local-list-deployments,atlas-local-create-deployment,atlas-local-connect-deployment,atlas-local-delete-deployment,list-knowledge-sources,search-knowledge,export,collection-storage-size,collection-indexes,db-stats,mongodb-logs,connect",
-            },
-            # "disabledTools": [
-            #     "switch-connection",
-            #     "atlas-local-list-deployments",
-            #     "atlas-local-create-deployment",
-            #     "atlas-local-connect-deployment",
-            #     "atlas-local-delete-deployment",
-            #     "list-knowledge-sources",
-            #     "search-knowledge",
-            #     "export",
-            #     "collection-storage-size",
-            #     "collection-indexes",
-            #     "db-stats",
-            #     "mongodb-logs",
-            #     "connect",
-            # ],
+            "transport": "streamable_http",
+            "url": mongodb_mcp_uri,
         }
     }
 
@@ -87,18 +68,18 @@ async def load_database_tools() -> AsyncGenerator[list[BaseTool], None]:
                     )
                     yield tools
                     mcp_client_yielded = True
-            except* (BrokenResourceError, CancelledError, Exception):
+            except* (BrokenResourceError, CancelledError, RuntimeError, Exception):
                 if not mcp_client_yielded:
                     logger.warning(
                         "Failed to load tools from MongoDB MCP server with URI %s.",
-                        runtime.context.mongodb_uri,
+                        mongodb_mcp_uri,
                         exc_info=True,
                     )
                     yield tools  # Yield toolbox tools even if MCP tools failed
                 else:
                     logger.debug(
                         "Error details for MongoDB MCP server failure with URI %s.",
-                        runtime.context.mongodb_uri,
+                        mongodb_mcp_uri,
                         exc_info=True,
                     )
     except Exception:

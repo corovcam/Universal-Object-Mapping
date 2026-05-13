@@ -3,7 +3,6 @@
 # ty:ignore[invalid-type-form]
 
 """Define the Universal Object Mapping orchestrator graph."""
-import asyncio
 import json
 import logging
 import os
@@ -22,16 +21,15 @@ from langchain.agents.middleware import (
 from langchain.agents.structured_output import ProviderStrategy
 from langchain.messages import AIMessage
 from langchain_core.callbacks import CallbackManager
+from langchain_core.globals import set_llm_cache
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 from langgraph.cache.memory import InMemoryCache
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import START, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
-from langgraph.store.memory import InMemoryStore
 from langgraph.types import CachePolicy, RetryPolicy
 from pydantic import BaseModel, Field, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
@@ -854,6 +852,24 @@ logging.basicConfig(handlers=[logfire.LogfireLoggingHandler()])
 # checkpointer = InMemorySaver()
 # store = InMemoryStore()
 cache = InMemoryCache()
+if not os.getenv("DEVELOPMENT"):
+    from langchain_redis import RedisCache
+    # from langchain_community.cache import AsyncRedisCache as NodeRedisCache
+    # from redis.asyncio import Redis
+    
+    # redis_client = Redis.from_url(os.getenv("REDIS_URI", "redis://localhost:6379/1"))
+
+    # # Node Cache for caching graph states (not LLM calls)
+    # cache = NodeRedisCache(redis_=redis_client)
+
+    # Global LLM Cache for caching LLM calls
+    redis_cache = RedisCache(
+        redis_url=os.getenv("REDIS_URI", "redis://localhost:6379").rstrip("/") + "/1",
+        prefix="llm_cache",
+        # redis_client=redis_client
+    )
+    set_llm_cache(redis_cache)
+
 builder = StateGraph(
     State,
     input_schema=InputState,
