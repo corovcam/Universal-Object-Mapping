@@ -64,6 +64,11 @@ class Context:
         default=os.environ.get("DB_TOOLBOX_URI", "http://localhost:5010"),
         metadata={"description": "URI of the MCP Toolbox for Databases server."},
     )
+    
+    mongodb_mcp_uri: str = field(
+        default=os.environ.get("MONGODB_MCP_URI", "http://localhost:3010/mcp"),
+        metadata={"description": "URI of the MongoDB MCP server."},
+    )
 
     mongodb_uri: str = field(
         default=os.environ.get("MONGODB_URI", "mongodb://localhost:27027"),

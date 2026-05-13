@@ -37,6 +37,7 @@ class TestLoadDatabaseToolboxTools:
 
             assert isinstance(tool_names, list)
             if tool_names:
+                print(tool_names)
                 real_tools = ["execute_sql", "list_tables", "execute_cypher", "get_schema"]
                 assert any(name in tool_names for name in real_tools), (
                     f"Expected at least one database tool, got: {tool_names}"

@@ -6,17 +6,14 @@ import logging
 import os
 from datetime import datetime
 from io import TextIOWrapper
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx
+from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks.base import BaseCallbackHandler
+from langchain_core.messages import BaseMessage
+from langchain_core.outputs import LLMResult
 from pythonjsonlogger.orjson import OrjsonFormatter as JsonFormatter
-
-if TYPE_CHECKING:
-    from langchain_core.agents import AgentAction, AgentFinish
-    from langchain_core.messages import BaseMessage
-    from langchain_core.outputs import LLMResult
-
 
 TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 LOGS_DIR = "logs"

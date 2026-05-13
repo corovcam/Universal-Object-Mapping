@@ -2,11 +2,14 @@
   "$schema": "https://langgra.ph/schema.json",
   "python_version": "3.13",
   "image_distro": "wolfi",
+  "dockerfile_lines": [
+    "RUN apk update && apk add nodejs-24 npm && node --version && npm --version"
+  ],
   "dependencies": [
     "."
   ],
   "graphs": {
     "agent": "./src/react_agent/graph.py:graph"
   },
-  "env": ".env.dev"
+  "env": ".env"
 }

@@ -1,15 +1,30 @@
 services:
   langgraph-api:
-    environment:
-      - REDIS_URI=redis://langgraph-redis:6379
-      - POSTGRES_URI=postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
-      - NEO4J_DATABASE=neo4j
-      - NEO4J_USERNAME=${NEO4J_USERNAME}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
-      - NEO4J_URI=neo4j://neo4j:7687
-      - MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE}
-      - MSSQL_HOST=mssql_db
-      - MSSQL_PORT=1433
-      - MSSQL_USER=${MSSQL_USER}
-      - MSSQL_PASSWORD=${MSSQL_PASSWORD}
-      - DB_TOOLBOX_URI=http://db-toolbox:5000
+    develop:
+      watch:
+        - action: rebuild
+          path: ./src
+          target: /deps/orchestrator/src
+          initial_sync: true
+        - action: sync
+          path: ./scripts
+          target: /deps/orchestrator/scripts
+          initial_sync: true
+        - action: rebuild
+          path: pyproject.toml
+    networks:
+      - default
+      - daytona-uom
+    # environment:
+    #   - REDIS_URI=redis://langgraph-redis:6379
+    #   - POSTGRES_URI=postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
+    #   - NEO4J_DATABASE=neo4j
+    #   - NEO4J_USERNAME=${NEO4J_USERNAME}
+    #   - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+    #   - NEO4J_URI=neo4j://neo4j:7687
+    #   - MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE}
+    #   - MSSQL_HOST=mssql_db
+    #   - MSSQL_PORT=1433
+    #   - MSSQL_USER=${MSSQL_USER}
+    #   - MSSQL_PASSWORD=${MSSQL_PASSWORD}
+    #   - DB_TOOLBOX_URI=http://db-toolbox:5000

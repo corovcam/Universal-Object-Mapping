@@ -27,38 +27,38 @@ services:
     # networks:
     #   - ollama
 
-  dotnet-service:
-    build:
-      context: ./services/dotnet-service
-      dockerfile: Dockerfile
-    ports:
-      - "${DOTNET_SERVICE_PORT}:5073"
-      - "${DOTNET_SERVICE_SSH_PORT}:22"
-    environment:
-      - MSSQL_HOST=mssql_db
-      - MSSQL_PORT=1433
-      - MSSQL_USER=${MSSQL_USER}
-      - MSSQL_PASSWORD=${MSSQL_PASSWORD}
-    restart: unless-stopped
-    depends_on:
-      - mssql_db
+  # dotnet-service:
+  #   build:
+  #     context: ./services/dotnet-service
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "${DOTNET_SERVICE_PORT}:5073"
+  #     - "${DOTNET_SERVICE_SSH_PORT}:22"
+  #   environment:
+  #     - MSSQL_HOST=mssql_db
+  #     - MSSQL_PORT=1433
+  #     - MSSQL_USER=${MSSQL_USER}
+  #     - MSSQL_PASSWORD=${MSSQL_PASSWORD}
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - mssql_db
 
-  java-service:
-    build:
-      context: ./services/java-services
-      dockerfile: Dockerfile
-    ports:
-      - "${JAVA_SERVICE_PORT}:8080"
-      - "${JAVA_SERVICE_SSH_PORT}:22"
-    environment:
-      - SPRING_NEO4J_URI=bolt://neo4j:7687
-      - SPRING_NEO4J_AUTHENTICATION_USERNAME=${NEO4J_USERNAME}
-      - SPRING_NEO4J_AUTHENTICATION_PASSWORD=${NEO4J_PASSWORD}
-      - SPRING_DATA_MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE}
-    restart: unless-stopped
-    depends_on:
-      - neo4j
-      - mongodb
+  # java-service:
+  #   build:
+  #     context: ./services/java-services
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "${JAVA_SERVICE_PORT}:8080"
+  #     - "${JAVA_SERVICE_SSH_PORT}:22"
+  #   environment:
+  #     - SPRING_NEO4J_URI=bolt://neo4j:7687
+  #     - SPRING_NEO4J_AUTHENTICATION_USERNAME=${NEO4J_USERNAME}
+  #     - SPRING_NEO4J_AUTHENTICATION_PASSWORD=${NEO4J_PASSWORD}
+  #     - SPRING_DATA_MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE}
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - neo4j
+  #     - mongodb
 
   mssql_db:
     build:
@@ -158,8 +158,8 @@ services:
       - MSSQL_USER=${MSSQL_USER}
       - MSSQL_PASSWORD=${MSSQL_PASSWORD}
       - MSSQL_DATABASE=WideWorldImporters
-      - MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE}
-      - NEO4J_URI=neo4j://neo4j:7687
+      - MONGODB_URI=${MONGODB_URI}
+      - NEO4J_URI=${NEO4J_URI}
       - NEO4J_USERNAME=${NEO4J_USERNAME}
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
       - NEO4J_DATABASE=neo4j
@@ -179,7 +179,26 @@ services:
         "0.0.0.0",
       ]
     depends_on:
-      langgraph-api:
+      mssql_db:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+  mongodb-mcp-server:
+    image: mongodb/mongodb-mcp-server:latest
+    ports:
+      - "3010:3000"
+    environment:
+      - MDB_MCP_TRANSPORT=http
+      - MDB_MCP_HTTP_HOST=0.0.0.0
+      - MDB_MCP_HTTP_PORT=3000
+      - MDB_MCP_LOGGERS=disk,mcp,stderr
+      - MDB_MCP_CONNECTION_STRING=${MONGODB_URI}
+      - MDB_MCP_READ_ONLY=true
+      - MDB_MCP_DISABLED_TOOLS=create,update,delete,switch-connection,atlas-local-list-deployments,atlas-local-create-deployment,atlas-local-connect-deployment,atlas-local-delete-deployment,list-knowledge-sources,search-knowledge,export,collection-storage-size,collection-indexes,db-stats,mongodb-logs,connect
+    restart: unless-stopped
+    depends_on:
+      mongodb:
         condition: service_healthy
 
 volumes:

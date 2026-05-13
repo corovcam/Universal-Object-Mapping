@@ -18,7 +18,7 @@ from langgraph.runtime import Runtime
 
 from react_agent.constants import AvailableModel, FrameworkEnum, TranslationType
 from react_agent.context import Context
-from react_agent.graph import build_graph
+from react_agent.graph import graph
 from react_agent.state import State
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -78,23 +78,22 @@ def runnable_config() -> RunnableConfig:
 
 
 @pytest.fixture()
-async def compiled_graph():
+def compiled_graph():
     """Return the default compiled graph (no checkpointer)."""
     try:
-        return await build_graph()
+        return graph
     except Exception as exc:
         pytest.skip(f"Graph build unavailable for integration tests: {exc}")
 
 
 @pytest.fixture()
-async def compiled_graph_with_checkpointer():
+def compiled_graph_with_checkpointer():
     """Return a freshly compiled graph with an in-memory checkpointer."""
     try:
-        graph = await build_graph(
+        return graph.builder.compile(
             checkpointer=MemorySaver(),
             name="UOM Orchestrator Workflow (test)",
         )
-        return graph
     except Exception as exc:
         pytest.skip(f"Graph build with checkpointer unavailable: {exc}")
 
