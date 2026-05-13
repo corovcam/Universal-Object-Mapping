@@ -48,7 +48,7 @@ Detailed architectural documentation can be found in [**notes/architecture.md**]
    Copy `.env.example` to `.env` and configure your LLM provider keys (Ollama or OpenAI-compatible like E-Infra vLLM).
 
 3. **Explore Documentation**:
-   - [Project Specification (LaTeX)](notes/project-specification/specification-llm-advisor.tex)
+   - [Project Specification](notes/project-specification/Specification-LLM_advisor_for_migration_between_ORM_ODM_and_OGM_frameworks.pdf)
    - [C4 Architecture Diagrams](notes/architecture)
 
 ## Acknowledgements
