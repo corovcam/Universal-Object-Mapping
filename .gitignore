@@ -5,3 +5,6 @@ gha-creds-*.json
 /.idea/
 *.dump
 .serena/
+.next/
+node_modules/
+next-env.d.ts

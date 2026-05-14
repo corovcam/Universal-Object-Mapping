@@ -318,7 +318,7 @@ async def extract_input(
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
                 await get_model(config, runtime, AvailableModel.EINFRA_MINI, temperature=0),
-                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
+                # await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
             ),
         ],
         # debug=True if os.getenv("DEVELOPMENT") else False,
@@ -385,9 +385,9 @@ async def schema_inspection(
                 ModelFallbackMiddleware(
                     await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING, temperature=0),
                     await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0),
-                    await get_model(
-                        config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0
-                    ),
+                    # await get_model(
+                    #     config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0
+                    # ),
                 ),
                 ToolRetryMiddleware(),
                 # LLMToolSelectorMiddleware(
@@ -458,7 +458,7 @@ async def translation_agent(
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
                 await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0),
-                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
+                # await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
             ),
             ToolRetryMiddleware(),
             # LLMToolSelectorMiddleware(
@@ -571,7 +571,7 @@ Source Code:
             ModelFallbackMiddleware(
                 await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0),
                 await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0),
-                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
+                # await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
             ),
             ToolRetryMiddleware(),
         ],
@@ -734,7 +734,7 @@ Is the translation logically equivalent and syntactically valid? Provide your re
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
                 await get_model(config, runtime, AvailableModel.EINFRA_THINKER),
-                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B),
+                # await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B),
             ),
             ToolRetryMiddleware(),
         ],
@@ -822,18 +822,18 @@ def route_post_schema_validation(
 
 
 # Observability
-langfuse = get_client()
+# langfuse = get_client()
 
-# Verify connection
-if langfuse.auth_check():
-    logger.info("Langfuse client is authenticated and ready!")
-else:
-    logger.error(
-        "Langfuse authentication failed. Please check your credentials and host."
-    )
+# # Verify connection
+# if langfuse.auth_check():
+#     logger.info("Langfuse client is authenticated and ready!")
+# else:
+#     logger.error(
+#         "Langfuse authentication failed. Please check your credentials and host."
+#     )
 
-# Initialize Langfuse CallbackHandler for Langchain (tracing)
-langfuse_handler = CallbackHandler()
+# # Initialize Langfuse CallbackHandler for Langchain (tracing)
+# langfuse_handler = CallbackHandler()
 
 logfire.configure(
     # sampling=logfire.SamplingOptions.level_or_duration(background_rate=0.3),
@@ -877,53 +877,57 @@ builder = StateGraph(
     context_schema=Context,
 )
 
+retry_policy = RetryPolicy(
+    max_attempts=3,
+)
+
 builder.add_node(
     extract_input,
     cache_policy=CachePolicy(),
-    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    retry_policy=retry_policy,
 )
 builder.add_node(
     schema_inspection,
     cache_policy=CachePolicy(ttl=900),
-    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    retry_policy=retry_policy,
 )
 builder.add_node(
     generate_translation_node,
     cache_policy=CachePolicy(),
-    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    retry_policy=retry_policy,
 )
 builder.add_node(
     human_intervention_node,
-    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    retry_policy=retry_policy,
 )
 
 builder.add_node(
     prep_schema_validation,
-    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    retry_policy=retry_policy,
 )
 builder.add_node(
     prep_query_validation,
-    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    retry_policy=retry_policy,
 )
 builder.add_node(
     validate_schema_node,
-    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    retry_policy=retry_policy,
 )
 builder.add_node(
     validate_query_node,
-    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    retry_policy=retry_policy,
 )
 builder.add_node(
     prep_query_equivalence,
-    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    retry_policy=retry_policy,
 )
 builder.add_node(
     check_query_equivalence_node,
-    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    retry_policy=retry_policy,
 )
 builder.add_node(
     evaluation_node,
-    retry_policy=RetryPolicy(max_attempts=3),  # pyright: ignore[reportArgumentType]
+    retry_policy=retry_policy,
 )
 
 builder.add_conditional_edges(START, should_extract_input)
@@ -949,6 +953,6 @@ graph = builder.compile(
     # store=store,
     cache=cache,
     # debug=True if os.getenv("DEVELOPMENT") else False,
-).with_config({"callbacks": CallbackManager([langfuse_handler, LoggingCallbackHandler()])})
+)
 
 # logger.info(graph.get_graph().draw_mermaid())

@@ -107,3 +107,6 @@ NORMALIZED_FRAMEWORK_TO_FRAMEWORK = {
 class SandboxType(str, Enum):
     DOTNET_10_SANDBOX = "dotnet-10-sandbox"
     JAVA_25_SANDBOX = "java-25-sandbox"
+
+
+MODEL_PROFILE_CACHE: dict[str, dict] = {}

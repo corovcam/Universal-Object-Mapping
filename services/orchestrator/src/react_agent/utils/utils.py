@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, create_model
 
 from react_agent.constants import (
     FRAMEWORK_TO_NORMALIZED_NAME,
+    MODEL_PROFILE_CACHE,
     AvailableModel,
     FrameworkEnum,
 )
@@ -260,6 +261,31 @@ async def load_chat_model(
 
     if getattr(model_client, "profile", None) is None:
         profile: ModelProfile | None = None
+        
+        # Check static cache
+        config_dir = os.path.join(os.path.dirname(__file__), "..", "..", "config")
+        cache_file = os.path.join(config_dir, "model_profiles.json")
+        
+        if not MODEL_PROFILE_CACHE:
+            try:
+                async with aiofiles.open(cache_file, "rb") as f:
+                    content = await f.read()
+                    if content:
+                        MODEL_PROFILE_CACHE.update(orjson.loads(content))
+            except Exception:
+                pass
+                
+        cached_kwargs = MODEL_PROFILE_CACHE.get(fully_specified_name)
+        if cached_kwargs:
+            try:
+                profile = ModelProfile(**cached_kwargs)
+            except Exception as e:
+                logger.warning(f"Failed to load cached profile for {provider}/{model}: {e}")
+
+        if profile is not None:
+            model_client.profile = profile  # type: ignore
+            return model_client  # type: ignore
+
         try:
             p_kwargs = {}
             if provider in ("einfra", "litellm"):
@@ -411,6 +437,15 @@ async def load_chat_model(
                             f"Could not fetch AI Gateway profile for {creator}/{model}: {e}"
                         )
             profile = ModelProfile(**p_kwargs)
+            
+            # Save to cache
+            try:
+                os.makedirs(config_dir, exist_ok=True)
+                MODEL_PROFILE_CACHE[fully_specified_name] = p_kwargs
+                async with aiofiles.open(cache_file, "wb") as f:
+                    await f.write(orjson.dumps(MODEL_PROFILE_CACHE))
+            except Exception as e:
+                logger.warning(f"Failed to save model profile cache: {e}")
 
         except Exception as e:
             logger.warning(f"Failed to fetch model profile for {provider}/{model}: {e}")

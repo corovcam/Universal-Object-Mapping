@@ -1,0 +1,39 @@
+{
+  "einfra/qwen3-coder-30b": {
+    "name": "qwen3-coder-30b",
+    "text_inputs": true,
+    "text_outputs": true
+  },
+  "einfra/mini": {
+    "name": "mini",
+    "text_inputs": true,
+    "text_outputs": true,
+    "tool_calling": true,
+    "tool_choice": true,
+    "structured_output": true,
+    "reasoning_output": true,
+    "temperature": true
+  },
+  "einfra/kimi-k2.6": {
+    "name": "kimi-k2.6",
+    "text_inputs": true,
+    "text_outputs": true
+  },
+  "einfra/deepseek-v4-pro-thinking": {
+    "name": "deepseek-v4-pro-thinking",
+    "text_inputs": true,
+    "text_outputs": true,
+    "reasoning_output": true
+  },
+  "einfra/agentic": {
+    "name": "agentic",
+    "text_inputs": true,
+    "text_outputs": true
+  },
+  "einfra/thinker": {
+    "name": "thinker",
+    "text_inputs": true,
+    "text_outputs": true,
+    "reasoning_output": true
+  }
+}

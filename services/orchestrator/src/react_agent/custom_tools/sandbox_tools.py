@@ -6,7 +6,7 @@ from daytona import AsyncDaytona, DaytonaNotFoundError
 from langchain_core.tools import tool
 
 from react_agent.constants import SandboxType
-from react_agent.context import ValidationSandbox
+from react_agent.utils.sandboxes import ValidationSandbox
 
 logger = logging.getLogger(__name__)
 
