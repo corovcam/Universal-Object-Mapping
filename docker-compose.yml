@@ -2,7 +2,7 @@ name: universal-object-mapping
 include:
   - path:
       - ./services/orchestrator/docker-compose.yml
-      - ./langgraph-override.compose.yml
+      - ./docker-compose.langgraph.override.yml
 services:
   ollama-autossh-tunnel:
     image: jnovack/autossh:2.1.0
@@ -24,8 +24,8 @@ services:
     dns:
       - 8.8.8.8
       - 4.2.2.4
-    # networks:
-    #   - ollama
+    networks:
+      - ollama
 
   # dotnet-service:
   #   build:
@@ -205,10 +205,11 @@ volumes:
   mssql_data:
   mongodb_data:
   neo4j_data:
-  postgres_data:
   mongodb_migrator_data:
 
 networks:
+  ollama:
+    driver: bridge
   daytona-uom:
     external: true
     name: daytona-uom

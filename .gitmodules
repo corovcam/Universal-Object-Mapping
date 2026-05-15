@@ -1,0 +1,3 @@
+[submodule "external/daytona"]
+	path = external/daytona
+	url = git@github.com:daytonaio/daytona.git
