@@ -947,7 +947,7 @@ builder.add_conditional_edges("evaluation_node", route_post_evaluation)
 builder.add_edge("human_intervention_node", "generate_translation_node")
 
 graph = builder.compile(
-    name="UOM Orchestrator Workflow",
+    name="Universal Object Mapping Translator",
     interrupt_before=["human_intervention_node"],
     # checkpointer=checkpointer,
     # store=store,
