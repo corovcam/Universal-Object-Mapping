@@ -14,7 +14,9 @@ services:
           path: pyproject.toml
     networks:
       - default
+      - uom
       - daytona-uom
+      - ollama
     # environment:
     #   - REDIS_URI=redis://langgraph-redis:6379
     #   - POSTGRES_URI=postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
@@ -28,3 +30,14 @@ services:
     #   - MSSQL_USER=${MSSQL_USER}
     #   - MSSQL_PASSWORD=${MSSQL_PASSWORD}
     #   - DB_TOOLBOX_URI=http://db-toolbox:5000
+  langgraph-redis:
+    ports:
+      - "${REDIS_PORT}:6379"
+
+networks:
+  uom:
+    external: true
+    name: uom
+  daytona-uom:
+    external: true
+    name: daytona-uom

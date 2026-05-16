@@ -8,6 +8,8 @@ git submodule update --init --recursive
 echo "Ensuring shared Docker network exists..."
 docker network inspect daytona-uom >/dev/null 2>&1 || \
     docker network create daytona-uom
+docker network inspect uom >/dev/null 2>&1 || \
+    docker network create uom
 
 echo "Starting the stack..."
 docker compose up -d --remove-orphans

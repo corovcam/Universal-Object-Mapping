@@ -54,3 +54,15 @@ services:
         build:
             context: .
             dockerfile: Dockerfile
+        networks:
+            - default
+            - uom
+            - daytona-uom
+
+networks:
+  uom:
+    external: true
+    name: uom
+  daytona-uom:
+    external: true
+    name: daytona-uom

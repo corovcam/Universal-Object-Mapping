@@ -76,6 +76,7 @@ services:
     networks:
       - default
       - daytona-uom
+      - uom
 
   mongodb:
     image: mongo:8.2.6
@@ -94,6 +95,7 @@ services:
     networks:
       - default
       - daytona-uom
+      - uom
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       start_period: 10s
@@ -121,6 +123,7 @@ services:
     networks:
       - default
       - daytona-uom
+      - uom
     healthcheck:
       test:
         [
@@ -183,6 +186,9 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+    networks:
+      - default
+      - uom
 
   mongodb-mcp-server:
     image: mongodb/mongodb-mcp-server:latest
@@ -200,6 +206,9 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+    networks:
+      - default
+      - uom
 
 volumes:
   mssql_data:
@@ -213,3 +222,6 @@ networks:
   daytona-uom:
     external: true
     name: daytona-uom
+  uom:
+    external: true
+    name: uom

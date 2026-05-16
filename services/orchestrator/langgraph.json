@@ -8,6 +8,14 @@
   "dependencies": [
     "."
   ],
+  "checkpointer": {
+    "serde": {
+      "allowed_msgpack_modules": [
+        ["react_agent.constants", "FrameworkEnum"],
+        ["react_agent.constants", "TranslationType"]
+      ]
+    }
+  },
   "graphs": {
     "universal-object-mapping-translator": {
       "path": "./src/react_agent/graph.py:graph",
