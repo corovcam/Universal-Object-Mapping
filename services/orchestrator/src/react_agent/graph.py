@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, Union, cast
 
 import logfire
+import orjson
 from dotenv import find_dotenv, load_dotenv
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
@@ -68,6 +69,8 @@ from react_agent.utils import (
     create_example_for_prompt,
     get_database_mapping_json,
     get_model,
+    get_mongodb_standalone_mapping,
+    get_neo4j_standalone_mapping,
 )
 from react_agent.utils.deterministic_checks import (
     _latest_validation_outcome,
@@ -317,8 +320,8 @@ async def extract_input(
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
-                await get_model(config, runtime, AvailableModel.EINFRA_MINI, temperature=0),
-                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
+                await get_model(config, runtime, AvailableModel.EINFRA_MINI, temperature=0, reasoning=False),
+                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0, reasoning=False),
             ),
         ],
         # debug=True if os.getenv("DEVELOPMENT") else False,
@@ -368,18 +371,19 @@ async def schema_inspection(
                 "schema_context": "No database tools available. Schema inspection skipped."
             }
 
-        model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0)
+        model = await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO, temperature=0.2, reasoning=False)
 
-        system_prompt = SYSTEM_PROMPT_SCHEMA_INSPECTOR.format(
-            system_time=datetime.now(tz=UTC).isoformat(),
-        )
-
-        database_mapping = await get_database_mapping_json(cast(FrameworkEnum, state.destination_target))
+        if (state.destination_target == FrameworkEnum.JAVA_SPRING_DATA_MONGODB):
+            database_mapping = await get_mongodb_standalone_mapping()
+        elif (state.destination_target == FrameworkEnum.JAVA_SPRING_DATA_NEO4J):
+            database_mapping = await get_neo4j_standalone_mapping()
+        else:
+            database_mapping = await get_database_mapping_json(cast(FrameworkEnum, state.destination_target))
 
         agent = create_agent(
             model,
             tools=db_tools,
-            system_prompt=system_prompt,
+            system_prompt=SYSTEM_PROMPT_SCHEMA_INSPECTOR,
             middleware=[
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
@@ -410,7 +414,7 @@ async def schema_inspection(
 
         message = f"""Inspect the database schemas relevant to translating code from {cast(FrameworkEnum, state.source_target).value}{f" {state.source_target_version}" if state.source_target_version else ""} to {cast(FrameworkEnum, state.destination_target).value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 
-{f"Mapping from {database_mapping['source']} to {database_mapping['destination']}:\n<database_mapping>\n{json.dumps(database_mapping['mapping'])}\n</database_mapping>\n" if database_mapping else ""}
+{f"Mapping from {database_mapping['source']} to {database_mapping['destination']}:\n<database_mapping>\n{orjson.dumps(database_mapping).decode("utf-8")}\n</database_mapping>\n" if database_mapping else ""}
 
 Source code being translated:
 {f"<schema_code>\n{state.source_schema_code}\n</schema_code>\n" if state.source_schema_code else ""}
@@ -442,7 +446,7 @@ async def translation_agent(
 
     !! DEPRECATED
     """
-    model = await get_model(config, runtime, temperature=0)
+    model = await get_model(config, runtime, temperature=0, reasoning=False)
 
     all_tools = TOOLS
 
@@ -457,8 +461,8 @@ async def translation_agent(
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
-                await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0),
-                # await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
+                await get_model(config, runtime, AvailableModel.EINFRA_THINKER, temperature=0, reasoning=False),
+                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0),
             ),
             ToolRetryMiddleware(),
             # LLMToolSelectorMiddleware(
@@ -475,10 +479,6 @@ async def translation_agent(
                 ]
             ),
             # SummarizationMiddleware(model, trigger=("fraction", 0.8)),
-            # LLMToolEmulator(
-            #     tools=["validate_java_code", "dotnet_validator", "validate_source_query", "validate_target_query", "check_query_equivalence"],
-            #     model=await get_model(config, runtime, AvailableModel.EINFRA_MINI),
-            # ),
         ],
         # debug=True if os.getenv("DEVELOPMENT") else False,
     )
@@ -552,7 +552,7 @@ async def generate_translation_node(
     """Deterministically generate the translation using structured LLM output via a React Agent without tools."""
     TranslationOutput = await _create_translation_output_model(state)
     
-    model = await get_model(config, runtime, temperature=0)
+    model = await get_model(config, runtime, temperature=0, reasoning=False)
 
     system_prompt = await build_system_prompt(state)
 
@@ -569,9 +569,8 @@ Source Code:
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
-                await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0),
-                await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0),
-                # await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
+                await get_model(config, runtime, AvailableModel.EINFRA_THINKER, temperature=0, reasoning=False),
+                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0),
             ),
             ToolRetryMiddleware(),
         ],

@@ -10,6 +10,7 @@ class AvailableModel(str, Enum):
     # LOCAL_OLLAMA_SMOLLM2 = "ollama/smollm2"
 
     # Ollama Models
+    OLLAMA_QWEN3_6_27B = "ollama/qwen3.6:27b"
     OLLAMA_GPT_OSS = "ollama/gpt-oss:latest"
     OLLAMA_QWEN3_CODER_30B = "ollama/qwen3-coder:30b"
     OLLAMA_MISTRAL_SMALL_3_2 = "ollama/mistral-small3.2:latest"

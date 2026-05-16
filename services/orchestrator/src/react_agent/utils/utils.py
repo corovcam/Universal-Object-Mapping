@@ -149,7 +149,11 @@ async def load_chat_model(
             max_retries=10,
             request_timeout=120, # type: ignore
             stream_usage=True,
-            **({"temperature": config.get("temperature", 0)} if config.get("temperature") is not None else {}),
+            **({"temperature": config.get("temperature", 1)} if config.get("temperature") is not None else {}),
+            **({"extra_body": {
+                    **({"enable_thinking": config.get("reasoning")} if config.get("reasoning") is not None else {})
+                    **config.get("extra_body", {}),
+                }} if config.get("extra_body") is not None or config.get("reasoning") is not None else {})
             # **debug_kwargs,  # type: ignore
         )
     elif provider == "ollama":
@@ -174,8 +178,8 @@ async def load_chat_model(
         model_client = ChatOllama(
             model=model,
             base_url=config.get("ollama_api_url", "http://localhost:11434"),
-            **({"temperature": config.get("temperature", 0)} if config.get("temperature") is not None else {}),
-            # reasoning=True,
+            **({"temperature": config.get("temperature", 1)} if config.get("temperature") is not None else {}),
+            **({"reasoning": config.get("reasoning")} if config.get("reasoning") is not None else {}),
             # **debug_kwargs,  # type: ignore
         )
     else:
@@ -223,7 +227,6 @@ async def load_chat_model(
             model_client = init_chat_model(
                 model,
                 model_provider=provider,
-                reasoning=True,
                 stream_usage=True,
                 max_retries=10,
                 timeout=120,
@@ -300,11 +303,11 @@ async def load_chat_model(
                             ebody = lparams.get("extra_body", {})
 
                             max_input = minfo.get("max_input_tokens") or minfo.get(
-                                "context_length"
+                                "context_size"
                             )
-                            # max_output = minfo.get("max_output_tokens") or ebody.get(
-                            #     "max_tokens"
-                            # )
+                            max_output = minfo.get("max_output_tokens") or minfo.get(
+                                "context_size"
+                            )
 
                             p_kwargs = {
                                 "name": profile_raw.get("model_name", model),
@@ -313,25 +316,26 @@ async def load_chat_model(
                             }
                             if max_input is not None:
                                 p_kwargs["max_input_tokens"] = int(max_input)
-                            # if max_output is not None:
-                            #     p_kwargs["max_output_tokens"] = int(max_output)
-
-                            for key, check in [
+                            if max_output is not None:
+                                p_kwargs["max_output_tokens"] = int(max_output)
+                            
+                            capabilities = minfo.get("capabilities", [])
+                            for key, check1, check2 in [
                                 (
                                     "tool_calling",
+                                    "tools" in capabilities,
                                     "tools" in supported or "functions" in supported,
                                 ),
-                                ("tool_choice", "tool_choice" in supported),
-                                ("structured_output", "response_format" in supported),
+                                ("tool_choice", "tools" in capabilities, "tool_choice" in supported),
+                                ("structured_output", "tools" in capabilities, "response_format" in supported),
                                 (
                                     "reasoning_output",
-                                    "reasoning_effort" in supported
-                                    or "thinking"
-                                    in ebody.get("chat_template_kwargs", {}),
+                                    "enable_thinking" in ebody or "thinking" in ebody,
+                                    "reasoning_effort" in supported or "thinking" in ebody.get("chat_template_kwargs", {}) or "enable_thinking" in ebody.get("chat_template_kwargs", {}),
                                 ),
-                                ("temperature", "temperature" in supported),
+                                ("temperature", "temperature" in ebody, "temperature" in supported),
                             ]:
-                                if check:
+                                if check1 or check2:
                                     p_kwargs[key] = True
 
             elif provider == "ollama":
@@ -368,6 +372,8 @@ async def load_chat_model(
             if (
                 not p_kwargs.get("max_input_tokens")
                 or not p_kwargs.get("max_output_tokens")
+                or "tool_calling" not in p_kwargs
+                or "structured_output" not in p_kwargs
                 or "reasoning_output" not in p_kwargs
             ):
                 creator_map = get_model_creator_map()
@@ -415,7 +421,7 @@ async def load_chat_model(
                 os.makedirs(config_dir, exist_ok=True)
                 MODEL_PROFILE_CACHE[fully_specified_name] = p_kwargs
                 async with aiofiles.open(cache_file, "wb") as f:
-                    await f.write(orjson.dumps(MODEL_PROFILE_CACHE))
+                    await f.write(orjson.dumps(MODEL_PROFILE_CACHE, option=orjson.OPT_INDENT_2))
             except Exception as e:
                 logger.warning(f"Failed to save model profile cache: {e}")
 
@@ -434,7 +440,8 @@ async def get_model(
     runtime: Runtime[Context],
     model_name_override: str | None = None,
     temperature: float | None = None,
-    streaming: bool | None = None,
+    reasoning: bool | None = None,
+    extra_body: dict[str, Any] | None = None,
     **chat_model_kwargs,
 ) -> BaseChatModel:
     """Factory to initialize the model using configuration or context."""
@@ -454,7 +461,8 @@ async def get_model(
         "openai_api_url": openai_url, 
         "openai_api_key": openai_key, 
         "temperature": temperature, 
-        "streaming": streaming, 
+        "reasoning": reasoning, 
+        "extra_body": extra_body,
         **chat_model_kwargs
     }
     return await load_chat_model(

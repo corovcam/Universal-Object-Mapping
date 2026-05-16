@@ -703,9 +703,7 @@ Your task:
    - For MongoDB: use mongodb tools to list collections, inspect document schemas, and sample documents.
    - For Neo4j: use the prebuilt neo4j tools to list node labels, relationship types, and sample nodes/edges.
 2. Inspect the TARGET database schema if applicable (e.g., if translating from SQL to MongoDB, inspect what MongoDB collections exist).
-3. Return a concise but complete summary of the relevant source and target schemas.
-
-System time: {system_time}"""
+3. Return a concise but complete summary of the relevant source and target schemas."""
 
 
 async def build_system_prompt(state: State) -> str:
