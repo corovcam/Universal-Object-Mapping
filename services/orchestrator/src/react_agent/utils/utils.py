@@ -18,7 +18,9 @@ from openai import DefaultAsyncHttpxClient, DefaultHttpxClient
 from pydantic import BaseModel, Field, create_model
 
 from react_agent.constants import (
+    FRAMEWORK_TO_CONFIG_FILES,
     FRAMEWORK_TO_NORMALIZED_NAME,
+    FRAMEWORK_TO_SNIPPET_FILES,
     MODEL_PROFILE_CACHE,
     AvailableModel,
     FrameworkEnum,
@@ -30,41 +32,19 @@ from react_agent.utils.types import FrameworkType
 logger = logging.getLogger(__name__)
 llm_request_logger = LLMRequestLogger()
 
+def get_context_dir() -> str:
+    return os.getenv("CONTEXT_ABSOLUTE_PATH", os.path.join(os.path.dirname(__file__), "..", "..", "context"))
 
 async def get_snippet_content(framework: FrameworkEnum, is_schema: bool = False) -> str:
     """Read a snippet file's content based on framework and type."""
-    base_dir = os.path.join(
-        os.path.dirname(__file__), "..", "..", "context", "snippets"
-    )
-    file_map = {
-        FrameworkEnum.DOTNET_EFCORE: (
-            "EFCoreSchemaValidationEntrypoint.cs",
-            "EFCoreQueryEntrypoint.cs",
-        ),
-        FrameworkEnum.DOTNET_DAPPER: (
-            "DapperSchemaValidationEntrypoint.cs",
-            "DapperQueryEntrypoint.cs",
-        ),
-        FrameworkEnum.DOTNET_NHIBERNATE: (
-            "NHibernateSchemaValidationEntrypoint.cs",
-            "NHibernateQueryEntrypoint.cs",
-        ),
-        FrameworkEnum.JAVA_SPRING_DATA_MONGODB: (
-            "MongoSchemaValidationEntrypoint.java",
-            "MongoQueryEntrypoint.java",
-        ),
-        FrameworkEnum.JAVA_SPRING_DATA_NEO4J: (
-            "Neo4jSchemaValidationEntrypoint.java",
-            "Neo4jQueryEntrypoint.java",
-        ),
-    }
+    snippets_dir = os.path.join(get_context_dir(), "snippets")
 
-    if framework not in file_map:
+    if framework not in FRAMEWORK_TO_SNIPPET_FILES:
         logger.warning(f"No snippet file mapping found for framework {framework.value}")
         return ""
 
-    file_name = file_map[framework][0] if is_schema else file_map[framework][1]
-    path = os.path.join(base_dir, file_name)
+    file_name = FRAMEWORK_TO_SNIPPET_FILES[framework][0] if is_schema else FRAMEWORK_TO_SNIPPET_FILES[framework][1]
+    path = os.path.join(snippets_dir, file_name)
     try:
         async with aiofiles.open(path) as f:
             return await f.read()
@@ -74,22 +54,14 @@ async def get_snippet_content(framework: FrameworkEnum, is_schema: bool = False)
 
 
 async def get_framework_config_content(framework: FrameworkEnum) -> str:
-    base_dir = os.path.join(
-        os.path.dirname(__file__), "..", "..", "context", "snippets"
-    )
-    file_map = {
-        FrameworkEnum.DOTNET_EFCORE: "efcore-sandbox.csproj",
-        FrameworkEnum.DOTNET_DAPPER: "dapper-sandbox.csproj",
-        FrameworkEnum.DOTNET_NHIBERNATE: "nhibernate-sandbox.csproj",
-        FrameworkEnum.JAVA_SPRING_DATA_MONGODB: "mongo-pom.xml",
-        FrameworkEnum.JAVA_SPRING_DATA_NEO4J: "neo4j-pom.xml",
-    }
+    """Read a framework config file's content based on framework."""
+    snippets_dir = os.path.join(get_context_dir(), "snippets")
 
-    if framework not in file_map:
+    if framework not in FRAMEWORK_TO_CONFIG_FILES:
         logger.error(f"No config file mapping found for framework {framework.value}")
         raise ValueError(f"Unsupported framework: {framework.value}")
 
-    path = os.path.join(base_dir, file_map[framework])
+    path = os.path.join(snippets_dir, FRAMEWORK_TO_CONFIG_FILES[framework])
     try:
         async with aiofiles.open(path) as f:
             return await f.read()
@@ -462,6 +434,7 @@ async def get_model(
     runtime: Runtime[Context],
     model_name_override: str | None = None,
     temperature: float | None = None,
+    streaming: bool | None = None,
     **chat_model_kwargs,
 ) -> BaseChatModel:
     """Factory to initialize the model using configuration or context."""
@@ -477,9 +450,15 @@ async def get_model(
     openai_key = configurable.get(
         "openai_api_key", getattr(runtime.context, "openai_api_key", None)
     )
-
+    chat_model_config = {
+        "openai_api_url": openai_url, 
+        "openai_api_key": openai_key, 
+        "temperature": temperature, 
+        "streaming": streaming, 
+        **chat_model_kwargs
+    }
     return await load_chat_model(
-        model_name, config={"openai_api_url": openai_url, "openai_api_key": openai_key, "temperature": temperature, **chat_model_kwargs}
+        model_name, config=chat_model_config
     )
 
 

@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, Union, cast
 
 import logfire
+from dotenv import find_dotenv, load_dotenv
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
@@ -22,15 +23,17 @@ from langchain.agents.structured_output import ProviderStrategy
 from langchain.messages import AIMessage
 from langchain_core.callbacks import CallbackManager
 from langchain_core.globals import set_llm_cache
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_redis import RedisCache
 from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 from langgraph.cache.memory import InMemoryCache
+from langgraph.errors import NodeError
 from langgraph.graph import START, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
-from langgraph.types import CachePolicy, RetryPolicy
+from langgraph.types import CachePolicy, Command, RetryPolicy
 from pydantic import BaseModel, Field, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
@@ -49,8 +52,6 @@ from react_agent.custom_tools.java_validator import validate_java_code
 from react_agent.custom_tools.mcp_database import load_database_tools
 from react_agent.custom_tools.query_validator import (
     check_query_equivalence,
-    validate_source_query,
-    validate_target_query,
 )
 from react_agent.prompts import (
     SYSTEM_PROMPT_EXTRACTION,
@@ -71,7 +72,6 @@ from react_agent.utils import (
 from react_agent.utils.deterministic_checks import (
     _latest_validation_outcome,
 )
-from react_agent.utils.request_logging import LoggingCallbackHandler
 from react_agent.utils.utils import override_pydantic_model_schema
 
 logger = logging.getLogger(__name__)
@@ -311,14 +311,14 @@ async def extract_input(
     )
 
     extraction_agent = create_agent(
-        await get_model(config, runtime, AvailableModel.EINFRA_QWEN3_CODER_30B, temperature=0),
+        await get_model(config, runtime, AvailableModel.EINFRA_QWEN3_CODER_NEXT, temperature=0),
         system_prompt=system_prompt,
         response_format=ProviderStrategy(ExtractionOutput, strict=True),
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
                 await get_model(config, runtime, AvailableModel.EINFRA_MINI, temperature=0),
-                # await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
+                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0),
             ),
         ],
         # debug=True if os.getenv("DEVELOPMENT") else False,
@@ -641,20 +641,54 @@ def prep_schema_validation(state: State) -> dict[str, Any]:
 
 def prep_query_validation(state: State) -> dict[str, Any]:
     """Inject ToolCalls into state for parallel query validation."""
-    tool_calls = [
-        {
-            "name": "validate_source_query",
-            "args": {"validation_harness_code": state.source_validation_harness_code or ""},
-            "id": "query_val_1",
+    tool_calls = []
+
+    # Source validation
+    if state.source_target in [FrameworkEnum.DOTNET_EFCORE, FrameworkEnum.DOTNET_DAPPER]:
+        tool_calls.append({
+            "name": "validate_dotnet_code",
+            "args": {
+                "source_code": state.source_validation_harness_code or "",
+                "framework": state.source_target.value,
+            },
+            "id": "source_query_val",
             "type": "tool_call"
-        },
-        {
-            "name": "validate_target_query",
-            "args": {"validation_harness_code": state.target_validation_harness_code or ""},
-            "id": "query_val_2",
+        })
+    elif state.source_target in [FrameworkEnum.JAVA_SPRING_DATA_MONGODB, FrameworkEnum.JAVA_SPRING_DATA_NEO4J]:
+        tool_calls.append({
+            "name": "validate_java_code",
+            "args": {
+                "source_code": state.source_validation_harness_code or "",
+                "framework": state.source_target.value,
+                "entry_type_name": state.source_validation_entry_type_name or "ValidationEntryPoint",
+            },
+            "id": "source_query_val",
             "type": "tool_call"
-        }
-    ]
+        })
+
+    # Target validation
+    if state.destination_target in [FrameworkEnum.DOTNET_EFCORE, FrameworkEnum.DOTNET_DAPPER]:
+        tool_calls.append({
+            "name": "validate_dotnet_code",
+            "args": {
+                "source_code": state.target_validation_harness_code or "",
+                "framework": state.destination_target.value,
+            },
+            "id": "target_query_val",
+            "type": "tool_call"
+        })
+    elif state.destination_target in [FrameworkEnum.JAVA_SPRING_DATA_MONGODB, FrameworkEnum.JAVA_SPRING_DATA_NEO4J]:
+        tool_calls.append({
+            "name": "validate_java_code",
+            "args": {
+                "source_code": state.target_validation_harness_code or "",
+                "framework": state.destination_target.value,
+                "entry_type_name": state.target_validation_entry_type_name or "ValidationEntryPoint",
+            },
+            "id": "target_query_val",
+            "type": "tool_call"
+        })
+
     return {"translation_messages": [AIMessage(content="", tool_calls=tool_calls)]}
 
 
@@ -678,16 +712,35 @@ def prep_query_equivalence(state: State) -> dict[str, Any]:
     return {"translation_messages": [AIMessage(content="", tool_calls=tool_calls)]}
 
 
+def validation_error_handler(e: Exception) -> str:
+    """Format exceptions from tools as validation failures."""
+    return f"[Validation Failed] Error: {e}"
+
+
+def equivalence_error_handler(e: Exception) -> str:
+    """Format exceptions from equivalence tools as failures."""
+    return f"[Query Equivalence Failed] Error: {e}"
+
+
 validate_schema_node = ToolNode(
-    [validate_dotnet_code, validate_java_code], name="validate_schema_node", messages_key="translation_messages"
+    [validate_dotnet_code, validate_java_code], 
+    name="validate_schema_node", 
+    messages_key="translation_messages",
+    handle_tool_errors=validation_error_handler,
 )
 
 validate_query_node = ToolNode(
-    [validate_source_query, validate_target_query], name="validate_query_node", messages_key="translation_messages"
+    [validate_dotnet_code, validate_java_code], 
+    name="validate_query_node", 
+    messages_key="translation_messages",
+    handle_tool_errors=validation_error_handler,
 )
 
 check_query_equivalence_node = ToolNode(
-    [check_query_equivalence], name="check_query_equivalence_node", messages_key="translation_messages"
+    [check_query_equivalence], 
+    name="check_query_equivalence_node", 
+    messages_key="translation_messages",
+    handle_tool_errors=equivalence_error_handler,
 )
 
 
@@ -697,7 +750,7 @@ def route_post_query_validation(state: State) -> Literal["prep_query_equivalence
     if len(last_msgs) >= 2 and state.translation_type in [TranslationType.QUERY, TranslationType.BOTH]:
         src_str = str(last_msgs[0].content)
         tgt_str = str(last_msgs[1].content)
-        if "[Source Query Validation Passed]" in src_str and "[Target Query Validation Passed]" in tgt_str:
+        if "Validation Passed]" in src_str and "Validation Passed]" in tgt_str:
             return "prep_query_equivalence"
     return "evaluation_node"
 
@@ -852,23 +905,30 @@ logging.basicConfig(handlers=[logfire.LogfireLoggingHandler()])
 # checkpointer = InMemorySaver()
 # store = InMemoryStore()
 cache = InMemoryCache()
-if not os.getenv("DEVELOPMENT"):
-    from langchain_redis import RedisCache
-    # from langchain_community.cache import AsyncRedisCache as NodeRedisCache
-    # from redis.asyncio import Redis
+# redis_cache = RedisCache(
+#     redis_url="redis://localhost:6389/1" if os.getenv("DEVELOPMENT") else (os.getenv("REDIS_URI", "redis://langgraph-redis:6379").rstrip("/") + "/1"),
+#     prefix="llm_cache",
+#     # redis_client=redis_client
+# )
+# set_llm_cache(redis_cache)
+
+# if not os.getenv("DEVELOPMENT"):
+#     from langchain_redis import RedisCache
+#     # from langchain_community.cache import AsyncRedisCache as NodeRedisCache
+#     # from redis.asyncio import Redis
     
-    # redis_client = Redis.from_url(os.getenv("REDIS_URI", "redis://localhost:6379/1"))
+#     # redis_client = Redis.from_url(os.getenv("REDIS_URI", "redis://localhost:6379/1"))
 
-    # # Node Cache for caching graph states (not LLM calls)
-    # cache = NodeRedisCache(redis_=redis_client)
+#     # # Node Cache for caching graph states (not LLM calls)
+#     # cache = NodeRedisCache(redis_=redis_client)
 
-    # Global LLM Cache for caching LLM calls
-    redis_cache = RedisCache(
-        redis_url=os.getenv("REDIS_URI", "redis://localhost:6379").rstrip("/") + "/1",
-        prefix="llm_cache",
-        # redis_client=redis_client
-    )
-    set_llm_cache(redis_cache)
+#     # Global LLM Cache for caching LLM calls
+#     redis_cache = RedisCache(
+#         redis_url=os.getenv("REDIS_URI", "redis://localhost:6379").rstrip("/") + "/1",
+#         prefix="llm_cache",
+#         # redis_client=redis_client
+#     )
+#     set_llm_cache(redis_cache)
 
 builder = StateGraph(
     State,

@@ -26,7 +26,7 @@ Mandatory validation workflow:
 1. Translate schema first.
 2. Validate schema using validate_java_code or validate_dotnet_code.
 3. For query translations, run tools in this strict order:
-   [validate_source_query, validate_target_query] in parallel -> check_query_equivalence.
+   [validate_dotnet_code, validate_java_code] in parallel -> check_query_equivalence.
 4. If any validation fails, fix code and rerun until all required validations pass.
 5. Do not finalize query translations unless all three query validation steps pass.
 6. When preparing source-side validation harness input, keep the original source query logic unchanged and place only setup/bootstrap code around it.
@@ -980,7 +980,7 @@ public static class NHibernateQueryEntrypoint
 # 1. Translate schema first.
 # 2. Validate schema using validate_java_code or validate_dotnet_code.
 # 3. For query translations, run tools in this strict order:
-#    [validate_source_query, validate_target_query] in parallel -> check_query_equivalence.
+#    [validate_dotnet_code, validate_java_code] in parallel -> check_query_equivalence.
 # 4. If any validation fails, fix code and rerun until all required validations pass.
 # 5. Do not finalize query translations unless all three query validation steps pass.
 

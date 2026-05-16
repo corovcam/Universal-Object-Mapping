@@ -17,12 +17,10 @@ from react_agent.custom_tools.java_validator import validate_java_code
 from react_agent.custom_tools.mcp_database import load_database_tools
 from react_agent.custom_tools.query_validator import (
     check_query_equivalence,
-    validate_source_query,
-    validate_target_query,
 )
 
 
-async def search(query: str) -> Optional[dict[str, Any]]:
+async def search(query: str) -> dict[str, Any] | None:
     """Search for general web results.
 
     This function performs a search using the Tavily search engine, which is designed
@@ -40,8 +38,6 @@ TOOLS: List[Any] = [
     # search,
     validate_java_code,
     validate_dotnet_code,
-    validate_source_query,
-    validate_target_query,
     check_query_equivalence,
     # fetch_web_docs,
     # execute_in_sandbox,

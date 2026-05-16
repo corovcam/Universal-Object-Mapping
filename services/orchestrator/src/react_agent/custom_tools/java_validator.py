@@ -5,8 +5,11 @@ import os
 from datetime import datetime
 from typing import cast
 
+import orjson
 from langchain.tools import ToolRuntime
+from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
+from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from react_agent.constants import (
@@ -15,10 +18,12 @@ from react_agent.constants import (
     SandboxType,
     TranslationType,
 )
+from react_agent.context import Context
 from react_agent.custom_tools.sandbox_tools import (
     download_file_from_sandbox,
     execute_in_sandbox,
 )
+from react_agent.state import State
 from react_agent.utils.utils import get_framework_config_content
 
 logger = logging.getLogger(__name__)
@@ -48,7 +53,7 @@ async def compile_and_run_java(
     try:
         pom_content = await get_framework_config_content(FrameworkEnum(framework.value))
     except ValueError as e:
-        return f"[Error] {e}", None
+        raise RuntimeError(f"[Error] {e}") from e
 
     pom_b64 = base64.b64encode(pom_content.encode()).decode()
     java_b64 = base64.b64encode(source_code.encode()).decode()
@@ -89,8 +94,8 @@ fi
         output: str = result[0]
         exit_code: int = result[1]
     except Exception as e:
-        logger.error("[Error] Java sandbox execution failed", exc_info=True)
-        return f"[Error] Java sandbox execution failed: {e}", None
+        logger.error("Java sandbox execution failed", exc_info=True)
+        raise RuntimeError(f"[Error] Java sandbox execution failed: {e}") from e
 
     json_path_line = next((line for line in reversed(output.splitlines()) if line.startswith("JSON_PATH=")), None)
     if exit_code == 0:
@@ -99,10 +104,7 @@ fi
             json_content = await download_file_from_sandbox.ainvoke(
                 {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "remote_path": remote_path}
             )
-            if not json_content.startswith("[Daytona Error]"):
-                json_part = json_content
-            else:
-                json_part = f"\n===JSON ERROR===\nFailed to fetch JSON from {remote_path}."
+            json_part = json_content
 
             return f"[Java Validation Passed] Validation successful. Framework targeted: {framework.value}\n{output}", json_part
         else:
@@ -117,11 +119,36 @@ async def validate_java_code(
     framework: JavaFramework,
     entry_type_name: str,
     runtime: ToolRuntime,
-) -> str:
+) -> Command | str:
     """Compile and validate Java source code through java-service CLI."""
-    translation_type = cast(TranslationType, runtime.state.get("translation_type"))
-    output, json_part = await compile_and_run_java(source_code, framework, entry_type_name, translation_type)
+    runtime: ToolRuntime[Context, State] = runtime  # ty:ignore[invalid-assignment]
+    output, json_part = await compile_and_run_java(source_code, framework, entry_type_name, cast(TranslationType, runtime.state.translation_type))
     
     if json_part:
-        return f"{output}\n\n[JSON Results]\n{json_part}"
+        if "===JSON ERROR===" in json_part:
+            return f"{output}\n\n[JSON Results]\n{json_part}"
+        try:
+            parsed = orjson.loads(json_part)
+        except orjson.JSONDecodeError:
+            return f"[Java Validation Failed] Could not parse JSON output.\n{output}\n{json_part}"
+            
+        tool_call_id = getattr(runtime, "tool_call_id", None)
+        update_dict = {}
+        if tool_call_id == "source_query_val":
+            update_dict["source_query_validation_results"] = parsed
+        elif tool_call_id == "target_query_val":
+            update_dict["target_query_validation_results"] = parsed
+            
+        return Command(
+            update={
+                **update_dict,
+                "translation_messages": [
+                    ToolMessage(
+                        content=output,
+                        tool_call_id=tool_call_id,
+                        name=validate_java_code.name
+                    )
+                ]
+            }
+        )
     return output

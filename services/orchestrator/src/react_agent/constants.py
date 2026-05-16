@@ -1,8 +1,5 @@
 """Constants and enumerations for the React Agent Orchestrator service."""
-import os
 from enum import Enum
-
-from daytona import Image
 
 
 class AvailableModel(str, Enum):
@@ -87,6 +84,11 @@ class TargetFramework(str, Enum):
     JAVA_SPRING_DATA_NEO4J = FrameworkEnum.JAVA_SPRING_DATA_NEO4J.value
 
 
+class SandboxType(str, Enum):
+    DOTNET_10_SANDBOX = "dotnet-10-sandbox"
+    JAVA_25_SANDBOX = "java-25-sandbox"
+
+
 FRAMEWORK_TO_NORMALIZED_NAME = {
     FrameworkEnum.DOTNET_EFCORE: "dotnet_efcore",
     FrameworkEnum.DOTNET_DAPPER: "dotnet_dapper",
@@ -103,10 +105,35 @@ NORMALIZED_FRAMEWORK_TO_FRAMEWORK = {
     "java_spring_data_neo4j": FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
 }
 
+FRAMEWORK_TO_SNIPPET_FILES = {
+    FrameworkEnum.DOTNET_EFCORE: (
+        "EFCoreSchemaValidationEntrypoint.cs",
+        "EFCoreQueryEntrypoint.cs",
+    ),
+    FrameworkEnum.DOTNET_DAPPER: (
+        "DapperSchemaValidationEntrypoint.cs",
+        "DapperQueryEntrypoint.cs",
+    ),
+    FrameworkEnum.DOTNET_NHIBERNATE: (
+        "NHibernateSchemaValidationEntrypoint.cs",
+        "NHibernateQueryEntrypoint.cs",
+    ),
+    FrameworkEnum.JAVA_SPRING_DATA_MONGODB: (
+        "MongoSchemaValidationEntrypoint.java",
+        "MongoQueryEntrypoint.java",
+    ),
+    FrameworkEnum.JAVA_SPRING_DATA_NEO4J: (
+        "Neo4jSchemaValidationEntrypoint.java",
+        "Neo4jQueryEntrypoint.java",
+    ),
+}
 
-class SandboxType(str, Enum):
-    DOTNET_10_SANDBOX = "dotnet-10-sandbox"
-    JAVA_25_SANDBOX = "java-25-sandbox"
-
+FRAMEWORK_TO_CONFIG_FILES = {
+    FrameworkEnum.DOTNET_EFCORE: "efcore-sandbox.csproj",
+    FrameworkEnum.DOTNET_DAPPER: "dapper-sandbox.csproj",
+    FrameworkEnum.DOTNET_NHIBERNATE: "nhibernate-sandbox.csproj",
+    FrameworkEnum.JAVA_SPRING_DATA_MONGODB: "mongo-pom.xml",
+    FrameworkEnum.JAVA_SPRING_DATA_NEO4J: "neo4j-pom.xml",
+}
 
 MODEL_PROFILE_CACHE: dict[str, dict] = {}

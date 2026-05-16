@@ -141,6 +141,20 @@ def _validate_query_code_structure(
     return errors
 
 
+def _validation_outcome_by_id(
+    messages: list[Any],
+    tool_call_id: str,
+) -> Literal["passed", "failed", "pending"]:
+    """Determine the validation outcome for a specific tool call ID."""
+    for msg in reversed(messages):
+        if getattr(msg, "type", "") == "tool" and getattr(msg, "tool_call_id", "") == tool_call_id:
+            content = str(getattr(msg, "content", ""))
+            if "Validation Passed]" in content:
+                return "passed"
+            if "Validation Failed]" in content:
+                return "failed"
+    return "pending"
+
 def _deterministic_translation_issues(
     state: State,
     translated_schema_code: str | None,
@@ -182,26 +196,23 @@ def _deterministic_translation_issues(
             query_ok = False
             issues.extend(query_structure_issues)
 
-        source_validation = _latest_validation_outcome(
-            messages,
-            "[Source Query Validation Passed]",
-            "[Source Query Validation Failed]",
-        )
+        source_validation = _validation_outcome_by_id(messages, "query_val_1")
         if source_validation == "failed":
             query_ok = False
             issues.append(
-                "validate_source_query failed. Source query/schema must be fixed before continuing."
+                "Source validation failed. Source query/schema must be fixed before continuing."
             )
         elif source_validation != "passed":
             query_ok = False
             issues.append(
-                "validate_source_query must pass before query translation can finish."
+                "Source validation must pass before query translation can finish."
             )
 
-        if not _message_contains_marker(messages, "[Target Query Validation Passed]"):
+        target_validation = _validation_outcome_by_id(messages, "query_val_2")
+        if target_validation != "passed":
             query_ok = False
             issues.append(
-                "validate_target_query must pass before query translation can finish."
+                "Target validation must pass before query translation can finish."
             )
 
         if not _message_contains_marker(messages, "[Query Equivalence Passed]"):
@@ -224,6 +235,6 @@ def _deterministic_feedback_message(issues: list[str]) -> HumanMessage:
         f"{numbered_issues}\n"
         "For query translations, keep translated_query_code and validation_harness_code separate.\n"
         "Required tool sequence for query translations:"
-        " validate_source_query -> validate_target_query -> check_query_equivalence."
+        " parallel source and target validation -> check_query_equivalence."
     )
     return HumanMessage(content=feedback)

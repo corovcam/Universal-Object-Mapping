@@ -2,7 +2,7 @@
 
 import logging
 
-from daytona import AsyncDaytona, DaytonaNotFoundError
+from daytona import AsyncDaytona, DaytonaError
 from langchain_core.tools import tool
 
 from react_agent.constants import SandboxType
@@ -51,12 +51,12 @@ async def execute_in_sandbox(
             if not output:
                 return "Command executed successfully with no output.", exit_code
             return output, exit_code
-    except DaytonaNotFoundError as e:
+    except DaytonaError as e:
         logger.exception("Daytona error")
-        return f"[Daytona Error] {e}", -1
+        raise RuntimeError(f"[Daytona Error] {e}") from e
     except Exception as e:
         logger.exception("Unexpected error during sandbox command execution")
-        return f"Error executing sandbox command: {e}", -1
+        raise RuntimeError(f"[Error] {e}") from e
 
 
 @tool
@@ -81,9 +81,9 @@ async def download_file_from_sandbox(
         if isinstance(content, bytes):
             return content.decode("utf-8")
 
-    except DaytonaNotFoundError as e:
+    except DaytonaError as e:
         logger.exception("Daytona fs download error: file not found")
-        return f"[Daytona Error] File not found: {e}"
+        raise RuntimeError(f"[Daytona Error] {e}") from e
     except Exception as e:
         logger.exception("Unexpected error during file download execution")
-        return f"Unexpected error: {e}"
+        raise RuntimeError(f"[Error] {e}") from e
