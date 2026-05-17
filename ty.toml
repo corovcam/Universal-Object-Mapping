@@ -6,6 +6,7 @@ include = ["services/orchestrator/src", "services/orchestrator/tests"]
 
 [rules]
 unused-type-ignore-comment = "ignore"
+unused-ignore-comment = "ignore"
 
 [[overrides]]
 include = ["services/orchestrator/tests"]
