@@ -5,7 +5,7 @@ for database and documentation tools which must be loaded at runtime
 in graph nodes.
 """
 
-from typing import Any, List, Optional, cast
+from typing import Any, List, cast
 
 from langchain_tavily import TavilySearch
 from langgraph.runtime import get_runtime

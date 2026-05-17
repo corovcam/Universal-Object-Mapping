@@ -11,14 +11,58 @@ from react_agent.utils import (
 
 @pytest.mark.asyncio
 async def test_load_chat_model(context: Context) -> None:
-    model = await load_chat_model(
+    model1 = await load_chat_model(
         AvailableModel.EINFRA_KIMI_K2_6.value,
         {
             "openai_api_url": context.openai_api_url,
             "openai_api_key": context.openai_api_key,
+            "reasoning": True,
+            "temperature": 0.5,
+            "extra_body": {
+                "enable_thinking": True,
+            },
         },
     )
+    assert model1 is not None
+    model2 = await load_chat_model(
+        AvailableModel.OLLAMA_QWEN3_6_27B.value,
+        {
+            "temperature": 0.7,
+            "reasoning": True,
+        },
+    )
+    assert model2 is not None
+    model3 = await load_chat_model(
+        AvailableModel.EINFRA_QWEN3_CODER_NEXT.value,
+        {
+            "openai_api_url": context.openai_api_url,
+            "openai_api_key": context.openai_api_key,
+            "temperature": 0,
+        },
+    )
+    assert model3 is not None
+
+
+@pytest.mark.asyncio
+async def test_load_chat_model_handles_missing_extra_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_kwargs: dict[str, object] = {}
+
+    class DummyChatModel:
+        def __init__(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            self.profile = object()
+
+    monkeypatch.setattr("react_agent.utils.utils.ChatOpenAI", DummyChatModel)
+
+    model = await load_chat_model(
+        AvailableModel.EINFRA_MINI.value,
+        {
+            "reasoning": True,
+        },
+    )
+
     assert model is not None
+    assert captured_kwargs["extra_body"] == {"enable_thinking": True}
 
 
 @pytest.mark.asyncio

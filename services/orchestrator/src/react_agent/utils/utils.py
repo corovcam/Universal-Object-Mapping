@@ -110,7 +110,7 @@ def get_message_text(msg: BaseMessage) -> str:
 
 
 async def load_chat_model(
-    fully_specified_name: str, config: dict[str, Any] = {},
+    fully_specified_name: str, config: dict[str, Any] | None = None,
 ) -> BaseChatModel:
     """Load a chat model from a fully specified name.
 
@@ -118,6 +118,7 @@ async def load_chat_model(
         fully_specified_name (str): String in the format 'provider/model'.
         config (dict): Optional configuration passed from the context to initialize remote parameters like API keys.
     """
+    config = config or {}
     provider, model = fully_specified_name.split("/", maxsplit=1)
     debugging = True if os.getenv("DEVELOPMENT") else False
     # log_http_transport = llm_request_logger.LogTransport(httpx.HTTPTransport())
@@ -142,6 +143,15 @@ async def load_chat_model(
                     },
                 ),
             }
+        extra_body = config.get("extra_body")
+        extra_body_kwargs: dict[str, Any] = {}
+        if config.get("reasoning") is not None:
+            extra_body_kwargs["chat_template_kwargs"] = {
+                "enable_thinking": config["reasoning"]
+            }
+        if extra_body is not None:
+            extra_body_kwargs.get("chat_template_kwargs", {}).update(extra_body)
+
         model_client = ChatOpenAI(
             model=model,  # type: ignore
             base_url=config.get("openai_api_url"),  # type: ignore
@@ -150,10 +160,7 @@ async def load_chat_model(
             request_timeout=120, # type: ignore
             stream_usage=True,
             **({"temperature": config.get("temperature", 1)} if config.get("temperature") is not None else {}),
-            **({"extra_body": {
-                    **({"enable_thinking": config.get("reasoning")} if config.get("reasoning") is not None else {})
-                    **config.get("extra_body", {}),
-                }} if config.get("extra_body") is not None or config.get("reasoning") is not None else {})
+            **({"extra_body": extra_body_kwargs} if extra_body_kwargs else {})
             # **debug_kwargs,  # type: ignore
         )
     elif provider == "ollama":
@@ -178,7 +185,7 @@ async def load_chat_model(
         model_client = ChatOllama(
             model=model,
             base_url=config.get("ollama_api_url", "http://localhost:11434"),
-            **({"temperature": config.get("temperature", 1)} if config.get("temperature") is not None else {}),
+            **({"temperature": config.get("temperature", 1)} if config.get("temperature") is not None else {}), # pyright: ignore[reportArgumentType]
             **({"reasoning": config.get("reasoning")} if config.get("reasoning") is not None else {}),
             # **debug_kwargs,  # type: ignore
         )
@@ -345,7 +352,7 @@ async def load_chat_model(
                 ).rstrip("/")
                 async with httpx.AsyncClient() as client:
                     response = await client.post(
-                        f"{base_url}/api/show", json={"model": model}, timeout=10.0
+                        f"{base_url}/api/show", json={"name": model}, timeout=10.0
                     )
                 if response.status_code == 200:
                     profile_raw = response.json()
@@ -472,21 +479,25 @@ async def get_model(
 
 async def get_database_mapping_json(
     target_framework: FrameworkEnum,
-) -> dict[Literal["source", "destination", "mapping"], str | object] | None:
+) -> dict[Literal["databases", "mapping"], dict[str, Any]] | None:
     """Load the database mapping JSON for the given target framework."""
     try:
         if target_framework == FrameworkEnum.JAVA_SPRING_DATA_MONGODB:
             async with aiofiles.open("src/context/mappings/mssql_mongodb.json") as f:
                 return {
-                    "source": "Microsoft SQL Server",
-                    "destination": "MongoDB",
+                    "databases": {
+                        "source": "Microsoft SQL Server",
+                        "destination": "MongoDB",
+                    },
                     "mapping": orjson.loads(await f.read()),
                 }
         elif target_framework == FrameworkEnum.JAVA_SPRING_DATA_NEO4J:
             async with aiofiles.open("src/context/mappings/mssql_neo4j.json") as f:
                 return {
-                    "source": "Microsoft SQL Server",
-                    "destination": "Neo4j",
+                    "databases": {
+                        "source": "Microsoft SQL Server",
+                        "destination": "Neo4j",
+                    },
                     "mapping": orjson.loads(await f.read()),
                 }
     except Exception:

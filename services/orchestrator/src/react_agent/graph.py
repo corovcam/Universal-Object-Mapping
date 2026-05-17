@@ -3,15 +3,13 @@
 # ty:ignore[invalid-type-form]
 
 """Define the Universal Object Mapping orchestrator graph."""
+import asyncio
 import json
 import logging
-import os
-from datetime import UTC, datetime
-from typing import Any, Literal, Union, cast
+from typing import Any, Awaitable, Callable, Literal, Union, cast
 
 import logfire
 import orjson
-from dotenv import find_dotenv, load_dotenv
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
@@ -22,19 +20,15 @@ from langchain.agents.middleware import (
 )
 from langchain.agents.structured_output import ProviderStrategy
 from langchain.messages import AIMessage
-from langchain_core.callbacks import CallbackManager
-from langchain_core.globals import set_llm_cache
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_redis import RedisCache
-from langfuse import get_client
-from langfuse.langchain import CallbackHandler
 from langgraph.cache.memory import InMemoryCache
-from langgraph.errors import NodeError
 from langgraph.graph import START, StateGraph
 from langgraph.prebuilt import ToolNode
+from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
 from langgraph.types import CachePolicy, Command, RetryPolicy
+from langgraphics import watch
 from pydantic import BaseModel, Field, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
@@ -371,7 +365,7 @@ async def schema_inspection(
                 "schema_context": "No database tools available. Schema inspection skipped."
             }
 
-        model = await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO, temperature=0.2, reasoning=False)
+        model = await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO, temperature=0, reasoning=False)
 
         if (state.destination_target == FrameworkEnum.JAVA_SPRING_DATA_MONGODB):
             database_mapping = await get_mongodb_standalone_mapping()
@@ -414,7 +408,7 @@ async def schema_inspection(
 
         message = f"""Inspect the database schemas relevant to translating code from {cast(FrameworkEnum, state.source_target).value}{f" {state.source_target_version}" if state.source_target_version else ""} to {cast(FrameworkEnum, state.destination_target).value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 
-{f"Mapping from {database_mapping['source']} to {database_mapping['destination']}:\n<database_mapping>\n{orjson.dumps(database_mapping).decode("utf-8")}\n</database_mapping>\n" if database_mapping else ""}
+{f"Mapping from {database_mapping['databases']['source']} to {database_mapping['databases']['destination']}:\n<database_mapping>\n{orjson.dumps(database_mapping).decode("utf-8")}\n</database_mapping>\n" if database_mapping else ""}
 
 Source code being translated:
 {f"<schema_code>\n{state.source_schema_code}\n</schema_code>\n" if state.source_schema_code else ""}
@@ -641,7 +635,8 @@ def prep_schema_validation(state: State) -> dict[str, Any]:
 def prep_query_validation(state: State) -> dict[str, Any]:
     """Inject ToolCalls into state for parallel query validation."""
     tool_calls = []
-
+    assert state.source_target is not None and state.destination_target is not None
+    
     # Source validation
     if state.source_target in [FrameworkEnum.DOTNET_EFCORE, FrameworkEnum.DOTNET_DAPPER]:
         tool_calls.append({
@@ -711,35 +706,54 @@ def prep_query_equivalence(state: State) -> dict[str, Any]:
     return {"translation_messages": [AIMessage(content="", tool_calls=tool_calls)]}
 
 
-def validation_error_handler(e: Exception) -> str:
-    """Format exceptions from tools as validation failures."""
-    return f"[Validation Failed] Error: {e}"
+async def retry_infrastructure_errors(
+    request: ToolCallRequest,
+    execute: Callable[[ToolCallRequest], Awaitable[Union[ToolMessage, Command]]]
+) -> Union[ToolMessage, Command]:
+    """Retry tool execution up to 4 times on Daytona/infrastructure errors."""
+    max_retries = 4
+    base_delay = 1.0
 
-
-def equivalence_error_handler(e: Exception) -> str:
-    """Format exceptions from equivalence tools as failures."""
-    return f"[Query Equivalence Failed] Error: {e}"
+    for attempt in range(1, max_retries + 1):
+        try:
+            return await execute(request)
+        except Exception as e:
+            if attempt == max_retries:
+                logger.error(f"Tool {request.tool_call['name']} failed after {max_retries} attempts: {e}")
+                if request.tool_call["name"] in ["validate_dotnet_code", "validate_java_code"]:
+                    return ToolMessage(content=f"[Validation Failed] Error: {e}", tool_call_id=request.tool_call["id"], name=request.tool_call["name"])
+                elif request.tool_call["name"] == "check_query_equivalence":
+                    return ToolMessage(content=f"[Query Equivalence Failed] Error: {e}", tool_call_id=request.tool_call["id"], name=request.tool_call["name"])
+                else:
+                    return ToolMessage(content=f"[Tool Error] {type(e).__name__}: {e}", tool_call_id=request.tool_call["id"], name=request.tool_call["name"])
+            
+            delay = base_delay * (2 ** (attempt - 1))
+            logger.warning(f"Tool {request.tool_call['name']} threw infrastructure exception {type(e).__name__}. Retrying in {delay} seconds... (Attempt {attempt}/{max_retries})", exc_info=True)
+            await asyncio.sleep(delay)
+            continue
+            
+    return ToolMessage(content=f"[Tool Error] Failed after {max_retries} attempts. Please check the infrastructure and try again later. ToolCallRequest: {request.tool_call}", tool_call_id=request.tool_call["id"], name=request.tool_call["name"])
 
 
 validate_schema_node = ToolNode(
     [validate_dotnet_code, validate_java_code], 
     name="validate_schema_node", 
     messages_key="translation_messages",
-    handle_tool_errors=validation_error_handler,
+    awrap_tool_call=retry_infrastructure_errors,
 )
 
 validate_query_node = ToolNode(
     [validate_dotnet_code, validate_java_code], 
     name="validate_query_node", 
     messages_key="translation_messages",
-    handle_tool_errors=validation_error_handler,
+    awrap_tool_call=retry_infrastructure_errors,
 )
 
 check_query_equivalence_node = ToolNode(
     [check_query_equivalence], 
     name="check_query_equivalence_node", 
     messages_key="translation_messages",
-    handle_tool_errors=equivalence_error_handler,
+    awrap_tool_call=retry_infrastructure_errors,
 )
 
 
@@ -941,22 +955,22 @@ retry_policy = RetryPolicy(
 )
 
 builder.add_node(
-    extract_input,
+    extract_input, # type: ignore
     cache_policy=CachePolicy(),
     retry_policy=retry_policy,
 )
 builder.add_node(
-    schema_inspection,
+    schema_inspection, # type: ignore
     cache_policy=CachePolicy(ttl=900),
     retry_policy=retry_policy,
 )
 builder.add_node(
-    generate_translation_node,
+    generate_translation_node, # type: ignore
     cache_policy=CachePolicy(),
     retry_policy=retry_policy,
 )
 builder.add_node(
-    human_intervention_node,
+    human_intervention_node, # type: ignore
     retry_policy=retry_policy,
 )
 
@@ -970,11 +984,9 @@ builder.add_node(
 )
 builder.add_node(
     validate_schema_node,
-    retry_policy=retry_policy,
 )
 builder.add_node(
     validate_query_node,
-    retry_policy=retry_policy,
 )
 builder.add_node(
     prep_query_equivalence,
@@ -982,10 +994,9 @@ builder.add_node(
 )
 builder.add_node(
     check_query_equivalence_node,
-    retry_policy=retry_policy,
 )
 builder.add_node(
-    evaluation_node,
+    evaluation_node, # type: ignore
     retry_policy=retry_policy,
 )
 

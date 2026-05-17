@@ -118,10 +118,10 @@ async def validate_java_code(
     source_code: str,
     framework: JavaFramework,
     entry_type_name: str,
-    runtime: ToolRuntime,
+    runtime: ToolRuntime, # type: ignore
 ) -> Command | str:
     """Compile and validate Java source code through java-service CLI."""
-    runtime: ToolRuntime[Context, State] = runtime  # ty:ignore[invalid-assignment]
+    runtime: ToolRuntime[Context, State] = runtime  # type: ignore
     output, json_part = await compile_and_run_java(source_code, framework, entry_type_name, cast(TranslationType, runtime.state.translation_type))
     
     if json_part:

@@ -53,10 +53,10 @@ async def execute_in_sandbox(
             return output, exit_code
     except DaytonaError as e:
         logger.exception("Daytona error")
-        raise RuntimeError(f"[Daytona Error] {e}") from e
+        raise e
     except Exception as e:
         logger.exception("Unexpected error during sandbox command execution")
-        raise RuntimeError(f"[Error] {e}") from e
+        raise e
 
 
 @tool
@@ -78,12 +78,11 @@ async def download_file_from_sandbox(
             logger.info("Daytona retrieving file: %s from service: %s", remote_path, sandbox_type)
             content = await sandbox.fs.download_file(remote_path)
         
-        if isinstance(content, bytes):
-            return content.decode("utf-8")
+        return content.decode("utf-8")
 
     except DaytonaError as e:
-        logger.exception("Daytona fs download error: file not found")
-        raise RuntimeError(f"[Daytona Error] {e}") from e
+        logger.exception("Daytona fs download error")
+        raise e
     except Exception as e:
         logger.exception("Unexpected error during file download execution")
-        raise RuntimeError(f"[Error] {e}") from e
+        raise e

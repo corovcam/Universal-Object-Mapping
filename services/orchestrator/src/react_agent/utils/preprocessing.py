@@ -650,15 +650,17 @@ def _extract_neo4j_standalone_mapping(
 
 
 async def get_neo4j_standalone_mapping() -> (
-    dict[Literal["nodes", "relationships"], dict[str, Any]] | None
+    dict[Literal["databases", "nodes", "relationships"], dict[str, Any]] | None
 ):
     """Load standalone SQL-to-Neo4j mapping grouped into nodes and relationships."""
     raw_database_mapping = await get_database_mapping_json(
         FrameworkEnum.JAVA_SPRING_DATA_NEO4J
     )
-    database_mapping = _extract_neo4j_standalone_mapping(
-        raw_database_mapping.get("mapping") if raw_database_mapping else None
-    )
+    if not raw_database_mapping:
+        return None
+    
+    database_mapping = _extract_neo4j_standalone_mapping(raw_database_mapping.get("mapping"))
+    
     if not database_mapping:
         return None
 
@@ -668,21 +670,24 @@ async def get_neo4j_standalone_mapping() -> (
         return None
 
     return {
+        "databases": raw_database_mapping["databases"],
         "nodes": nodes,
         "relationships": relationships,
     }
 
 
 async def get_mongodb_standalone_mapping() -> (
-    dict[Literal["collections"], dict[str, Any]] | None
+    dict[Literal["databases", "collections"], dict[str, Any]] | None
 ):
     """Load standalone SQL-to-MongoDB mapping grouped into collections."""
     raw_database_mapping = await get_database_mapping_json(
         FrameworkEnum.JAVA_SPRING_DATA_MONGODB
     )
-    database_mapping = _extract_mongodb_standalone_mapping(
-        raw_database_mapping.get("mapping") if raw_database_mapping else None
-    )
+    if not raw_database_mapping:
+        return None
+    
+    database_mapping = _extract_mongodb_standalone_mapping(raw_database_mapping.get("mapping"))
+    
     if not database_mapping:
         return None
 
@@ -691,5 +696,6 @@ async def get_mongodb_standalone_mapping() -> (
         return None
 
     return {
+        "databases": raw_database_mapping["databases"],
         "collections": collections,
     }

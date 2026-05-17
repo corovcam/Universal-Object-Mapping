@@ -23,6 +23,8 @@ services:
     #   - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer otel_collector_api_key
     networks:
       - daytona-uom
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 networks:
   daytona-uom:

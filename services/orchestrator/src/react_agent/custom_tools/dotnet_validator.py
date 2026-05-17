@@ -108,10 +108,10 @@ fi
 async def validate_dotnet_code(
     source_code: str,
     framework: DotnetFramework,
-    runtime: ToolRuntime,
+    runtime: ToolRuntime, # type: ignore
 ) -> Command | str:
     """Compile and validate C# source code through dotnet-service CLI."""
-    runtime: ToolRuntime[Context, State] = runtime  # ty:ignore[invalid-assignment]
+    runtime: ToolRuntime[Context, State] = runtime  # type: ignore
     output, json_part = await compile_and_run_dotnet(source_code, framework, cast(TranslationType, runtime.state.translation_type))
     
     if json_part:

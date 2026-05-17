@@ -111,10 +111,10 @@ def _check_validation_markers(
 async def check_query_equivalence(
     source_validation_output: str,
     target_validation_output: str,
-    runtime: ToolRuntime,
+    runtime: ToolRuntime, # type: ignore
 ) -> str:
     """Compare source and target query metadata for logical equivalence."""
-    runtime: ToolRuntime[Context, State] = runtime  # ty:ignore[invalid-assignment]
+    runtime: ToolRuntime[Context, State] = runtime  # type: ignore
     output = _check_validation_markers(
         source_validation_output,
         "Validation Passed]",

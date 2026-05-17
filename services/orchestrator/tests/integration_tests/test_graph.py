@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from langchain_core.runnables import RunnableConfig
+from langgraph.prebuilt import ToolNode
 
 from react_agent.constants import FrameworkEnum, TranslationType
 from react_agent.graph import (
@@ -94,16 +95,48 @@ class TestSchemaInspection:
 # ── Partial Graph Execution ─────────────────────────────────────────────────
 
 
+@pytest.mark.integration
+@pytest.mark.asyncio
 class TestPartialGraphExecution:
     """Test running subsets of the graph using LangGraph patterns."""
-
+    
     async def test_individual_node_invocation(self, compiled_graph):
         """Invoke a single node via compiled_graph.nodes[...].invoke()."""
         node = compiled_graph.nodes.get("extract_input")
         assert node is not None, "extract_input node not found in compiled graph"
+        
+    async def test_tool_node(self, compiled_graph_with_checkpointer, sample_config_with_runtime):
+        """Invoke a single node via compiled_graph.nodes[...].invoke()."""
+        node: ToolNode = compiled_graph_with_checkpointer.nodes.get("validate_query_node")
+        assert node is not None, "validate_query_node node not found in compiled graph"
+        
+        tool_calls = [{
+            "name": "validate_dotnet_code",
+            "args": {
+                "source_code": "public class Customer { public int Id { get; set; } }",
+                "framework": FrameworkEnum.DOTNET_EFCORE,
+            },
+            "id": "source_query_val",
+            "type": "tool_call"
+        },
+        {
+            "name": "validate_java_code",
+            "args": {
+                "source_code": "public class Customer { public int Id { get; set; } }",
+                "framework": FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
+                "entry_type_name": "ValidationEntryPoint",
+            },
+            "id": "target_query_val",
+            "type": "tool_call"
+        }]
 
-    @pytest.mark.integration
-    @pytest.mark.asyncio
+        result = await node.ainvoke(
+            tool_calls,
+            config=sample_config_with_runtime,
+        )
+        assert result is not None, "Tool node invocation returned None"
+
+
     async def test_extract_to_schema_partial(
         self, compiled_graph_with_checkpointer, empty_state: State
     ):

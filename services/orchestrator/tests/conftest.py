@@ -59,10 +59,11 @@ def context() -> Context:
 
 
 @pytest.fixture()
-def runtime(context: Context) -> MagicMock:
+def runtime(context: Context, sample_state) -> MagicMock:
     """A mock Runtime whose `.context` points to the real Context."""
     rt = MagicMock(spec=Runtime)
     rt.context = context
+    rt.state = sample_state
     return rt
 
 
@@ -182,6 +183,7 @@ def sample_config_with_runtime(runtime: Runtime, sample_tool_runtime: ToolRuntim
         "configurable": {
             "__pregel_runtime": mock_pregel_runtime,
             "__tool_runtime__": sample_tool_runtime,
+            "thread_id": "test-tool-node-1",
         }
     }
 

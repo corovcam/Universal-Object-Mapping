@@ -8,3 +8,4 @@ gha-creds-*.json
 .next/
 node_modules/
 next-env.d.ts
+*.lscache
