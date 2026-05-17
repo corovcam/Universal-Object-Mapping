@@ -32,6 +32,8 @@ dependencies = [
     "redis>=7.4.0",
     "langchain-redis>=0.2.5",
     "langchain-community>=0.4.1",
+    "langgraphics>=0.1.0b3",
+    "langgraph-api>=0.8.7",
 ]
 # external-dependencies = [
 #     "pkg:generic/node@24",
@@ -110,6 +112,7 @@ include = ["src", "tests"]
 
 [tool.ty.rules]
 unused-type-ignore-comment = "ignore"
+unused-ignore-comment = "ignore"
 
 [[tool.ty.overrides]]
 include = ["tests"]
