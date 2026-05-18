@@ -1,0 +1,15 @@
+{
+  "llm": {
+    "fixtures": "./tests/aimock",
+    "logLevel": "debug",
+    "validateOnLoad": true,
+    "record": {
+      "providers": {
+        "openai": "https://llm.ai.e-infra.cz/v1",
+        "ollama": "http://localhost:11434"
+      },
+      "fixturePath": "./tests/aimock/recorded",
+      "recordFullModelVersion": false
+    }
+  }
+}
