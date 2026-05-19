@@ -31,9 +31,9 @@ async def execute_in_sandbox(
     """
     try:
         async with AsyncDaytona() as daytona:
-            sandbox = await ValidationSandbox.get_sandbox(daytona, sandbox_type)
+            sandbox = await ValidationSandbox.get_sandbox(daytona, sandbox_type, runtime)
             logger.info("Executing command in service: %s", sandbox_type)
-            result = await sandbox.process.exec(command, timeout=300)
+            result = await sandbox.process.exec(command, timeout=480) # TODO: Make this configurable by user
             output = ""
             stdout = getattr(result, "result", None)
             if stdout:
@@ -75,7 +75,7 @@ async def download_file_from_sandbox(
     """
     try:
         async with AsyncDaytona() as daytona:
-            sandbox = await ValidationSandbox.get_sandbox(daytona, sandbox_type)
+            sandbox = await ValidationSandbox.get_sandbox(daytona, sandbox_type, runtime)
             logger.info("Daytona retrieving file: %s from service: %s", remote_path, sandbox_type)
             content = await sandbox.fs.download_file(remote_path)
         
