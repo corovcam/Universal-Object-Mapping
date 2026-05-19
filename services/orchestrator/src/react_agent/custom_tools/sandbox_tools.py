@@ -1,8 +1,9 @@
 """Provides tools for connecting to sandbox Docker containers."""
-
 import logging
+from typing import Annotated
 
 from daytona import AsyncDaytona, DaytonaError
+from langchain.tools import InjectedToolArg, ToolRuntime
 from langchain_core.tools import tool
 
 from react_agent.constants import SandboxType
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 @tool
 async def execute_in_sandbox(
-    sandbox_type: SandboxType, command: str
+    sandbox_type: SandboxType, command: str, runtime: Annotated[ToolRuntime, InjectedToolArg]
 ) -> tuple[str, int]:
     """Executes a shell command directly inside the target Daytona sandbox container (e.g. 'dotnet-service' or 'java-service').
 
@@ -61,7 +62,7 @@ async def execute_in_sandbox(
 
 @tool
 async def download_file_from_sandbox(
-    sandbox_type: SandboxType, remote_path: str
+    sandbox_type: SandboxType, remote_path: str, runtime: Annotated[ToolRuntime, InjectedToolArg]
 ) -> str:
     """Retrieve the content of a file from a specified service container using Daytona FS.
 
