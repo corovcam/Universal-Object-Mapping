@@ -5,7 +5,6 @@ and live service connections (MongoDB, DB Toolbox, Ollama).
 """
 import os
 from pathlib import Path
-from unittest.mock import MagicMock
 from uuid import uuid4
 
 import orjson
@@ -14,12 +13,24 @@ from langchain.tools import ToolRuntime
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.runtime import Runtime
+from langgraph.runtime import DEFAULT_RUNTIME, Runtime
 
 from react_agent.constants import AvailableModel, FrameworkEnum, TranslationType
 from react_agent.context import Context
 from react_agent.graph import graph
 from react_agent.state import State
+
+# @pytest.hookimpl
+# def pytest_configure(config):
+#     logging_plugin = config.pluginmanager.get_plugin("logging-plugin")
+
+#     # Change color on existing log level
+#     logging_plugin.log_cli_handler.formatter.add_color_level(logging.INFO, "cyan")
+#     logging_plugin.log_cli_handler.formatter.add_color_level(logging.DEBUG, "blue")
+#     logging_plugin.log_cli_handler.formatter.add_color_level(logging.WARNING, "yellow")
+#     logging_plugin.log_cli_handler.formatter.add_color_level(logging.ERROR, "red")
+#     logging_plugin.log_cli_handler.formatter.add_color_level(logging.CRITICAL, "red", "bold")
+
 
 #  ---------------------------------------------------------------------------
 #  Pytest Fixtures
@@ -31,6 +42,7 @@ def config():
     return {
         "FIXTURES_DIR": Path(__file__).parent / "fixtures",
         "AIMOCK_FIXTURES_DIR": Path(__file__).parent / "aimock" / "recorded",
+        "SNIPPETS_DIR": Path(__file__).parent.parent / "src" / "context" / "snippets",
     }
 
 @pytest.fixture(scope="session")
@@ -103,18 +115,22 @@ def context() -> Context:
 
 
 @pytest.fixture()
-def runtime(context: Context, sample_state) -> MagicMock:
+def runtime(context: Context):
     """A mock Runtime whose `.context` points to the real Context."""
-    rt = MagicMock(spec=Runtime)
-    rt.context = context
-    rt.state = sample_state
-    return rt
+    import sys
+
+    def eprint(*args, **kwargs):
+        print(*args, file=sys.stderr, **kwargs)  # noqa: T201
+    
+    return Runtime(context=context, stream_writer=eprint)
 
 
 @pytest.fixture()
 def runnable_config() -> RunnableConfig:
     """A minimal RunnableConfig for node invocations."""
-    return RunnableConfig()
+    return RunnableConfig(configurable={
+        "thread_id": "test-thread",
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +160,7 @@ def compiled_graph_with_checkpointer():
 
 
 @pytest.fixture()
-def sample_tool_runtime(runtime, runnable_config, sample_state) -> ToolRuntime[Context, State]:
+def sample_tool_runtime(runtime: Runtime[Context], runnable_config: RunnableConfig, sample_state: State) -> ToolRuntime[Context, State]:
     # Create the ToolRuntime
     tool_runtime = ToolRuntime(
         state=sample_state,
@@ -159,16 +175,13 @@ def sample_tool_runtime(runtime, runnable_config, sample_state) -> ToolRuntime[C
 
 
 @pytest.fixture()
-def sample_config_with_runtime(runtime: Runtime, sample_tool_runtime: ToolRuntime) -> RunnableConfig:
+def sample_config_with_runtime(runtime: Runtime, runnable_config: RunnableConfig, sample_tool_runtime: ToolRuntime) -> RunnableConfig:
     # Mock the internal Pregel Runtime
-    mock_pregel_runtime = runtime
-    return {
-        "configurable": {
-            "__pregel_runtime": mock_pregel_runtime,
-            "__tool_runtime__": sample_tool_runtime,
-            "thread_id": "test-tool-node-1",
-        }
-    }
+    return RunnableConfig(configurable={
+        **runnable_config.get("configurable", {}),
+        "__pregel_runtime": runtime,
+        "__tool_runtime__": sample_tool_runtime,
+    })
 
 
 @pytest.fixture()
