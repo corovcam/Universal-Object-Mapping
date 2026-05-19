@@ -249,7 +249,7 @@ public static class NHibernateSchemaValidationEntrypoint
         var connectionString = args.ElementAtOrDefault(0) ??
                                System.Environment.GetEnvironmentVariable("CONNECTION_STRING")
                                ??
-                               "Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True";
+                               "Server=localhost,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True";
 
         var configuration = new Configuration();
         configuration.DataBaseIntegration(c =>

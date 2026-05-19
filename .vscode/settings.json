@@ -64,5 +64,9 @@
   "java.sources.organizeImports.staticStarThreshold": 1,
   "ruff.exclude": [
     "external"
+  ],
+  "omnisharp.projectFilesExcludePattern": "**/node_modules/**,**/.git/**,**/bower_components/**,**/orchestrator/**,**/external/**",
+  "csharp.debug.symbolOptions.moduleFilter.excludedModules": [
+    "**/orchestrator/**,**/external/**"
   ]
 }

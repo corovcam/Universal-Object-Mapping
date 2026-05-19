@@ -127,19 +127,19 @@ services:
       - MSSQL_PORT=1433
       - MSSQL_USER=${MSSQL_USER}
       - MSSQL_PASSWORD=${MSSQL_PASSWORD}
-      - MSSQL_DATABASE=WideWorldImporters
+      - MSSQL_DATABASE=${MSSQL_DATABASE}
       - MONGODB_URI=${MONGODB_URI}
       - NEO4J_URI=${NEO4J_URI}
       - NEO4J_USERNAME=${NEO4J_USERNAME}
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
-      - NEO4J_DATABASE=neo4j
+      - NEO4J_DATABASE=${NEO4J_DATABASE}
     volumes:
-      - ./services/orchestrator/src/config:/config
+      - ./services/orchestrator/src/config/db_toolbox:/config
     restart: unless-stopped
     command:
       [
-        "--tools-file",
-        "/config/database_tools.yaml",
+        "--tools-folder",
+        "/config",
         "--prebuilt",
         "mssql",
         "--prebuilt",
@@ -147,6 +147,8 @@ services:
         "--ui",
         "--address",
         "0.0.0.0",
+        "--log-level",
+        "debug",
       ]
     depends_on:
       mssql_db:
