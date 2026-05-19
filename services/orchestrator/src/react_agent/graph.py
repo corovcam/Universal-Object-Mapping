@@ -356,15 +356,13 @@ async def schema_inspection(
     Runs a lightweight ReAct agent with only database tools to examine
     the relevant database schemas before translation begins.
     """
-    # Load database tools asynchronously
-    async with load_database_tools() as db_tools:
+    async with load_toolbox_tools() as toolbox_tools, load_mongodb_tools() as mongodb_tools:
+        db_tools = toolbox_tools + mongodb_tools
         if not db_tools:
             logger.warning("No database tools available for schema inspection.")
             return {
-                "schema_context": "No database tools available. Schema inspection skipped."
+                "messages": AIMessage(content="No database tools available. Skipping schema inspection."),
             }
-
-        model = await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO, temperature=0, reasoning=False)
 
         if (state.destination_target == FrameworkEnum.JAVA_SPRING_DATA_MONGODB):
             database_mapping = await get_mongodb_standalone_mapping()
@@ -374,13 +372,13 @@ async def schema_inspection(
             database_mapping = await get_database_mapping_json(cast(FrameworkEnum, state.destination_target))
 
         agent = create_agent(
-            model,
+            await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING, temperature=0),
             tools=db_tools,
             system_prompt=SYSTEM_PROMPT_SCHEMA_INSPECTOR,
             middleware=[
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
-                    await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING, temperature=0),
+                    await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0),
                     await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0),
                     # await get_model(
                     #     config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0
