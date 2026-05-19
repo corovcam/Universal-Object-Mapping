@@ -8,7 +8,7 @@ database_tools.yaml.
 import logging
 from asyncio import CancelledError
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, cast
 
 from anyio import BrokenResourceError
 from langchain_core.tools import BaseTool
@@ -23,18 +23,42 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def load_database_tools() -> AsyncGenerator[list[BaseTool], None]:
-    """Load all database tools from the MCP Toolbox for Databases Server and MongoDB MCP Server.
-
-    Connects to the toolbox and mongodb mcp server and loads every available tool
-    (prebuilt mssql/neo4j + mongodb tools).
+async def load_toolbox_tools() -> AsyncGenerator[list[BaseTool], None]:
+    """Load database tools from the MCP Toolbox for Databases server.
 
     Returns:
         A list of LangChain-compatible tool objects.
-        Returns fallback tools if the toolbox server is unreachable.
+        Returns an empty list if the toolbox server is unreachable.
     """
     runtime = get_runtime(Context)
     toolbox_uri = runtime.context.db_toolbox_uri
+    try:
+        async with ToolboxClient(toolbox_uri) as toolbox_client:
+            toolbox_tools = await toolbox_client.aload_toolset()
+            logger.info(
+                "Loaded database tools from toolbox at %s: %s",
+                toolbox_uri,
+                [tool.name for tool in toolbox_tools],
+            )
+            yield cast(list[BaseTool], toolbox_tools)
+    except* (BrokenResourceError, CancelledError, RuntimeError, Exception):
+        logger.warning(
+            "Failed to load database tools from toolbox server at %s.",
+            toolbox_uri,
+            exc_info=True,
+        )
+        yield []
+
+
+@asynccontextmanager
+async def load_mongodb_tools() -> AsyncGenerator[list[BaseTool], None]:
+    """Load database tools from the MongoDB MCP server.
+
+    Returns:
+        A list of LangChain-compatible tool objects.
+        Returns an empty list if the MongoDB MCP server is unreachable.
+    """
+    runtime = get_runtime(Context)
     mongodb_mcp_uri = runtime.context.mongodb_mcp_uri
 
     custom_db_mcp_servers: dict[str, Any] = {
@@ -44,47 +68,21 @@ async def load_database_tools() -> AsyncGenerator[list[BaseTool], None]:
         }
     }
 
-    tools: list[BaseTool] = []
     try:
-        async with ToolboxClient(toolbox_uri) as toolbox_client:
-            toolbox_tools = await toolbox_client.aload_toolset()
-            tools.extend(toolbox_tools)
+        db_mcp_client = MultiServerMCPClient(
+            custom_db_mcp_servers, tool_name_prefix=True
+        )
+        async with db_mcp_client.session("mongodb") as db_mcp_session:
+            db_tools = await load_mcp_tools(db_mcp_session)
             logger.info(
-                "Loaded database tools from toolbox at %s: %s",
-                toolbox_uri,
-                [tool.name for tool in toolbox_tools],
+                "Loaded database tools from mongodb mcp server: %s",
+                [tool.name for tool in db_tools],
             )
-            mcp_client_yielded = False
-            try:
-                db_mcp_client = MultiServerMCPClient(
-                    custom_db_mcp_servers, tool_name_prefix=True
-                )
-                async with db_mcp_client.session("mongodb") as db_mcp_session:
-                    db_tools = await load_mcp_tools(db_mcp_session)
-                    tools.extend(db_tools)
-                    logger.info(
-                        "Loaded database tools from mongodb mcp server: %s",
-                        [tool.name for tool in db_tools],
-                    )
-                    yield tools
-                    mcp_client_yielded = True
-            except* (BrokenResourceError, CancelledError, RuntimeError, Exception):
-                if not mcp_client_yielded:
-                    logger.warning(
-                        "Failed to load tools from MongoDB MCP server with URI %s.",
-                        mongodb_mcp_uri,
-                        exc_info=True,
-                    )
-                    yield tools  # Yield toolbox tools even if MCP tools failed
-                else:
-                    logger.debug(
-                        "Error details for MongoDB MCP server failure with URI %s.",
-                        mongodb_mcp_uri,
-                        exc_info=True,
-                    )
-    except Exception:
+            yield db_tools
+    except* (BrokenResourceError, CancelledError, RuntimeError, Exception):
         logger.warning(
-            "Failed to load database tools from toolbox server at %s.",
-            toolbox_uri,
+            "Failed to load tools from MongoDB MCP server with URI %s.",
+            mongodb_mcp_uri,
             exc_info=True,
         )
+        yield []
