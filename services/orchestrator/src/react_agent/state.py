@@ -88,7 +88,6 @@ class State(InputState, OutputState):
     target_query_validation_results: QueryValidationResults | None = field(default=None)
     query_equivalence_deep_diffs: dict[str, QueryEquivalenceDeepDiff] | None = field(default=None)
     schema_context: str = field(default="")
-    council_responses: list[dict] = field(default_factory=list)
     translation_messages: Annotated[Sequence[AnyMessage], add_messages] = field(
         default_factory=list
     )

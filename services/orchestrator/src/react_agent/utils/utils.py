@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal, cast
 import aiofiles
 import httpx
 import orjson
+import structlog
 from langchain.agents.middleware import Runtime
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel, ModelProfile
@@ -539,6 +540,3 @@ def override_pydantic_model_schema(model_cls: type[BaseModel], overrides: dict[s
         __base__=model_cls,
         **new_fields,
     )
-
-def identity(x: Any) -> Any:
-    return x

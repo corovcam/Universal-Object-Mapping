@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable, Literal, Union, cast
 
 import logfire
 import orjson
+import structlog
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
@@ -485,10 +486,8 @@ async def translation_agent(
         # debug=True if os.getenv("DEVELOPMENT") else False,
     )
 
-    strategies = "\n".join([r.get("strategy", "") for r in state.council_responses])
-
     message = f"""Translate the following Source Code ({"schema/query" if cast(TranslationType, state.translation_type).value == TranslationType.BOTH else cast(TranslationType, state.translation_type).value}) from {cast(FrameworkEnum, state.source_target).value}{f" {state.source_target_version}" if state.source_target_version else ""} to {cast(FrameworkEnum, state.destination_target).value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
-{f"\nStrategies to consider:\n{strategies}\n" if strategies else ""}{f"\nDatabase Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}---
+{f"\nDatabase Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}---
 Source Code:
 {f"<source_schema_code>\n{state.source_schema_code.strip()}\n</source_schema_code>" if state.source_schema_code else ""}{f"\n<source_query_code>\n{state.source_query_code.strip()}\n</source_query_code>" if state.source_query_code else ""}
 """
@@ -964,6 +963,14 @@ def route_post_schema_validation(
 
 
 # Observability
+
+# structlog.stdlib.recreate_defaults(log_level=None)
+structlog.configure(
+    processors=[
+        structlog.dev.ConsoleRenderer(exception_formatter=structlog.dev.RichTracebackFormatter(show_locals=False)),
+    ],
+)
+
 # langfuse = get_client()
 
 # # Verify connection
@@ -987,7 +994,7 @@ logfire.instrument_openai(suppress_other_instrumentation=False)
 logfire.instrument_requests(capture_all=True)
 logfire.instrument_httpx(capture_all=True)
 logfire.instrument_aiohttp_client(capture_all=True)
-logging.basicConfig(handlers=[logfire.LogfireLoggingHandler()])
+# logging.basicConfig(handlers=[logfire.LogfireLoggingHandler()])
 
 # Build the graph
 
