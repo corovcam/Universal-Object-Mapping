@@ -8,10 +8,14 @@ services:
       - PROXY_DOMAIN=localhost:4000
       - PROXY_TEMPLATE_URL=http://localhost:4000/{{PORT}}-{{sandboxId}}
       # - OTEL_COLLECTOR_ENDPOINT_URL=http://jaeger:4318/v1
+      - OTEL_ENABLED=false
+      - PUBLIC_OIDC_DOMAIN=http://localhost:5356/dex
     networks:
       - daytona-uom
 
   proxy:
+    environment:
+      - OIDC_PUBLIC_DOMAIN=http://localhost:5356/dex
     networks:
       - daytona-uom
 
@@ -25,6 +29,22 @@ services:
       - daytona-uom
     extra_hosts:
       - "host.docker.internal:host-gateway"
+  
+  dex:
+    volumes:
+      - ../../../services/daytona/dex/config.yaml:/etc/dex/config.yaml
+    ports: !override
+      - 5356:5556
+
+  registry:
+    ports: !override
+      - 6058:6000
+  
+  maildev: !reset null
+
+  jaeger: !reset null
+  
+  otel-collector: !reset null
 
 networks:
   daytona-uom:
