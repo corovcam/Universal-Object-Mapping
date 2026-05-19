@@ -1,20 +1,24 @@
 """Provides tools for connecting to sandbox Docker containers."""
+import asyncio
 import logging
 from typing import Annotated
+from uuid import uuid4
 
-from daytona import AsyncDaytona, DaytonaError
+import structlog
+from daytona import AsyncDaytona, DaytonaError, SessionExecuteRequest
 from langchain.tools import InjectedToolArg, ToolRuntime
 from langchain_core.tools import tool
 
 from react_agent.constants import SandboxType
 from react_agent.utils.sandboxes import ValidationSandbox
+from react_agent.utils.utils import process_streaming_chunks
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger()
 
 
 @tool
 async def execute_in_sandbox(
-    sandbox_type: SandboxType, command: str, runtime: Annotated[ToolRuntime, InjectedToolArg]
+    sandbox_type: SandboxType, command: str, timeout: int, runtime: Annotated[ToolRuntime, InjectedToolArg]
 ) -> tuple[str, int]:
     """Executes a shell command directly inside the target Daytona sandbox container (e.g. 'dotnet-service' or 'java-service').
 
@@ -23,6 +27,7 @@ async def execute_in_sandbox(
     Args:
         sandbox_type: The target service name (e.g., 'dotnet-service' or 'java-service').
         command: The shell command to run.
+        timeout: The timeout for the command execution.
 
     Returns:
         A tuple containing:
@@ -32,20 +37,44 @@ async def execute_in_sandbox(
     try:
         async with AsyncDaytona() as daytona:
             sandbox = await ValidationSandbox.get_sandbox(daytona, sandbox_type, runtime)
+            
+            session_id = f"{sandbox.name}-{uuid4()}"
+            await sandbox.process.create_session(session_id)
+
             logger.info("Executing command in service: %s", sandbox_type)
-            result = await sandbox.process.exec(command, timeout=480) # TODO: Make this configurable by user
+            # result = await sandbox.process.exec(daytona_cmd, timeout=480) # TODO: Make this configurable by user
+            exec_response = await sandbox.process.execute_session_command(
+                session_id,
+                SessionExecuteRequest(
+                    command=command,
+                    run_async=True,
+                ),
+                timeout=timeout, # TODO: Make this configurable by user or by env
+            )
+            # Stream logs with separate callbacks
+            logs_task = asyncio.create_task(
+                sandbox.process.get_session_command_logs_async(
+                    session_id,
+                    exec_response.cmd_id,
+                    lambda stdout: process_streaming_chunks(stdout, runtime.stream_writer),
+                    lambda stderr: process_streaming_chunks(stderr, runtime.stream_writer),
+                )
+            )
+            # Wait for the logs to complete
+            await logs_task
+
             output = ""
-            stdout = getattr(result, "result", None)
+            stdout = getattr(exec_response, "stdout", None)
             if stdout:
                 output += f"STDOUT:\n{stdout}\n"
                 logger.info("STDOUT: %s", stdout)
-                
-            stderr = getattr(result, "error", getattr(result, "stderr", None))
+ 
+            stderr = getattr(exec_response, "stderr", None)
             if stderr:
                 output += f"STDERR:\n{stderr}\n"
                 logger.info("STDERR: %s", stderr)
-                
-            exit_code = getattr(result, "exit_code", getattr(result, "exitCode", 0))
+
+            exit_code = getattr(exec_response, "exit_code", 0)
             output += f"Process exited with status: {exit_code}"
             logger.info("Process exited with status: %s", exit_code)
             

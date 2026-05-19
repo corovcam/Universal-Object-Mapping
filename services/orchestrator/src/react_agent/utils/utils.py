@@ -2,7 +2,7 @@
 import logging
 import os
 import re
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Callable, Literal, cast
 
 import aiofiles
 import httpx
@@ -35,6 +35,27 @@ llm_request_logger = LLMRequestLogger()
 
 def get_context_dir() -> str:
     return os.getenv("CONTEXT_ABSOLUTE_PATH", os.path.join(os.path.dirname(__file__), "..", "..", "context"))
+
+def get_config_dir() -> str:
+    return os.getenv("CONFIG_ABSOLUTE_PATH", os.path.join(os.path.dirname(__file__), "..", "..", "config"))
+
+def extract_mssql_connection_info(connection_string: str) -> dict[Literal["host", "port", "database", "user", "password"], str | int]:
+    """Extract host, port, database, user, and password from a MSSQL connection string."""
+    # e.g. "Server=host.docker.internal,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
+    pattern = re.compile(
+        r"Server=(?P<host>[^,;]+),(?P<port>\d+);Database=(?P<database>[^;]+);User Id=(?P<user>[^;]+);Password=(?P<password>[^;]+);?"
+    )
+    match = pattern.search(connection_string)
+    if not match:
+        raise ValueError("Invalid MSSQL connection string format.")
+    
+    return {
+        "host": match.group("host"),
+        "port": int(match.group("port")),
+        "database": match.group("database"),
+        "user": match.group("user"),
+        "password": match.group("password"),
+    }
 
 async def get_snippet_content(framework: FrameworkEnum, is_schema: bool = False) -> str:
     """Read a snippet file's content based on framework and type."""
@@ -246,8 +267,7 @@ async def load_chat_model(
         profile: ModelProfile | None = None
         
         # Check static cache
-        config_dir = os.path.join(os.path.dirname(__file__), "..", "..", "config")
-        cache_file = os.path.join(config_dir, "model_profiles.json")
+        cache_file = os.path.join(get_config_dir(), "model_profiles.json")
         
         if not MODEL_PROFILE_CACHE:
             try:
@@ -426,7 +446,7 @@ async def load_chat_model(
             
             # Save to cache
             try:
-                os.makedirs(config_dir, exist_ok=True)
+                os.makedirs(get_config_dir(), exist_ok=True)
                 MODEL_PROFILE_CACHE[fully_specified_name] = p_kwargs
                 async with aiofiles.open(cache_file, "wb") as f:
                     await f.write(orjson.dumps(MODEL_PROFILE_CACHE, option=orjson.OPT_INDENT_2))
@@ -540,3 +560,10 @@ def override_pydantic_model_schema(model_cls: type[BaseModel], overrides: dict[s
         __base__=model_cls,
         **new_fields,
     )
+
+
+def process_streaming_chunks(chunk: Any, writer: Callable[[Any], None], log_buffer: list | None = None):
+    """Process streaming chunks by writing them and optionally buffering them."""
+    writer(chunk)
+    if log_buffer is not None:
+        log_buffer.append(chunk)

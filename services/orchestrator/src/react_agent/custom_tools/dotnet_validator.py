@@ -56,7 +56,7 @@ async def compile_and_run_dotnet(
     results_dir = f"{sandbox_dir}/results"
 
     script = f"""
-export CONNECTION_STRING="{os.getenv('MSSQL_CONNECTION_STRING', 'Server=mssql_db,1433;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True')}"
+export CONNECTION_STRING="{runtime.context.ms_sql_connection_string}"
 export EFCORE_RESULTS_PATH="{results_dir}"
 export DAPPER_RESULTS_PATH="{results_dir}"
 export NHIBERNATE_RESULTS_PATH="{results_dir}"
@@ -80,7 +80,7 @@ fi
 
     try:
         result = await execute_in_sandbox.ainvoke(
-            {"sandbox_type": SandboxType.DOTNET_10_SANDBOX, "command": script, "runtime": runtime},
+            {"sandbox_type": SandboxType.DOTNET_10_SANDBOX, "command": script, "timeout": runtime.context.sandbox_execution_timeout, "runtime": runtime},
             config=runtime.config,
         )
         output: str = result[0]

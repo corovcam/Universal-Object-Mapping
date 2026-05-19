@@ -15,14 +15,10 @@ from daytona import (
 from langchain.tools import ToolRuntime
 
 from react_agent.constants import SandboxType
+from react_agent.utils.utils import process_streaming_chunks
 
 logger = structlog.stdlib.get_logger()
 
-
-def process_chunks(chunk, writer, log_buffer: list | None = None):
-    writer(chunk)
-    if log_buffer is not None:
-        log_buffer.append(chunk)
 
 class ValidationSandbox:
     SANDBOXES: dict[SandboxType, AsyncSandbox] = {}
@@ -65,7 +61,8 @@ class ValidationSandbox:
                     return
                 except Exception as e:
                     logger.info(f"Snapshot '{params.name}' not found or error retrieving: {e}")
-                snapshot = await daytona.snapshot.create(params, on_logs=lambda chunk: process_chunks(chunk, runtime.stream_writer, chunk_buffer))
+                chunk_buffer = []
+                snapshot = await daytona.snapshot.create(params, on_logs=lambda chunk: process_streaming_chunks(chunk, runtime.stream_writer, chunk_buffer))
                 logger.info(f"Snapshot created with ID: {snapshot.id}")
                 break
             except Exception as e:
@@ -75,7 +72,7 @@ class ValidationSandbox:
                 else:
                     raise
             finally:
-                if chunk_buffer:
+                if len(chunk_buffer) > 0:
                     await logger.adebug("snapshot_creation_logs", sandbox_type=sandbox_type.value, logs="".join(chunk_buffer))
             raise
   

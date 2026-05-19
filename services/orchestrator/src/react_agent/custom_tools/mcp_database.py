@@ -4,12 +4,15 @@ Loads tools from the running MCP Toolbox for Databases server, which provides
 prebuilt tools for MSSQL and Neo4j, plus custom MongoDB tools defined in
 database_tools.yaml.
 """
-
+import asyncio
 import logging
+import os
 from asyncio import CancelledError
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, cast
 
+import aiofiles
+import yaml
 from anyio import BrokenResourceError
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -18,8 +21,39 @@ from langgraph.runtime import get_runtime
 from toolbox_langchain import ToolboxClient
 
 from react_agent.context import Context
+from react_agent.utils.utils import extract_mssql_connection_info, get_config_dir
 
 logger = logging.getLogger(__name__)
+
+
+async def modify_toolbox_sources(context: Context) -> None:
+    """Modify the MCP Toolbox for Databases configuration file to set up data sources based on the current runtime context."""
+    db_toolbox_path = os.path.join(get_config_dir(), "db_toolbox", "custom_config.yaml")
+    mssql_conn_info = extract_mssql_connection_info(context.ms_sql_connection_string)
+    data_sources = {
+        "mssql-source": {
+            "kind": "mssql",
+            "host": mssql_conn_info["host"],
+            "port": mssql_conn_info["port"],
+            "database": mssql_conn_info["database"],
+            "user": mssql_conn_info["user"],
+            "password": mssql_conn_info["password"],
+        },
+        "neo4j-source": {
+            "kind": "neo4j",
+            "uri": context.neo4j_uri,
+            "user": context.neo4j_username,
+            "password": context.neo4j_password,
+            "database": context.neo4j_database,
+        },
+    }
+    try:
+        async with aiofiles.open(db_toolbox_path, "w") as f:
+            await f.write(yaml.dump({"sources": data_sources}))
+        logger.info("Successfully updated MCP Toolbox configuration with data sources.")
+    except Exception as e:
+        logger.error("Failed to update MCP Toolbox configuration at %s", db_toolbox_path, exc_info=True)
+        raise e
 
 
 @asynccontextmanager
@@ -33,6 +67,8 @@ async def load_toolbox_tools() -> AsyncGenerator[list[BaseTool], None]:
     runtime = get_runtime(Context)
     toolbox_uri = runtime.context.db_toolbox_uri
     try:
+        await modify_toolbox_sources(runtime.context)
+        await asyncio.sleep(2)  # Small delay to ensure the toolbox server picks up the config changes
         async with ToolboxClient(toolbox_uri) as toolbox_client:
             toolbox_tools = await toolbox_client.aload_toolset()
             logger.info(

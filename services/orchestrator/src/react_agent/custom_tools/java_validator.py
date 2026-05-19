@@ -64,10 +64,10 @@ async def compile_and_run_java(
     results_dir = f"{sandbox_dir}/results"
 
     script = f"""
-export MONGODB_URI="{os.getenv('MONGODB_URI', 'mongodb://uom_readonly:uom_readonly@mongodb:27017/uom')}"
-export NEO4J_URI="{os.getenv('NEO4J_URI', 'neo4j://neo4j:7687')}"
-export NEO4J_USERNAME="{os.getenv('NEO4J_USERNAME', 'neo4j')}"
-export NEO4J_PASSWORD="{os.getenv('NEO4J_PASSWORD', 'password')}"
+export MONGODB_URI="{runtime.context.mongodb_uri}"
+export NEO4J_URI="{runtime.context.neo4j_uri}"
+export NEO4J_USERNAME="{runtime.context.neo4j_username}"
+export NEO4J_PASSWORD="{runtime.context.neo4j_password}"
 export MONGO_RESULTS_PATH="{results_dir}"
 export NEO4J_RESULTS_PATH="{results_dir}"
 mkdir -p "{src_dir}"
@@ -89,7 +89,7 @@ fi
 
     try:
         result = await execute_in_sandbox.ainvoke(
-            {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "command": script, "runtime": runtime},
+            {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "command": script, "timeout": runtime.context.sandbox_execution_timeout, "runtime": runtime},
             config=runtime.config,
         )
         output: str = result[0]
