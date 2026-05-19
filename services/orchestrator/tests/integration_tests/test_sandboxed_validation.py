@@ -8,9 +8,10 @@ from langchain.tools import ToolRuntime
 from langchain_core.tools import StructuredTool
 from langgraph.types import Command
 
-from react_agent.constants import DotnetFramework, TranslationType
+from react_agent.constants import DotnetFramework, JavaFramework, TranslationType
 from react_agent.context import Context
 from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
+from react_agent.custom_tools.java_validator import validate_java_code
 from react_agent.state import State
 
 
@@ -87,3 +88,23 @@ async def test_dotnet_sandbox(sample_tool_runtime: ToolRuntime[Context, State], 
     assert isinstance(update, dict)
     tool_message = update.get("messages", [])[0]
     assert "[Dotnet Validation Passed]" in tool_message.content
+
+
+@pytest.mark.asyncio
+async def test_java_sandbox(sample_tool_runtime: ToolRuntime[Context, State], config: dict[str, Path]):
+    """Validation should reject source without class or record before sandbox call."""
+    java_query_entrypoint = (config["SNIPPETS_DIR"] / "MongoQueryEntrypoint.java").read_text()
+
+    func = validate_java_code
+    structured = func if isinstance(func, StructuredTool) else None
+    assert structured is not None and structured.coroutine is not None
+    result: Command = await structured.coroutine(
+        source_code=java_query_entrypoint,
+        framework=JavaFramework.JAVA_SPRING_DATA_MONGODB,
+        entry_type_name="MongoQueryEntrypoint",
+        runtime=sample_tool_runtime,
+    )
+    update = cast(dict[str, list[ToolMessage]], result.update)
+    assert isinstance(update, dict)
+    tool_message = update.get("messages", [])[0]
+    assert "[Java Validation Passed]" in tool_message.content

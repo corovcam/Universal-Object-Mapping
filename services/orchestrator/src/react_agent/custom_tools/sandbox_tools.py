@@ -5,7 +5,12 @@ from typing import Annotated
 from uuid import uuid4
 
 import structlog
-from daytona import AsyncDaytona, DaytonaError, SessionExecuteRequest
+from daytona import (
+    AsyncDaytona,
+    DaytonaError,
+    SessionExecuteRequest,
+    SessionExecuteResponse,
+)
 from langchain.tools import InjectedToolArg, ToolRuntime
 from langchain_core.tools import tool
 
@@ -62,19 +67,21 @@ async def execute_in_sandbox(
             )
             # Wait for the logs to complete
             await logs_task
-
+            session_cmd = await sandbox.process.get_session_command(session_id, exec_response.cmd_id)
+            logs = await sandbox.process.get_session_command_logs(session_id, exec_response.cmd_id)
+            
             output = ""
-            stdout = getattr(exec_response, "stdout", None)
+            stdout = getattr(logs, "stdout", None)
             if stdout:
                 output += f"STDOUT:\n{stdout}\n"
                 logger.info("STDOUT: %s", stdout)
  
-            stderr = getattr(exec_response, "stderr", None)
+            stderr = getattr(logs, "stderr", None)
             if stderr:
                 output += f"STDERR:\n{stderr}\n"
                 logger.info("STDERR: %s", stderr)
 
-            exit_code = getattr(exec_response, "exit_code", 0)
+            exit_code = getattr(session_cmd, "exit_code", 0)
             output += f"Process exited with status: {exit_code}"
             logger.info("Process exited with status: %s", exit_code)
             

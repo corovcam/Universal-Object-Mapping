@@ -159,8 +159,7 @@ class ValidationSandbox:
                     await asyncio.sleep(wait_time)
                 else:
                     logger.error(f"Failed to handle sandbox '{params.name}' after {max_retries} attempts.")
-                    logger.warning("Continuing gracefully without the sandbox.")
-                    return
+                    raise RuntimeError(f"Failed to initialize sandbox '{params.name}' after {max_retries} attempts.") from e
         
         logger.warning(f"Exhausted retries for sandbox '{params.name}'. Continuing gracefully.")
     
