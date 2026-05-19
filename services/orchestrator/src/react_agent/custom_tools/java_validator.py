@@ -47,7 +47,7 @@ async def compile_and_run_java(
     source_code: str,
     framework: JavaFramework,
     entry_type_name: str,
-    translation_type: TranslationType,
+    runtime: ToolRuntime[Context, State],
 ) -> tuple[str, str | None]:
     """Helper to compile and run Java source code, returning (output, json_part)."""
     try:
@@ -79,7 +79,7 @@ mvn -q -B --no-transfer-progress dependency:resolve clean compile
 """
     if source_code.strip():
         script += f"mvn -q -B --no-transfer-progress exec:java -Dexec.mainClass=\"uom.services.{entry_type_name}\" -Dexec.classpathScope=compile"
-        if translation_type in [TranslationType.QUERY, TranslationType.BOTH]:
+        if runtime.state.translation_type in [TranslationType.QUERY, TranslationType.BOTH]:
             script += f"""
 NEWEST_JSON=$(ls -t "{results_dir}"/*.json 2>/dev/null | head -n 1)
 if [ -n "$NEWEST_JSON" ]; then
@@ -89,7 +89,8 @@ fi
 
     try:
         result = await execute_in_sandbox.ainvoke(
-            {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "command": script}
+            {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "command": script, "runtime": runtime},
+            config=runtime.config,
         )
         output: str = result[0]
         exit_code: int = result[1]
@@ -102,7 +103,8 @@ fi
         if json_path_line is not None:
             remote_path = json_path_line.split("=")[1].strip()
             json_content = await download_file_from_sandbox.ainvoke(
-                {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "remote_path": remote_path}
+                {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "remote_path": remote_path, "runtime": runtime},
+                config=runtime.config,
             )
             json_part = json_content
 
@@ -118,11 +120,10 @@ async def validate_java_code(
     source_code: str,
     framework: JavaFramework,
     entry_type_name: str,
-    runtime: ToolRuntime, # type: ignore
+    runtime: ToolRuntime[Context, State],
 ) -> Command | str:
     """Compile and validate Java source code through java-service CLI."""
-    runtime: ToolRuntime[Context, State] = runtime  # type: ignore
-    output, json_part = await compile_and_run_java(source_code, framework, entry_type_name, cast(TranslationType, runtime.state.translation_type))
+    output, json_part = await compile_and_run_java(source_code, framework, entry_type_name, runtime)
     
     if json_part:
         if "===JSON ERROR===" in json_part:
