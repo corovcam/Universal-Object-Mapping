@@ -143,7 +143,7 @@ async def validate_java_code(
         return Command(
             update={
                 **update_dict,
-                "translation_messages": [
+                "messages": [
                     ToolMessage(
                         content=output,
                         tool_call_id=tool_call_id,

@@ -628,7 +628,11 @@ def prep_schema_validation(state: State) -> dict[str, Any]:
             "id": "schema_val_1",
             "type": "tool_call"
         })
-    return {"translation_messages": [AIMessage(content="", tool_calls=tool_calls)]}
+    message = AIMessage(content="Commencing validation of translated schema and related settings...", tool_calls=tool_calls)
+    return {
+        "messages": message,
+        "translation_messages": message,
+    }
 
 
 def prep_query_validation(state: State) -> dict[str, Any]:
@@ -681,8 +685,12 @@ def prep_query_validation(state: State) -> dict[str, Any]:
             "id": "target_query_val",
             "type": "tool_call"
         })
-
-    return {"translation_messages": [AIMessage(content="", tool_calls=tool_calls)]}
+    
+    message = AIMessage(content="Commencing parallel validation of source and target queries...", tool_calls=tool_calls)
+    return {
+        "messages": message,
+        "translation_messages": message
+    }
 
 
 def prep_query_equivalence(state: State) -> dict[str, Any]:
@@ -702,20 +710,40 @@ def prep_query_equivalence(state: State) -> dict[str, Any]:
             "type": "tool_call"
         }
     ]
-    return {"translation_messages": [AIMessage(content="", tool_calls=tool_calls)]}
+    message = AIMessage(content="Commencing query equivalence check between source and target queries...", tool_calls=tool_calls)
+    return {
+        "messages": message,
+        "translation_messages": message
+    }
 
 
-async def retry_infrastructure_errors(
+async def custom_tool_node_wrapper(
     request: ToolCallRequest,
     execute: Callable[[ToolCallRequest], Awaitable[Union[ToolMessage, Command]]]
 ) -> Union[ToolMessage, Command]:
-    """Retry tool execution up to 4 times on Daytona/infrastructure errors."""
+    """Modify state and retry tool execution up to 4 times on Daytona/infrastructure errors."""
     max_retries = 4
     base_delay = 1.0
 
     for attempt in range(1, max_retries + 1):
         try:
-            return await execute(request)
+            res = await execute(request)
+            if isinstance(res, ToolMessage):
+                return Command(update={
+                    "messages": res,
+                    "translation_messages": res,
+                })
+            elif isinstance(res, Command):
+                if res.update and "messages" in res.update:
+                    messages = res.update.get("messages", [])
+                    return Command(update={
+                        **res.update,
+                        "messages": messages,
+                        "translation_messages": messages,
+                    })
+                return res
+            else:
+                return res
         except Exception as e:
             if attempt == max_retries:
                 logger.error(f"Tool {request.tool_call['name']} failed after {max_retries} attempts: {e}")
@@ -736,23 +764,20 @@ async def retry_infrastructure_errors(
 
 validate_schema_node = ToolNode(
     [validate_dotnet_code, validate_java_code], 
-    name="validate_schema_node", 
-    messages_key="translation_messages",
-    awrap_tool_call=retry_infrastructure_errors,
+    name="validate_schema_node",
+    awrap_tool_call=custom_tool_node_wrapper,
 )
 
 validate_query_node = ToolNode(
     [validate_dotnet_code, validate_java_code], 
-    name="validate_query_node", 
-    messages_key="translation_messages",
-    awrap_tool_call=retry_infrastructure_errors,
+    name="validate_query_node",
+    awrap_tool_call=custom_tool_node_wrapper,
 )
 
 check_query_equivalence_node = ToolNode(
     [check_query_equivalence], 
-    name="check_query_equivalence_node", 
-    messages_key="translation_messages",
-    awrap_tool_call=retry_infrastructure_errors,
+    name="check_query_equivalence_node",
+    awrap_tool_call=custom_tool_node_wrapper,
 )
 
 
