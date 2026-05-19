@@ -23,11 +23,11 @@ from langchain.messages import AIMessage
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.cache.memory import InMemoryCache
-from langgraph.graph import START, StateGraph
+from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
-from langgraph.types import CachePolicy, Command, RetryPolicy
+from langgraph.types import CachePolicy, Command, RetryPolicy, interrupt
 from pydantic import BaseModel, Field, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
@@ -584,23 +584,59 @@ Source Code:
 
     if "structured_response" not in response:
         logger.warning("LLM did not return TranslationOutput properly.")
+        messages = [*response["messages"], AIMessage(content="Failed to generate translation. LLM did not return structured response in expected format.")]
+        updates["messages"] = messages
+        updates["translation_messages"] = messages
         return updates
 
     output = response["structured_response"]
     updates.update(output.model_dump(warnings="error", exclude_unset=True))
 
-    updates["translation_messages"] = AIMessage(
-        content="Generated translation. Commencing deterministic validation..."
-    )
+    messages = [*response["messages"], AIMessage(content="Generated translation. Commencing deterministic validation...")]
+    updates["messages"] = messages
+    updates["translation_messages"] = messages
 
     return updates
 
 
+class HumanInterventionResponse(BaseModel):
+    decision: Literal["accept", "reject"]
+    feedback: str
+
+
 async def human_intervention_node(
-    state: State, config: RunnableConfig, runtime: Runtime[Context]
-) -> dict[str, Any]:
-    """A dummy node that acts as a pausing point when loop threshold is reached."""
-    return {}
+    state: State
+):
+    """Pause the graph and ask for human feedback on the generated translation and validation results before proceeding to next steps."""
+    response = interrupt({
+        "instruction": "Review the current state, generated translation and validation results. Decide if the translation is correct or if another translation attempt is needed and provide feedback on what needs to be improved in the next attempt.",
+        "state": {
+            "translated_query_code": state.translated_query_code,
+            "translated_schema_code": state.translated_schema_code,
+            "explanation_message": state.explanation_message,
+            "query_equivalence_deep_diffs": state.query_equivalence_deep_diffs,
+        }
+    })
+    output = HumanInterventionResponse.model_validate(response)
+    
+    if output.decision == "reject":
+        if output.feedback:
+            feedback_message = HumanMessage(content=f"User rejected the translation with feedback:\n{output.feedback}")
+        else:
+            feedback_message = HumanMessage(content="User rejected the translation without providing feedback.")
+        return {
+            "messages": feedback_message,
+            "translation_messages": feedback_message,
+        }
+    else:
+        feedback_message = HumanMessage(content="Translation was accepted.")
+        return Command(
+            update={
+                "messages": feedback_message,
+                "translation_messages": feedback_message,
+            },
+            goto=END,
+        )
 
 
 def prep_schema_validation(state: State) -> dict[str, Any]:
@@ -1042,7 +1078,6 @@ builder.add_edge("human_intervention_node", "generate_translation_node")
 
 graph = builder.compile(
     name="Universal Object Mapping Translator",
-    interrupt_before=["human_intervention_node"],
     # checkpointer=checkpointer,
     # store=store,
     cache=cache,
