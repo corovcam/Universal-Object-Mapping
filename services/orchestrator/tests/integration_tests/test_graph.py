@@ -9,17 +9,51 @@ from typing import Awaitable, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
+from aimock_pytest import AIMockServer
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 
 from react_agent.constants import FrameworkEnum, TranslationType
+from react_agent.context import Context
 from react_agent.graph import (
     extract_input,
     schema_inspection,
 )
-from react_agent.state import State
+from react_agent.state import InputState, OutputState, State
 
 pytestmark = pytest.mark.anyio
+
+# @pytest.mark.integration
+# @pytest.mark.asyncio
+# class TestCompleteGraphExecution:
+#     """Tests for running the complete graph end-to-end."""
+
+#     async def test_complete_execution(self, 
+#         config, 
+#         aimock: AIMockServer, 
+#         compiled_graph_with_checkpointer: CompiledStateGraph[State, Context, InputState, OutputState],
+#         sample_state: State,
+#     ):
+#         """Run the entire graph with a real LLM and assert final state is populated."""
+#         g = compiled_graph_with_checkpointer
+#         thread_config = RunnableConfig(configurable={"thread_id": "test-complete-1"})
+#         context = Context(openai_api_key=f"{aimock.url}/v1")
+#         aimock.fixtures_path = config["AIMOCK_FIXTURES_DIR"]
+
+#         _result = await g.ainvoke(
+#             sample_state,
+#             config=thread_config,
+#             context=context,
+#             interrupt_after=["extract_input"],
+#         )
+
+#         # After full execution, we expect source_code and targets to be set
+#         state = await g.aget_state(thread_config)
+#         assert state is not None
+#         # assert state.source_schema_code is not None and len(state.source_schema_code) > 0
+#         # assert state.source_target is not None
+#         # assert state.destination_target is not None
 
 
 # ── extract_input Node ───────────────────────────────────────────────────────
@@ -82,7 +116,10 @@ class TestSchemaInspection:
             yield []
 
         with patch(
-            "react_agent.graph.load_database_tools",
+            "react_agent.graph.load_toolbox_tools",
+            side_effect=empty_tools,
+        ), patch(
+            "react_agent.graph.load_mongodb_tools",
             side_effect=empty_tools,
         ):
             result = await schema_inspection(sample_state, runnable_config, runtime)

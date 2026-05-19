@@ -62,7 +62,7 @@ async def test_load_chat_model_handles_missing_extra_body(monkeypatch: pytest.Mo
     )
 
     assert model is not None
-    assert captured_kwargs["extra_body"] == {"enable_thinking": True}
+    assert captured_kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": True}}
 
 
 @pytest.mark.asyncio
