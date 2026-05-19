@@ -345,7 +345,14 @@ Conversation:
         return {}
 
     extraction: ExtractionOutput = response["structured_response"]
-    return extraction.model_dump(warnings="error", exclude_unset=True)
+    updates = {
+        "messages": [
+            *response["messages"],
+            ToolMessage(content="Successfully extracted inputs.", tool_call_id="call_extract_input", name="extract_input"),
+        ],
+        **extraction.model_dump(warnings="error", exclude_unset=True)
+    }
+    return updates
 
 
 async def schema_inspection(
@@ -410,20 +417,24 @@ async def schema_inspection(
 Source code being translated:
 {f"<schema_code>\n{state.source_schema_code}\n</schema_code>\n" if state.source_schema_code else ""}
 {f"<query_code>\n{state.source_query_code}\n</query_code>\n" if state.source_query_code else ""}"""
-
+        
+        response = None
         try:
             response = await agent.ainvoke(
                 {"messages": [HumanMessage(content=message)]}
             )
             # Extract the final assistant response as schema context
-            schema_summary = (
-                response["messages"][-1].content if response["messages"] else ""
-            )
-            return {"schema_context": str(schema_summary)}
+            schema_summary = response["messages"][-1].content if response["messages"] else ""
+            return {
+                "schema_context": str(schema_summary),
+                "messages": response["messages"],
+            }
         except Exception:
             logger.warning("Schema inspection failed.", exc_info=True)
             return {
-                "schema_context": "Schema inspection encountered an error. Proceeding without schema context."
+                "messages": response["messages"] if response and response.get("messages") else [
+                    AIMessage(content="Schema inspection failed. Could not extract schema context."),
+                ]
             }
 
 
@@ -839,16 +850,17 @@ async def evaluation_node(
     """Evaluate validation outputs and deepdiff results to decide on translation acceptance."""
     model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6)
 
-    last_msgs_str = [
-        msg.content if isinstance(msg.content, str) else str(msg.content)
-        for msg in state.translation_messages[-4:]
+    last_msgs = [
+        str(msg) for msg in state.translation_messages[-4:]
     ]
 
     prompt = f"""Evaluate the following validation results for a schema/query translation.
 Based on the validation output and DeepDiff equivalence results, decide if the translation is ACCEPTABLE or if it should be REJECTED and retried.
 
-Validation Results:
-{chr(10).join(last_msgs_str)}
+<validation_results>
+{"\n".join(last_msgs)}
+</validation_results>
+
 Is the translation logically equivalent and syntactically valid? Provide your reasoning and output ACCEPT or REJECT.
 """
     agent = create_agent(
@@ -864,27 +876,33 @@ Is the translation logically equivalent and syntactically valid? Provide your re
         ],
     )
 
+    response = None
     try:
         response = await agent.ainvoke({"messages": [HumanMessage(content=prompt)]})
+        messages = response["messages"] if response and response.get("messages") else []
         if "structured_response" not in response:
+            messages = [*messages, AIMessage(content="Failed to evaluate translation. LLM did not return structured response in expected format.")]
             return {
-                "translation_messages": [
-                    HumanMessage(
-                        content="[Evaluation Failed] Could not parse LLM evaluation decision."
-                    )
-                ]
+                "messages": messages,
+                "translation_messages": messages,
             }
 
-        output = response["structured_response"]
-
+        output: EvaluationOutput = response["structured_response"]
+        messages = [*messages, AIMessage(content=f"[{output.decision}] {output.explanation}")]
         return {
             "explanation_message": output.explanation,
-            "translation_messages": [HumanMessage(content=f"[{output.decision}] {output.explanation}")]
+            "messages": messages,
+            "translation_messages": messages,
         }
-    except Exception as e:
+    except Exception as e: # TODO: narrow exception type OR remove these try-except blocks from all nodes - errors are handled by LangGraph already (retried)
         logger.error(f"Evaluation node failed: {e}")
+        messages = [
+            *(response["messages"] if response and response.get("messages") else []),
+            AIMessage(content=f"[Evaluation Error] An error occurred during evaluation: {e}")
+        ]
         return {
-            "translation_messages": [HumanMessage(content=f"[Evaluation Error] {e}")]
+            "messages": messages,
+            "translation_messages": messages,
         }
 
 
