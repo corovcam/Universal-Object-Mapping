@@ -1,7 +1,7 @@
 """Provides tools for connecting to sandbox Docker containers."""
 import asyncio
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import uuid4
 
 import structlog
@@ -23,7 +23,7 @@ logger = structlog.stdlib.get_logger()
 
 @tool
 async def execute_in_sandbox(
-    sandbox_type: SandboxType, command: str, timeout: int, runtime: Annotated[ToolRuntime, InjectedToolArg]
+    sandbox_type: SandboxType, command: str, timeout: int, env_vars: dict[str, Any] | None, runtime: Annotated[ToolRuntime, InjectedToolArg]
 ) -> tuple[str, int]:
     """Executes a shell command directly inside the target Daytona sandbox container (e.g. 'dotnet-service' or 'java-service').
 
@@ -33,7 +33,9 @@ async def execute_in_sandbox(
         sandbox_type: The target service name (e.g., 'dotnet-service' or 'java-service').
         command: The shell command to run.
         timeout: The timeout for the command execution.
-
+        env_vars: Environment variables for the command execution.
+        runtime: The tool runtime, used for accessing context and streaming output.
+    
     Returns:
         A tuple containing:
         - The standard output and standard error from the executed command, or an error message if it failed.
@@ -41,7 +43,7 @@ async def execute_in_sandbox(
     """
     try:
         async with AsyncDaytona() as daytona:
-            sandbox = await ValidationSandbox.get_sandbox(daytona, sandbox_type, runtime)
+            sandbox = await ValidationSandbox.get_sandbox(daytona, sandbox_type, runtime, env_vars)
             
             session_id = f"{sandbox.name}-{uuid4()}"
             await sandbox.process.create_session(session_id)

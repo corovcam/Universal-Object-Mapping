@@ -24,7 +24,10 @@ from react_agent.custom_tools.sandbox_tools import (
     execute_in_sandbox,
 )
 from react_agent.state import State
-from react_agent.utils.utils import get_framework_config_content
+from react_agent.utils.utils import (
+    get_framework_config_content,
+    translate_localhost_to_host_docker_internal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,14 +65,17 @@ async def compile_and_run_java(
     sandbox_dir = f"/sandbox/sandbox-{timestamp}"
     src_dir = f"{sandbox_dir}/src/main/java/uom/services"
     results_dir = f"{sandbox_dir}/results"
+    env_vars = {
+        "MONGODB_URI": translate_localhost_to_host_docker_internal(runtime.context.mongodb_uri),
+        "NEO4J_URI": translate_localhost_to_host_docker_internal(runtime.context.neo4j_uri),
+        "NEO4J_USERNAME": runtime.context.neo4j_username,
+        "NEO4J_PASSWORD": runtime.context.neo4j_password,
+        "MONGO_RESULTS_PATH": results_dir,
+        "NEO4J_RESULTS_PATH": results_dir,
+    }
 
     script = f"""
-export MONGODB_URI="{runtime.context.mongodb_uri}"
-export NEO4J_URI="{runtime.context.neo4j_uri}"
-export NEO4J_USERNAME="{runtime.context.neo4j_username}"
-export NEO4J_PASSWORD="{runtime.context.neo4j_password}"
-export MONGO_RESULTS_PATH="{results_dir}"
-export NEO4J_RESULTS_PATH="{results_dir}"
+{"\n".join([f"export {key}=\"{value}\"" for key, value in env_vars.items()])}
 mkdir -p "{src_dir}"
 mkdir -p "{results_dir}"
 echo "{pom_b64}" | base64 -d > "{sandbox_dir}/pom.xml"
@@ -89,7 +95,7 @@ fi
 
     try:
         result = await execute_in_sandbox.ainvoke(
-            {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "command": script, "timeout": runtime.context.sandbox_execution_timeout, "runtime": runtime},
+            {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "command": script, "timeout": runtime.context.sandbox_execution_timeout, "env_vars": env_vars, "runtime": runtime},
             config=runtime.config,
         )
         output: str = result[0]

@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+from typing import Any
 
 import structlog
 from daytona import (
@@ -38,9 +39,9 @@ class ValidationSandbox:
     }
     
     @staticmethod
-    async def get_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, runtime: ToolRuntime) -> AsyncSandbox:
+    async def get_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, runtime: ToolRuntime, env_vars: dict[str, Any] | None = None) -> AsyncSandbox:
         await ValidationSandbox.create_snapshot(daytona, sandbox_type, runtime)
-        await ValidationSandbox.initialize_validation_sandbox(daytona, sandbox_type, runtime)
+        await ValidationSandbox.initialize_validation_sandbox(daytona, sandbox_type, env_vars)
         return ValidationSandbox.SANDBOXES[sandbox_type]
     
     @staticmethod
@@ -77,12 +78,13 @@ class ValidationSandbox:
             raise
   
     @staticmethod
-    async def initialize_validation_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, runtime: ToolRuntime) -> None:
+    async def initialize_validation_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, env_vars: dict[str, Any] | None = None) -> None:
         """Initialize a validation sandbox."""
         params = CreateSandboxFromSnapshotParams(
             snapshot=f"validation-snapshot-{sandbox_type.value.lower()}",
-            auto_stop_interval=30, # Sandbox will be stopped after 30 minutes
+            auto_stop_interval=60, # TODO: make this configurable: Sandbox will be stopped after 60 minutes
             name=f"validation-sandbox-{sandbox_type.value.lower()}",
+            env_vars=env_vars,
         )
         assert params.name is not None
         

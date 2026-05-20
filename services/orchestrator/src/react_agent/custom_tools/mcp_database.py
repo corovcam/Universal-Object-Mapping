@@ -21,7 +21,11 @@ from langgraph.runtime import get_runtime
 from toolbox_langchain import ToolboxClient
 
 from react_agent.context import Context
-from react_agent.utils.utils import extract_mssql_connection_info, get_config_dir
+from react_agent.utils.utils import (
+    extract_mssql_connection_info,
+    get_config_dir,
+    translate_localhost_to_host_docker_internal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +33,7 @@ logger = logging.getLogger(__name__)
 async def modify_toolbox_sources(context: Context) -> None:
     """Modify the MCP Toolbox for Databases configuration file to set up data sources based on the current runtime context."""
     db_toolbox_path = os.path.join(get_config_dir(), "db_toolbox", "custom_config.yaml")
-    mssql_conn_info = extract_mssql_connection_info(context.ms_sql_connection_string)
+    mssql_conn_info = extract_mssql_connection_info(translate_localhost_to_host_docker_internal(context.ms_sql_connection_string))
     data_sources = {
         "mssql-source": {
             "kind": "mssql",
@@ -41,7 +45,7 @@ async def modify_toolbox_sources(context: Context) -> None:
         },
         "neo4j-source": {
             "kind": "neo4j",
-            "uri": context.neo4j_uri,
+            "uri": translate_localhost_to_host_docker_internal(context.neo4j_uri),
             "user": context.neo4j_username,
             "password": context.neo4j_password,
             "database": context.neo4j_database,
@@ -67,8 +71,8 @@ async def load_toolbox_tools() -> AsyncGenerator[list[BaseTool], None]:
     runtime = get_runtime(Context)
     toolbox_uri = runtime.context.db_toolbox_uri
     try:
-        await modify_toolbox_sources(runtime.context)
-        await asyncio.sleep(2)  # Small delay to ensure the toolbox server picks up the config changes
+        # await modify_toolbox_sources(runtime.context)
+        # await asyncio.sleep(2)  # Small delay to ensure the toolbox server picks up the config changes
         async with ToolboxClient(toolbox_uri) as toolbox_client:
             toolbox_tools = await toolbox_client.aload_toolset()
             logger.info(

@@ -56,6 +56,12 @@ def extract_mssql_connection_info(connection_string: str) -> dict[Literal["host"
         "user": match.group("user"),
         "password": match.group("password"),
     }
+    
+
+def translate_localhost_to_host_docker_internal(uri: str) -> str:
+    """Translate localhost in a URI to host.docker.internal for sandbox compatibility."""
+    return uri.replace("localhost", "host.docker.internal")
+
 
 async def get_snippet_content(framework: FrameworkEnum, is_schema: bool = False) -> str:
     """Read a snippet file's content based on framework and type."""

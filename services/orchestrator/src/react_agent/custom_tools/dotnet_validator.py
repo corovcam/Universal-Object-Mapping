@@ -24,7 +24,10 @@ from react_agent.custom_tools.sandbox_tools import (
     execute_in_sandbox,
 )
 from react_agent.state import State
-from react_agent.utils.utils import get_framework_config_content
+from react_agent.utils.utils import (
+    get_framework_config_content,
+    translate_localhost_to_host_docker_internal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +57,15 @@ async def compile_and_run_dotnet(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     sandbox_dir = f"/sandbox/sandbox-{timestamp}"
     results_dir = f"{sandbox_dir}/results"
-
+    env_vars = {
+        "CONNECTION_STRING": translate_localhost_to_host_docker_internal(runtime.context.ms_sql_connection_string),
+        "EFCORE_RESULTS_PATH": results_dir,
+        "DAPPER_RESULTS_PATH": results_dir,
+        "NHIBERNATE_RESULTS_PATH": results_dir,
+    }
+    
     script = f"""
-export CONNECTION_STRING="{runtime.context.ms_sql_connection_string}"
-export EFCORE_RESULTS_PATH="{results_dir}"
-export DAPPER_RESULTS_PATH="{results_dir}"
-export NHIBERNATE_RESULTS_PATH="{results_dir}"
+{"\n".join([f"export {key}=\"{value}\"" for key, value in env_vars.items()])}
 mkdir -p "{sandbox_dir}"
 mkdir -p "{results_dir}"
 echo "{csproj_b64}" | base64 -d > "{sandbox_dir}/sandbox.csproj"
@@ -80,7 +86,7 @@ fi
 
     try:
         result = await execute_in_sandbox.ainvoke(
-            {"sandbox_type": SandboxType.DOTNET_10_SANDBOX, "command": script, "timeout": runtime.context.sandbox_execution_timeout, "runtime": runtime},
+            {"sandbox_type": SandboxType.DOTNET_10_SANDBOX, "command": script, "timeout": runtime.context.sandbox_execution_timeout, "env_vars": env_vars, "runtime": runtime},
             config=runtime.config,
         )
         output: str = result[0]
