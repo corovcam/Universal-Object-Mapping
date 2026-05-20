@@ -40,6 +40,10 @@ services:
     ports: !override
       - 6058:6000
   
+  ssh-gateway:
+    networks:
+      - daytona-uom
+  
   maildev: !reset null
 
   jaeger: !reset null
