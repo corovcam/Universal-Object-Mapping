@@ -5,11 +5,9 @@ services:
         - action: rebuild
           path: ./src
           target: /deps/orchestrator/src
-          initial_sync: true
         - action: sync
           path: ./scripts
           target: /deps/orchestrator/scripts
-          initial_sync: true
         - action: rebuild
           path: pyproject.toml
     networks:

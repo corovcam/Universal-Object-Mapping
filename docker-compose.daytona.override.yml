@@ -1,13 +1,13 @@
 services:
   api:
-    environment:
-      # - OTEL_EXPORTER_OTLP_ENDPOINT=https://logfire-eu.pydantic.dev
-      # - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer pylf_v1_eu_NWM7wqMDnsBcp0mMVpXQQlpBgTrccq6p1BTyv0jS2Bp9
-      # - OTEL_COLLECTOR_ENDPOINT_URL=https://logfire-eu.pydantic.dev
-      # - OTEL_COLLECTOR_API_KEY=pylf_v1_eu_NWM7wqMDnsBcp0mMVpXQQlpBgTrccq6p1BTyv0jS2Bp9
-      - PROXY_DOMAIN=localhost:4000
-      - PROXY_TEMPLATE_URL=http://localhost:4000/{{PORT}}-{{sandboxId}}
-      # - OTEL_COLLECTOR_ENDPOINT_URL=http://jaeger:4318/v1
+    # environment:
+    #   # - OTEL_EXPORTER_OTLP_ENDPOINT=https://logfire-eu.pydantic.dev
+    #   # - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer pylf_v1_eu_NWM7wqMDnsBcp0mMVpXQQlpBgTrccq6p1BTyv0jS2Bp9
+    #   # - OTEL_COLLECTOR_ENDPOINT_URL=https://logfire-eu.pydantic.dev
+    #   # - OTEL_COLLECTOR_API_KEY=pylf_v1_eu_NWM7wqMDnsBcp0mMVpXQQlpBgTrccq6p1BTyv0jS2Bp9
+    #   - PROXY_DOMAIN=localhost:4000
+    #   - PROXY_TEMPLATE_URL=http://localhost:4000/{{PORT}}-{{sandboxId}}
+    #   # - OTEL_COLLECTOR_ENDPOINT_URL=http://jaeger:4318/v1
     networks:
       - daytona-uom
 
