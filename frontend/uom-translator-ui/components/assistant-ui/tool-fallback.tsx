@@ -8,6 +8,7 @@ import {
   LoaderIcon,
   XCircleIcon,
 } from "lucide-react";
+import { JsonViewer } from "@/components/json-viewer";
 import {
   useScrollLock,
   type ToolCallMessagePartStatus,
@@ -214,6 +215,15 @@ function ToolFallbackResult({
 }) {
   if (result === undefined) return null;
 
+  let parsedJson: any = null;
+  if (typeof result === "string") {
+    try {
+      parsedJson = JSON.parse(result);
+    } catch (_) {}
+  } else if (result !== null && typeof result === "object") {
+    parsedJson = result;
+  }
+
   return (
     <div
       data-slot="tool-fallback-result"
@@ -224,9 +234,15 @@ function ToolFallbackResult({
       {...props}
     >
       <p className="aui-tool-fallback-result-header font-semibold">Result:</p>
-      <pre className="aui-tool-fallback-result-content whitespace-pre-wrap">
-        {typeof result === "string" ? result : JSON.stringify(result, null, 2)}
-      </pre>
+      {parsedJson ? (
+        <div className="border border-slate-800/80 rounded-lg bg-slate-950/80 p-3 mt-1.5 max-h-[300px] overflow-y-auto custom-scrollbar">
+          <JsonViewer data={parsedJson} maxDepth={1} />
+        </div>
+      ) : (
+        <pre className="aui-tool-fallback-result-content whitespace-pre-wrap">
+          {typeof result === "string" ? result : JSON.stringify(result, null, 2)}
+        </pre>
+      )}
     </div>
   );
 }

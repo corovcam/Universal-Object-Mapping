@@ -36,6 +36,20 @@ import { Button } from "@/components/ui/button";
 
 const ASSISTANT_ID = process.env.NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID || "universal-object-mapping-translator";
 
+const NODE_NAME_MAP: Record<string, string> = {
+  "extract_input": "Extracting Input",
+  "schema_inspection": "Inspecting Database Schema",
+  "generate_translation_node": "Translating Code",
+  "prep_schema_validation": "Validating Schema (.NET & Java)",
+  "validate_schema_node": "Validating Schema (.NET & Java)",
+  "prep_query_validation": "Validating Query Logic",
+  "validate_query_node": "Validating Query Logic",
+  "prep_query_equivalence": "Evaluating Translation (Query Equivalence Check)",
+  "check_query_equivalence_node": "Evaluating Translation (Query Equivalence Check)",
+  "evaluation_node": "Evaluating Translation (Query Equivalence Check)",
+  "human_intervention_node": "Manual Intervention"
+};
+
 export function Workspace() {
   const client = useMemo(() => createClient(), []);
   
@@ -56,6 +70,7 @@ export function Workspace() {
   const [activeInterrupt, setActiveInterrupt] = useState<any>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [isSubmittingInterrupt, setIsSubmittingInterrupt] = useState(false);
+  const [activeNode, setActiveNode] = useState<string | null>(null);
 
   // Theme toggler
   useEffect(() => {
@@ -171,7 +186,39 @@ export function Workspace() {
           }
         }
       };
-      return client.runs.stream(externalId, ASSISTANT_ID, payload as any);
+      
+      const eventStream = await client.runs.stream(externalId, ASSISTANT_ID, payload as any);
+      async function* makeGenerator() {
+        for await (const chunk of eventStream) {
+          // Process chunk
+          if (chunk.event === "updates" && chunk.data) {
+            setGraphState((prev: any) => {
+              const next = { ...prev };
+              for (const [nodeName, nodeState] of Object.entries(chunk.data)) {
+                if (nodeState && typeof nodeState === "object") {
+                  Object.assign(next, nodeState);
+                }
+                if (NODE_NAME_MAP[nodeName]) {
+                  setActiveNode(NODE_NAME_MAP[nodeName]);
+                }
+              }
+              return next;
+            });
+          }
+          if (chunk.event === "values" && chunk.data) {
+            setGraphState((prev: any) => ({ ...prev, ...chunk.data }));
+          }
+          if (chunk.event === "messages/metadata" && chunk.data) {
+            const entry = Object.values(chunk.data)[0] as any;
+            const nodeName = entry?.metadata?.langgraph_node;
+            if (nodeName && NODE_NAME_MAP[nodeName]) {
+              setActiveNode(NODE_NAME_MAP[nodeName]);
+            }
+          }
+          yield chunk;
+        }
+      }
+      return makeGenerator();
     };
   }, [client, currentThreadId]);
 
@@ -302,33 +349,18 @@ export function Workspace() {
   useEffect(() => {
     if (isRunning) {
       setIsPolling(true);
+      setActiveNode("Extracting Input"); // Set initial active node when run starts
     } else {
       // Small timeout to catch the final completed state block
       setTimeout(() => {
         setIsPolling(false);
         fetchFullBackendState();
+        setActiveNode(null); // Clear active node when run stops
       }, 1000);
     }
   }, [isRunning]);
 
-  // Find active node in the stream trace
-  const activeNode = useMemo(() => {
-    if (!isRunning) return null;
-    
-    // Attempt to locate active task name or current step from raw state
-    const tasks = graphState?.tasks || [];
-    if (tasks.length > 0 && tasks[0].name) {
-      return tasks[0].name;
-    }
-    
-    // Map internal loops to pretty timeline labels
-    const loop = graphState?.translation_loop_count || 0;
-    if (loop > 0) {
-      return "Translating Code";
-    }
-
-    return "Inspecting Database Schema";
-  }, [isRunning, graphState]);
+  // Find active node is managed via state variables dynamically updated during runs
 
   return (
     <div className="flex h-screen w-screen bg-slate-950 font-sans overflow-hidden">

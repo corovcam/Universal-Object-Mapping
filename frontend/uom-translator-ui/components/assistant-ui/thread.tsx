@@ -222,6 +222,48 @@ const MessageError: FC = () => {
   );
 };
 
+const isIntermediatePrompt = (text: string): boolean => {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("commencing validation") ||
+    lower.includes("commencing parallel validation") ||
+    lower.includes("commencing query equivalence") ||
+    lower.includes("inspect the database schemas") ||
+    lower.includes("evaluate the following validation results") ||
+    lower.includes("analyze the following conversation and extract") ||
+    lower.includes("database schema context") ||
+    lower.includes("successfully extracted inputs") ||
+    lower.includes("generated translation. commencing deterministic validation")
+  );
+};
+
+const CollapsiblePrompt: FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <div className="border border-slate-800/80 rounded-xl bg-slate-900/10 my-2 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-950/40 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <ChevronRightIcon className={`size-3.5 transition-transform duration-200 ${isOpen ? "rotate-90 text-indigo-400" : "text-slate-500"}`} />
+          {title}
+        </span>
+        <span className="text-[10px] text-indigo-455/80 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-550/20 font-mono">
+          {isOpen ? "Hide" : "Show block"}
+        </span>
+      </button>
+      {isOpen && (
+        <div className="p-4 bg-slate-950/20 text-xs text-slate-350 select-text leading-relaxed border-t border-slate-900 max-h-[400px] overflow-y-auto custom-scrollbar">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AssistantMessage: FC = () => {
   // reserves space for action bar and compensates with `-mb` for consistent msg spacing
   // keeps hovered action bar from shifting layout (autohide doesn't support absolute positioning well)
@@ -229,60 +271,99 @@ const AssistantMessage: FC = () => {
   const ACTION_BAR_PT = "pt-1.5";
   const ACTION_BAR_HEIGHT = `-mb-7.5 min-h-7.5 ${ACTION_BAR_PT}`;
 
+  // Get message state content to check if it's an intermediate prompt
+  const content = useAuiState((s) => s.message.content);
+  const fullText = content
+    .filter((part) => part.type === "text")
+    .map((part) => (part as any).text || "")
+    .join("\n");
+
+  const isIntermediate = isIntermediatePrompt(fullText);
+
+  // Determine a clean title based on full text content
+  let promptTitle = "System Prompt";
+  if (fullText.toLowerCase().includes("commencing validation")) {
+    promptTitle = "Validation Stage Trigger";
+  } else if (fullText.toLowerCase().includes("commencing parallel validation")) {
+    promptTitle = "Parallel Query Validation Trigger";
+  } else if (fullText.toLowerCase().includes("commencing query equivalence")) {
+    promptTitle = "Query Equivalence Stage Trigger";
+  } else if (fullText.toLowerCase().includes("inspect the database schemas")) {
+    promptTitle = "Database Schema Inspector Prompt";
+  } else if (fullText.toLowerCase().includes("evaluate the following validation results")) {
+    promptTitle = "LLM Evaluation Prompt";
+  } else if (fullText.toLowerCase().includes("translate the following source code")) {
+    promptTitle = "Code Translation Prompt";
+  } else if (fullText.toLowerCase().includes("successfully extracted inputs")) {
+    promptTitle = "Extraction Stage Output";
+  }
+
+  const messageContent = (
+    <div
+      data-slot="aui_assistant-message-content"
+      className="wrap-break-word px-2 text-foreground leading-relaxed"
+    >
+      <MessagePrimitive.GroupedParts
+        groupBy={(part) => {
+          if (part.type === "reasoning")
+            return ["group-chainOfThought", "group-reasoning"];
+          if (part.type === "tool-call")
+            return ["group-chainOfThought", "group-tool"];
+          return null;
+        }}
+      >
+        {({ part, children }) => {
+          switch (part.type) {
+            case "group-chainOfThought":
+              return <div data-slot="aui_chain-of-thought">{children}</div>;
+            case "group-reasoning": {
+              const running = part.status.type === "running";
+              return (
+                <ReasoningGroupWrapper running={running}>
+                  {children}
+                </ReasoningGroupWrapper>
+              );
+            }
+            case "group-tool":
+              return (
+                <ToolGroupRoot>
+                  <ToolGroupTrigger
+                    count={part.indices.length}
+                    active={part.status.type === "running"}
+                  />
+                  <ToolGroupContent>{children}</ToolGroupContent>
+                </ToolGroupRoot>
+              );
+            case "text":
+              return <MarkdownText />;
+            case "reasoning":
+              return <Reasoning {...part} />;
+            case "tool-call":
+              return part.toolUI ?? <ToolFallback {...part} />;
+            default:
+              return null;
+          }
+        }}
+      </MessagePrimitive.GroupedParts>
+      <MessageError />
+    </div>
+  );
+
   return (
     <MessagePrimitive.Root
       data-slot="aui_assistant-message-root"
       data-role="assistant"
       className="fade-in slide-in-from-bottom-1 relative animate-in duration-150 [contain-intrinsic-size:auto_300px] [content-visibility:auto]"
     >
-      <div
-        data-slot="aui_assistant-message-content"
-        className="wrap-break-word px-2 text-foreground leading-relaxed"
-      >
-        <MessagePrimitive.GroupedParts
-          groupBy={(part) => {
-            if (part.type === "reasoning")
-              return ["group-chainOfThought", "group-reasoning"];
-            if (part.type === "tool-call")
-              return ["group-chainOfThought", "group-tool"];
-            return null;
-          }}
-        >
-          {({ part, children }) => {
-            switch (part.type) {
-              case "group-chainOfThought":
-                return <div data-slot="aui_chain-of-thought">{children}</div>;
-              case "group-reasoning": {
-                const running = part.status.type === "running";
-                return (
-                  <ReasoningGroupWrapper running={running}>
-                    {children}
-                  </ReasoningGroupWrapper>
-                );
-              }
-              case "group-tool":
-                return (
-                  <ToolGroupRoot>
-                    <ToolGroupTrigger
-                      count={part.indices.length}
-                      active={part.status.type === "running"}
-                    />
-                    <ToolGroupContent>{children}</ToolGroupContent>
-                  </ToolGroupRoot>
-                );
-              case "text":
-                return <MarkdownText />;
-              case "reasoning":
-                return <Reasoning {...part} />;
-              case "tool-call":
-                return part.toolUI ?? <ToolFallback {...part} />;
-              default:
-                return null;
-            }
-          }}
-        </MessagePrimitive.GroupedParts>
-        <MessageError />
-      </div>
+      {isIntermediate ? (
+        <div className="px-2">
+          <CollapsiblePrompt title={promptTitle}>
+            {messageContent}
+          </CollapsiblePrompt>
+        </div>
+      ) : (
+        messageContent
+      )}
 
       <div
         data-slot="aui_assistant-message-footer"

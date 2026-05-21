@@ -14,6 +14,7 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { cn } from "@/lib/utils";
+import { JsonViewer } from "@/components/json-viewer";
 
 const MarkdownTextImpl = () => {
   return (
@@ -228,6 +229,19 @@ const defaultComponents = memoizeMarkdownComponents({
   ),
   code: function Code({ className, ...props }) {
     const isCodeBlock = useIsMarkdownCodeBlock();
+    if (isCodeBlock && className?.includes("language-json")) {
+      const codeString = String(props.children || "").trim();
+      try {
+        const parsed = JSON.parse(codeString);
+        return (
+          <div className="border border-slate-800/80 rounded-lg bg-slate-950/80 p-4 mt-2 max-h-[500px] overflow-y-auto custom-scrollbar select-text">
+            <JsonViewer data={parsed} maxDepth={2} />
+          </div>
+        );
+      } catch (e) {
+        // Fall back to default rendering if not yet fully formed JSON
+      }
+    }
     return (
       <code
         className={cn(

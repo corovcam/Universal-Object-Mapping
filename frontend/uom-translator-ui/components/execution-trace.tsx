@@ -54,9 +54,19 @@ export function ExecutionTrace({
     setExpandedSection(prev => (prev === sec ? null : sec));
   };
 
-  const getStepStatus = (nodeLabel: string) => {
+  const activeIdx = ALL_NODES.findIndex(n => n.label === currentNode);
+  const getStepStatus = (nodeLabel: string, idx: number) => {
     if (currentNode === nodeLabel) return "active";
-    if (history.includes(nodeLabel)) return "completed";
+    if (activeIdx !== -1 && idx < activeIdx) return "completed";
+    
+    // State presence fallback (so timeline looks correct even when run completes/stops)
+    if (nodeLabel === "Extracting Input" && rawState?.source_target) return "completed";
+    if (nodeLabel === "Inspecting Database Schema" && rawState?.schema_context) return "completed";
+    if (nodeLabel === "Translating Code" && (rawState?.translated_schema_code || rawState?.translated_query_code)) return "completed";
+    if (nodeLabel === "Validating Schema (.NET & Java)" && (rawState?.target_query_validation_results || rawState?.query_equivalence_deep_diffs || rawState?.explanation_message)) return "completed";
+    if (nodeLabel === "Validating Query Logic" && (rawState?.target_query_validation_results || rawState?.query_equivalence_deep_diffs || rawState?.explanation_message)) return "completed";
+    if (nodeLabel === "Evaluating Translation (Query Equivalence Check)" && (rawState?.query_equivalence_deep_diffs || rawState?.explanation_message)) return "completed";
+    if (nodeLabel === "Manual Intervention" && rawState?.explanation_message && !currentNode) return "completed";
     return "pending";
   };
 
@@ -122,7 +132,7 @@ export function ExecutionTrace({
         {activeTab === "pipeline" && (
           <div className="space-y-4 max-w-xl mx-auto py-2">
             {ALL_NODES.map((n, idx) => {
-              const status = getStepStatus(n.label);
+              const status = getStepStatus(n.label, idx);
               return (
                 <div key={n.key} className="flex gap-4 relative">
                   {/* Vertical Timeline connectors */}
