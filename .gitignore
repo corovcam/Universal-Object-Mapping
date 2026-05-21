@@ -11,4 +11,4 @@ next-env.d.ts
 *.lscache
 .playwright-mcp/
 code-server/
-frontend/uom-translator-ui-old/
+frontend/uom-translator-ui-old*/
