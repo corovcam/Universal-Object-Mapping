@@ -29,14 +29,17 @@ services:
 
   mssql_db:
     build:
-      context: ./ORMConvertor
-      dockerfile: database.Dockerfile
+      context: ./services/etl/mssql
     ports:
       - "${MSSQL_PORT}:1433"
     environment:
       - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=${MSSQL_PASSWORD}
+      - MSSQL_SA_USER=${MSSQL_SA_USER:-sa}
+      - MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD}
       - MSSQL_PID=Developer
+      - MSSQL_USER=${MSSQL_USER}
+      - MSSQL_PASSWORD=${MSSQL_PASSWORD}
+      - MSSQL_DATABASE=${MSSQL_DATABASE}
     restart: unless-stopped
     volumes:
       - mssql_data:/var/opt/mssql
@@ -127,19 +130,19 @@ services:
       - MSSQL_PORT=1433
       - MSSQL_USER=${MSSQL_USER}
       - MSSQL_PASSWORD=${MSSQL_PASSWORD}
-      - MSSQL_DATABASE=WideWorldImporters
+      - MSSQL_DATABASE=${MSSQL_DATABASE}
       - MONGODB_URI=${MONGODB_URI}
       - NEO4J_URI=${NEO4J_URI}
       - NEO4J_USERNAME=${NEO4J_USERNAME}
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
-      - NEO4J_DATABASE=neo4j
+      - NEO4J_DATABASE=${NEO4J_DATABASE}
     volumes:
-      - ./services/orchestrator/src/config:/config
+      - ./services/orchestrator/src/config/db_toolbox:/config
     restart: unless-stopped
     command:
       [
-        "--tools-file",
-        "/config/database_tools.yaml",
+        "--tools-folder",
+        "/config",
         "--prebuilt",
         "mssql",
         "--prebuilt",
@@ -147,6 +150,8 @@ services:
         "--ui",
         "--address",
         "0.0.0.0",
+        "--log-level",
+        "debug",
       ]
     depends_on:
       mssql_db:
@@ -176,6 +181,30 @@ services:
     networks:
       - default
       - uom
+  
+  # code-server:
+  #   image: lscr.io/linuxserver/code-server:latest
+  #   container_name: code-server
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #     - TZ=Etc/UTC
+  #     - PASSWORD=password #optional
+  #     # - HASHED_PASSWORD= #optional
+  #     - SUDO_PASSWORD=password #optional
+  #     # - SUDO_PASSWORD_HASH= #optional
+  #     # - PROXY_DOMAIN=code-server.my.domain #optional
+  #     # - DEFAULT_WORKSPACE=/config/workspace #optional
+  #     # - PWA_APPNAME=code-server #optional
+  #   volumes:
+  #     - ./services/code-server:/config
+  #   ports:
+  #     - 8443:8443
+  #   restart: unless-stopped
+  #   networks:
+  #     - default
+  #     - daytona-uom
+  #     - uom
 
 volumes:
   mssql_data:

@@ -50,7 +50,7 @@
       "ssh": "Disabled",
       "previewLimit": 50,
       "server": "localhost",
-      "port": 1444,
+      "port": 1333,
       "driver": "MSSQL",
       "name": "uom-mssql",
       "username": "sa",

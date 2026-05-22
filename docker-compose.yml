@@ -1,8 +1,8 @@
 name: universal-object-mapping
-# include:
-#   - path:
-#       - ./services/orchestrator/docker-compose.yml
-#       - ./docker-compose.langgraph.override.yml
+include:
+  - path:
+      - ./services/orchestrator/docker-compose.yml
+      - ./docker-compose.langgraph.override.yml
 services:
   ollama-autossh-tunnel:
     image: jnovack/autossh:2.1.0
@@ -29,14 +29,17 @@ services:
 
   mssql_db:
     build:
-      context: ./ORMConvertor
-      dockerfile: database.Dockerfile
+      context: ./services/etl/mssql
     ports:
       - "${MSSQL_PORT}:1433"
     environment:
       - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=${MSSQL_PASSWORD}
+      - MSSQL_SA_USER=${MSSQL_SA_USER:-sa}
+      - MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD}
       - MSSQL_PID=Developer
+      - MSSQL_USER=${MSSQL_USER}
+      - MSSQL_PASSWORD=${MSSQL_PASSWORD}
+      - MSSQL_DATABASE=${MSSQL_DATABASE}
     restart: unless-stopped
     volumes:
       - mssql_data:/var/opt/mssql
@@ -102,20 +105,20 @@ services:
       timeout: 5s
       retries: 5
 
-  # mongodb-relational-migrator:
-  #   image: public.ecr.aws/v4d7k6c9/relational-migrator:latest
-  #   ports:
-  #     - "${MONGODB_MIGRATOR_PORT}:8080"
-  #   volumes:
-  #     - mongodb_migrator_data:/root/Migrator
-  #     # MIGRATOR_PATH_DRIVER - optional - Path to a local JDBC driver to mount
-  #     - ${MIGRATOR_PATH_DRIVER:-/dev/null}:/opt/mongodb-relational-migrator/lib/app/lib/driver.jar
-  #   restart: unless-stopped
-  #   depends_on:
-  #     mongodb:
-  #       condition: service_healthy
-  #     mssql_db:
-  #       condition: service_healthy
+  mongodb-relational-migrator:
+    image: public.ecr.aws/v4d7k6c9/relational-migrator:latest
+    ports:
+      - "${MONGODB_MIGRATOR_PORT}:8080"
+    volumes:
+      - mongodb_migrator_data:/root/Migrator
+      # MIGRATOR_PATH_DRIVER - optional - Path to a local JDBC driver to mount
+      - ${MIGRATOR_PATH_DRIVER:-/dev/null}:/opt/mongodb-relational-migrator/lib/app/lib/driver.jar
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      mssql_db:
+        condition: service_healthy
 
   db-toolbox:
     image: us-central1-docker.pkg.dev/database-toolbox/toolbox/toolbox:latest
