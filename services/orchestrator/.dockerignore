@@ -42,6 +42,10 @@ coverage
 tests
 
 # Custom ignores
-misc
-logs
+misc/
+logs/
 GEMINI.md
+.github/
+.envrc
+langgraph.json
+Makefile

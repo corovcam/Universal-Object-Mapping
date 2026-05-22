@@ -6,6 +6,7 @@
 import asyncio
 import json
 import logging
+import os
 from typing import Any, Awaitable, Callable, Literal, Union, cast
 
 import logfire
@@ -1000,31 +1001,35 @@ logfire.instrument_aiohttp_client(capture_all=True)
 
 # checkpointer = InMemorySaver()
 # store = InMemoryStore()
-cache = InMemoryCache()
+# cache = InMemoryCache()
 # redis_cache = RedisCache(
-#     redis_url="redis://localhost:6389/1" if os.getenv("DEVELOPMENT") else (os.getenv("REDIS_URI", "redis://langgraph-redis:6379").rstrip("/") + "/1"),
+#     redis_url="redis://localhost:6389" if os.getenv("DEVELOPMENT") else (os.getenv("REDIS_URI", "redis://langgraph-redis:6379")),
 #     prefix="llm_cache",
 #     # redis_client=redis_client
 # )
 # set_llm_cache(redis_cache)
 
-# if not os.getenv("DEVELOPMENT"):
-#     from langchain_redis import RedisCache
-#     # from langchain_community.cache import AsyncRedisCache as NodeRedisCache
-#     # from redis.asyncio import Redis
+if os.getenv("DEVELOPMENT"):
+    node_cache = InMemoryCache()
+else:
+    from langchain_core.globals import set_llm_cache
+    from langchain_redis import RedisCache
+    from langgraph.cache.redis import RedisCache as NodeRedisCache
+
+    # from langchain_community.cache import AsyncRedisCache as NodeRedisCache
+    from redis import Redis
     
-#     # redis_client = Redis.from_url(os.getenv("REDIS_URI", "redis://localhost:6379/1"))
+    redis_client = Redis.from_url(os.getenv("REDIS_URI", "redis://localhost:6379"))
+    # Node Cache for caching graph states (not LLM calls)
+    node_cache = NodeRedisCache(redis_client)
 
-#     # # Node Cache for caching graph states (not LLM calls)
-#     # cache = NodeRedisCache(redis_=redis_client)
-
-#     # Global LLM Cache for caching LLM calls
-#     redis_cache = RedisCache(
-#         redis_url=os.getenv("REDIS_URI", "redis://localhost:6379").rstrip("/") + "/1",
-#         prefix="llm_cache",
-#         # redis_client=redis_client
-#     )
-#     set_llm_cache(redis_cache)
+    # Global LLM Cache for caching LLM calls
+    redis_cache = RedisCache(
+        redis_url=os.getenv("REDIS_URI", "redis://localhost:6379"),
+        prefix="langgraph:llm_cache:",
+        redis_client=redis_client
+    )
+    set_llm_cache(redis_cache)
 
 builder = StateGraph(
     State,
@@ -1103,7 +1108,7 @@ graph = builder.compile(
     name="Universal Object Mapping Translator",
     # checkpointer=checkpointer,
     # store=store,
-    cache=cache,
+    cache=node_cache,
     # debug=True if os.getenv("DEVELOPMENT") else False,
 )
 

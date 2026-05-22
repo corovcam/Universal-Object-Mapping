@@ -17,7 +17,8 @@ services:
       - uom
       - daytona-uom
       - ollama
-    # environment:
+    environment:
+      - FF_PROFILE_IMPORTS=true
     #   - REDIS_URI=redis://langgraph-redis:6379
     #   - POSTGRES_URI=postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
     #   - NEO4J_DATABASE=neo4j

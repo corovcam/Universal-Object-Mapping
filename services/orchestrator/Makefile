@@ -57,8 +57,8 @@ extended_tests:
 	python -m pytest --only-extended $(TEST_FILE)
 
 record_requests:
-	node ../../../aimock/dist/cli.js --record --watch --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock/
-# npx -p @copilotkit/aimock llmock --record --watch --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock/
+	npx -p @copilotkit/aimock llmock --record --watch --latency 20 --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock/
+# 	node ../../../aimock/dist/cli.js --record --watch --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock
 
 ######################
 # LINTING AND FORMATTING

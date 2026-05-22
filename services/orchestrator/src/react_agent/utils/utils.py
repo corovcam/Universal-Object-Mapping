@@ -7,7 +7,6 @@ from typing import Annotated, Any, Callable, Literal, cast
 import aiofiles
 import httpx
 import orjson
-import structlog
 from langchain.agents.middleware import Runtime
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel, ModelProfile
@@ -15,7 +14,8 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
-from openai import DefaultAsyncHttpxClient, DefaultHttpxClient
+
+# from openai import DefaultAsyncHttpxClient, DefaultHttpxClient
 from pydantic import BaseModel, Field, create_model
 
 from react_agent.constants import (
@@ -27,11 +27,9 @@ from react_agent.constants import (
     FrameworkEnum,
 )
 from react_agent.context import Context
-from react_agent.utils.request_logging import LLMRequestLogger
 from react_agent.utils.types import FrameworkType
 
 logger = logging.getLogger(__name__)
-llm_request_logger = LLMRequestLogger()
 
 def get_context_dir() -> str:
     return os.getenv("CONTEXT_ABSOLUTE_PATH", os.path.join(os.path.dirname(__file__), "..", "..", "context"))
@@ -154,23 +152,23 @@ async def load_chat_model(
 
     if provider == "openai" or provider == "einfra":
         debug_kwargs = {}
-        if debugging:
-            debug_kwargs = {
-                "http_client": DefaultHttpxClient(
-                    timeout=120,
-                    event_hooks={
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                ),
-                "http_async_client": DefaultAsyncHttpxClient(
-                    timeout=120,
-                    event_hooks={
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                ),
-            }
+        # if debugging:
+        #     debug_kwargs = {
+        #         "http_client": DefaultHttpxClient(
+        #             timeout=120,
+        #             event_hooks={
+        #                 "request": [llm_request_logger.log_request],
+        #                 "response": [llm_request_logger.log_response],
+        #             },
+        #         ),
+        #         "http_async_client": DefaultAsyncHttpxClient(
+        #             timeout=120,
+        #             event_hooks={
+        #                 "request": [llm_request_logger.log_request],
+        #                 "response": [llm_request_logger.log_response],
+        #             },
+        #         ),
+        #     }
         extra_body = config.get("extra_body")
         extra_body_kwargs: dict[str, Any] = {}
         if config.get("reasoning") is not None:
@@ -193,23 +191,23 @@ async def load_chat_model(
         )
     elif provider == "ollama":
         debug_kwargs = {}
-        if debugging:
-            debug_kwargs = {
-                "sync_client_kwargs": {
-                    "event_hooks": {
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                    # "transport": log_http_transport
-                },
-                "async_client_kwargs": {
-                    "event_hooks": {
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                    # "transport": async_log_http_transport
-                },
-            }
+        # if debugging:
+        #     debug_kwargs = {
+        #         "sync_client_kwargs": {
+        #             "event_hooks": {
+        #                 "request": [llm_request_logger.log_request],
+        #                 "response": [llm_request_logger.log_response],
+        #             },
+        #             # "transport": log_http_transport
+        #         },
+        #         "async_client_kwargs": {
+        #             "event_hooks": {
+        #                 "request": [llm_request_logger.log_request],
+        #                 "response": [llm_request_logger.log_response],
+        #             },
+        #             # "transport": async_log_http_transport
+        #         },
+        #     }
         model_client = ChatOllama(
             model=model,
             base_url=config.get("ollama_api_url", "http://localhost:11434"),
@@ -231,32 +229,32 @@ async def load_chat_model(
                 timeout=120,
                 configurable_fields="any",
                 **config,
-                http_client=DefaultHttpxClient(
-                    timeout=120,
-                    event_hooks={
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                ),
-                http_async_client=DefaultAsyncHttpxClient(
-                    timeout=120,
-                    event_hooks={
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                ),
-                sync_client_kwargs={
-                    "event_hooks": {
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                },
-                async_client_kwargs={
-                    "event_hooks": {
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                },
+                # http_client=DefaultHttpxClient(
+                #     timeout=120,
+                #     event_hooks={
+                #         "request": [llm_request_logger.log_request],
+                #         "response": [llm_request_logger.log_response],
+                #     },
+                # ),
+                # http_async_client=DefaultAsyncHttpxClient(
+                #     timeout=120,
+                #     event_hooks={
+                #         "request": [llm_request_logger.log_request],
+                #         "response": [llm_request_logger.log_response],
+                #     },
+                # ),
+                # sync_client_kwargs={
+                #     "event_hooks": {
+                #         "request": [llm_request_logger.log_request],
+                #         "response": [llm_request_logger.log_response],
+                #     },
+                # },
+                # async_client_kwargs={
+                #     "event_hooks": {
+                #         "request": [llm_request_logger.log_request],
+                #         "response": [llm_request_logger.log_response],
+                #     },
+                # },
             )
         else:
             model_client = init_chat_model(

@@ -21,6 +21,7 @@ services:
 
   runner:
     # environment:
+    #   - RUNNER_API_KEY=secret_api_token
     #   - OTEL_LOGGING_ENABLED=true
     #   - OTEL_TRACING_ENABLED=true
     #   - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
