@@ -13,6 +13,11 @@
       },
       "metadata": {
         "systemHash": "4de02d14"
+      },
+      "streamingProfile": {
+        "ttft": 5000,
+        "tps": 80,
+        "jitter": 0.1
       }
     }
   ]
