@@ -7,6 +7,18 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "agent-client-protocol"
+version = "0.10.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/88/a0/3b96cd8374725c69bc3dae9fcc2082f3f6cafec1be35d24d7af0f8c3265f/agent_client_protocol-0.10.1.tar.gz", hash = "sha256:355c65ca19f0568344aafc2c1552b7066a8fc491df23ab28e7e253c6c9a85a25", size = 81924, upload-time = "2026-05-24T18:46:44.444Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7b/18/d8c7ff337cf621ea79a84006a7252ff057bfb5767549bb102cc6649f4ec2/agent_client_protocol-0.10.1-py3-none-any.whl", hash = "sha256:a03d3198f4d772f2e0ec012c00ac1cce131b4710220a3dc9fae3c991d047c750", size = 65401, upload-time = "2026-05-24T18:46:43.202Z" },
+]
+
+[[package]]
 name = "aimock-pytest"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -689,6 +701,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0a/91/ef86a273365bcfafbfc2d1ec82b2978b72b8d14eb64ffc327276db1bcd4c/deepagents-0.6.1.tar.gz", hash = "sha256:7799e195286728379183d16ab0f153247c92e4403101484729fa7977e5efb3d8", size = 173930, upload-time = "2026-05-12T17:44:34.186Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2e/38/ddf9ecc0b4f59ce79d9396d8e88c0649e00fd1dd3c2f921e580ca2de25fa/deepagents-0.6.1-py3-none-any.whl", hash = "sha256:d06d9b88a484b4dbc24f5f0b6f4de10df2fb847b2d2d8980c1c35d9021f28db4", size = 197889, upload-time = "2026-05-12T17:44:32.949Z" },
+]
+
+[[package]]
+name = "deepagents-acp"
+version = "0.0.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "agent-client-protocol" },
+    { name = "deepagents" },
+    { name = "python-dotenv" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e1/61/287e0b55650d6c7795419414cbf07ea7fa8a7c0fdfcfee4639e8d792cd30/deepagents_acp-0.0.6.tar.gz", hash = "sha256:42f7c324281893563496741579db0818ec8bfd7bfc2e03d0f18cacd5a7b27dbb", size = 13009937, upload-time = "2026-04-18T01:06:30.721Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/85/b3/9882519785e3783db9b0e2fbc488b39d561b47a64a11bab55d537cfd24bb/deepagents_acp-0.0.6-py3-none-any.whl", hash = "sha256:b359cbaade27dd555dd7c70f959a8766ea215f41082bd19bfc39fdda558c0ed3", size = 17512, upload-time = "2026-04-18T01:06:29.142Z" },
 ]
 
 [[package]]
@@ -3486,6 +3512,7 @@ dependencies = [
     { name = "aiofiles" },
     { name = "daytona" },
     { name = "deepagents" },
+    { name = "deepagents-acp" },
     { name = "deepdiff", extra = ["optimize"] },
     { name = "fastapi" },
     { name = "httpx" },
@@ -3536,6 +3563,7 @@ requires-dist = [
     { name = "aiofiles", specifier = ">=24.1.0" },
     { name = "daytona", specifier = ">=0.174.0" },
     { name = "deepagents", specifier = ">=0.5.6" },
+    { name = "deepagents-acp", specifier = ">=0.0.6" },
     { name = "deepdiff", extras = ["optimize"], specifier = ">=9.0.0" },
     { name = "fastapi", specifier = ">=0.136.1" },
     { name = "httpx", specifier = ">=0.28.1" },

@@ -1,4 +1,5 @@
 """Core utility & helper functions."""
+
 import logging
 import os
 import re
@@ -31,13 +32,24 @@ from react_agent.utils.types import FrameworkType
 
 logger = logging.getLogger(__name__)
 
+
 def get_context_dir() -> str:
-    return os.getenv("CONTEXT_ABSOLUTE_PATH", os.path.join(os.path.dirname(__file__), "..", "..", "context"))
+    return os.getenv(
+        "CONTEXT_ABSOLUTE_PATH",
+        os.path.join(os.path.dirname(__file__), "..", "..", "context"),
+    )
+
 
 def get_config_dir() -> str:
-    return os.getenv("CONFIG_ABSOLUTE_PATH", os.path.join(os.path.dirname(__file__), "..", "..", "config"))
+    return os.getenv(
+        "CONFIG_ABSOLUTE_PATH",
+        os.path.join(os.path.dirname(__file__), "..", "..", "config"),
+    )
 
-def extract_mssql_connection_info(connection_string: str) -> dict[Literal["host", "port", "database", "user", "password"], str | int]:
+
+def extract_mssql_connection_info(
+    connection_string: str,
+) -> dict[Literal["host", "port", "database", "user", "password"], str | int]:
     """Extract host, port, database, user, and password from a MSSQL connection string."""
     # e.g. "Server=host.docker.internal,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
     pattern = re.compile(
@@ -46,7 +58,7 @@ def extract_mssql_connection_info(connection_string: str) -> dict[Literal["host"
     match = pattern.search(connection_string)
     if not match:
         raise ValueError("Invalid MSSQL connection string format.")
-    
+
     return {
         "host": match.group("host"),
         "port": int(match.group("port")),
@@ -54,7 +66,7 @@ def extract_mssql_connection_info(connection_string: str) -> dict[Literal["host"
         "user": match.group("user"),
         "password": match.group("password"),
     }
-    
+
 
 def translate_localhost_to_host_gateway(uri: str) -> str:
     """Translate localhost in a URI to host gateway for sandbox compatibility."""
@@ -72,7 +84,11 @@ async def get_snippet_content(framework: FrameworkEnum, is_schema: bool = False)
         logger.warning(f"No snippet file mapping found for framework {framework.value}")
         return ""
 
-    file_name = FRAMEWORK_TO_SNIPPET_FILES[framework][0] if is_schema else FRAMEWORK_TO_SNIPPET_FILES[framework][1]
+    file_name = (
+        FRAMEWORK_TO_SNIPPET_FILES[framework][0]
+        if is_schema
+        else FRAMEWORK_TO_SNIPPET_FILES[framework][1]
+    )
     path = os.path.join(snippets_dir, file_name)
     try:
         async with aiofiles.open(path) as f:
@@ -139,7 +155,8 @@ def get_message_text(msg: BaseMessage) -> str:
 
 
 async def load_chat_model(
-    fully_specified_name: str, config: dict[str, Any] | None = None,
+    fully_specified_name: str,
+    config: dict[str, Any] | None = None,
 ) -> BaseChatModel:
     """Load a chat model from a fully specified name.
 
@@ -186,10 +203,14 @@ async def load_chat_model(
             base_url=config.get("openai_api_url"),  # type: ignore
             api_key=config.get("openai_api_key"),  # type: ignore
             max_retries=10,
-            request_timeout=120, # type: ignore
+            request_timeout=120,  # type: ignore
             stream_usage=True,
-            **({"temperature": config.get("temperature", 1)} if config.get("temperature") is not None else {}),
-            **({"extra_body": extra_body_kwargs} if extra_body_kwargs else {})
+            **(
+                {"temperature": config.get("temperature", 1)}
+                if config.get("temperature") is not None
+                else {}
+            ),
+            **({"extra_body": extra_body_kwargs} if extra_body_kwargs else {}),
             # **debug_kwargs,  # type: ignore
         )
     elif provider == "ollama":
@@ -214,8 +235,16 @@ async def load_chat_model(
         model_client = ChatOllama(
             model=model,
             base_url=config.get("ollama_api_url", "http://localhost:11434"),
-            **({"temperature": config.get("temperature", 1)} if config.get("temperature") is not None else {}), # pyright: ignore[reportArgumentType]
-            **({"reasoning": config.get("reasoning")} if config.get("reasoning") is not None else {}),
+            **(
+                {"temperature": config.get("temperature", 1)}
+                if config.get("temperature") is not None
+                else {}
+            ),  # pyright: ignore[reportArgumentType]
+            **(
+                {"reasoning": config.get("reasoning")}
+                if config.get("reasoning") is not None
+                else {}
+            ),
             # **debug_kwargs,  # type: ignore
         )
     else:
@@ -272,10 +301,10 @@ async def load_chat_model(
 
     if getattr(model_client, "profile", None) is None:
         profile: ModelProfile | None = None
-        
+
         # Check static cache
         cache_file = os.path.join(get_config_dir(), "model_profiles.json")
-        
+
         if not MODEL_PROFILE_CACHE:
             try:
                 async with aiofiles.open(cache_file, "rb") as f:
@@ -284,13 +313,15 @@ async def load_chat_model(
                         MODEL_PROFILE_CACHE.update(orjson.loads(content))
             except Exception:
                 pass
-                
+
         cached_kwargs = MODEL_PROFILE_CACHE.get(fully_specified_name)
         if cached_kwargs:
             try:
                 profile = ModelProfile(**cached_kwargs)
             except Exception as e:
-                logger.warning(f"Failed to load cached profile for {provider}/{model}: {e}")
+                logger.warning(
+                    f"Failed to load cached profile for {provider}/{model}: {e}"
+                )
 
         if profile is not None:
             model_client.profile = profile  # type: ignore
@@ -353,7 +384,7 @@ async def load_chat_model(
                                 p_kwargs["max_input_tokens"] = int(max_input)
                             if max_output is not None:
                                 p_kwargs["max_output_tokens"] = int(max_output)
-                            
+
                             capabilities = minfo.get("capabilities", [])
                             for key, check1, check2 in [
                                 (
@@ -361,14 +392,30 @@ async def load_chat_model(
                                     "tools" in capabilities,
                                     "tools" in supported or "functions" in supported,
                                 ),
-                                ("tool_choice", "tools" in capabilities, "tool_choice" in supported),
-                                ("structured_output", "tools" in capabilities, "response_format" in supported),
+                                (
+                                    "tool_choice",
+                                    "tools" in capabilities,
+                                    "tool_choice" in supported,
+                                ),
+                                (
+                                    "structured_output",
+                                    "tools" in capabilities,
+                                    "response_format" in supported,
+                                ),
                                 (
                                     "reasoning_output",
                                     "enable_thinking" in ebody or "thinking" in ebody,
-                                    "reasoning_effort" in supported or "thinking" in ebody.get("chat_template_kwargs", {}) or "enable_thinking" in ebody.get("chat_template_kwargs", {}),
+                                    "reasoning_effort" in supported
+                                    or "thinking"
+                                    in ebody.get("chat_template_kwargs", {})
+                                    or "enable_thinking"
+                                    in ebody.get("chat_template_kwargs", {}),
                                 ),
-                                ("temperature", "temperature" in ebody, "temperature" in supported),
+                                (
+                                    "temperature",
+                                    "temperature" in ebody,
+                                    "temperature" in supported,
+                                ),
                             ]:
                                 if check1 or check2:
                                     p_kwargs[key] = True
@@ -450,13 +497,15 @@ async def load_chat_model(
                             f"Could not fetch AI Gateway profile for {creator}/{model}: {e}"
                         )
             profile = ModelProfile(**p_kwargs)
-            
+
             # Save to cache
             try:
                 os.makedirs(get_config_dir(), exist_ok=True)
                 MODEL_PROFILE_CACHE[fully_specified_name] = p_kwargs
                 async with aiofiles.open(cache_file, "wb") as f:
-                    await f.write(orjson.dumps(MODEL_PROFILE_CACHE, option=orjson.OPT_INDENT_2))
+                    await f.write(
+                        orjson.dumps(MODEL_PROFILE_CACHE, option=orjson.OPT_INDENT_2)
+                    )
             except Exception as e:
                 logger.warning(f"Failed to save model profile cache: {e}")
 
@@ -493,16 +542,14 @@ async def get_model(
         "openai_api_key", getattr(runtime.context, "openai_api_key", None)
     )
     chat_model_config = {
-        "openai_api_url": openai_url, 
-        "openai_api_key": openai_key, 
-        "temperature": temperature, 
-        "reasoning": reasoning, 
+        "openai_api_url": openai_url,
+        "openai_api_key": openai_key,
+        "temperature": temperature,
+        "reasoning": reasoning,
         "extra_body": extra_body,
-        **chat_model_kwargs
+        **chat_model_kwargs,
     }
-    return await load_chat_model(
-        model_name, config=chat_model_config
-    )
+    return await load_chat_model(model_name, config=chat_model_config)
 
 
 async def get_database_mapping_json(
@@ -537,8 +584,7 @@ async def get_database_mapping_json(
 
 
 async def create_example_for_prompt(
-    framework: FrameworkEnum,
-    return_schema: bool
+    framework: FrameworkEnum, return_schema: bool
 ) -> str:
     """Create example code snippets for prompts based on the framework."""
     example = f"""
@@ -548,7 +594,11 @@ async def create_example_for_prompt(
     return example
 
 
-def override_pydantic_model_schema(model_cls: type[BaseModel], overrides: dict[str, dict[str, Any]], model_name: str | None = None) -> type[BaseModel]:
+def override_pydantic_model_schema(
+    model_cls: type[BaseModel],
+    overrides: dict[str, dict[str, Any]],
+    model_name: str | None = None,
+) -> type[BaseModel]:
     """Override the schema of a Pydantic model's fields."""
     new_fields = {}
     for f_name, f_info in model_cls.model_fields.items():
@@ -556,10 +606,15 @@ def override_pydantic_model_schema(model_cls: type[BaseModel], overrides: dict[s
         if f_name in overrides:
             override = overrides[f_name]
             f_dct["annotation"] = override.get("annotation", f_dct["annotation"])
-            f_dct["metadata"] =  override.get("metadata", f_dct["metadata"])
-            f_dct["attributes"] = {**f_dct["attributes"], **override.get("attributes", {})}
+            f_dct["metadata"] = override.get("metadata", f_dct["metadata"])
+            f_dct["attributes"] = {
+                **f_dct["attributes"],
+                **override.get("attributes", {}),
+            }
         new_fields[f_name] = (
-            Annotated[f_dct["annotation"], *f_dct['metadata'], Field(**f_dct['attributes'])],  # noqa: F821
+            Annotated[
+                f_dct["annotation"], *f_dct["metadata"], Field(**f_dct["attributes"])
+            ],  # noqa: F821
             None,
         )
     return create_model(
@@ -569,7 +624,9 @@ def override_pydantic_model_schema(model_cls: type[BaseModel], overrides: dict[s
     )
 
 
-def process_streaming_chunks(chunk: Any, writer: Callable[[Any], None], log_buffer: list | None = None):
+def process_streaming_chunks(
+    chunk: Any, writer: Callable[[Any], None], log_buffer: list | None = None
+):
     """Process streaming chunks by writing them and optionally buffering them."""
     writer(chunk)
     if log_buffer is not None:

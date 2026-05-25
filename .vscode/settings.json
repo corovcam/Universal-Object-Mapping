@@ -69,5 +69,18 @@
   "omnisharp.projectFilesExcludePattern": "**/node_modules/**,**/.git/**,**/bower_components/**,**/orchestrator/**,**/external/**",
   "csharp.debug.symbolOptions.moduleFilter.excludedModules": [
     "**/orchestrator/**,**/external/**"
-  ]
+  ],
+  "acp.agents": {
+    "Universal Object Mapping Translator": {
+			"command": "services/orchestrator/run_acp_agent.sh",
+			"args": [],
+			"env": {
+				"OPENAI_API_URL": "http://localhost:4010/v1",
+				"OPENAI_API_KEY": "sk-326a0e49f0eb408b9b2c553fa9129ff7",
+        "OLLAMA_HOST": "http://localhost:11434",
+        "CONTEXT_ABSOLUTE_PATH": "/home/corovcak/Projects/Universal-Object-Mapping/services/orchestrator/src/context",
+        "CONFIG_ABSOLUTE_PATH": "/home/corovcak/Projects/Universal-Object-Mapping/services/orchestrator/src/config",
+			}
+		}
+  }
 }
