@@ -56,9 +56,12 @@ def extract_mssql_connection_info(connection_string: str) -> dict[Literal["host"
     }
     
 
-def translate_localhost_to_host_docker_internal(uri: str) -> str:
-    """Translate localhost in a URI to host.docker.internal for sandbox compatibility."""
-    return uri.replace("localhost", "host.docker.internal")
+def translate_localhost_to_host_gateway(uri: str) -> str:
+    """Translate localhost in a URI to host gateway for sandbox compatibility."""
+    host_gateway_ip = os.getenv("OUTER_HOST_GATEWAY_IP", "host.docker.internal")
+    uri = uri.replace("localhost", host_gateway_ip)
+    uri = uri.replace("127.0.0.1", host_gateway_ip)
+    return uri
 
 
 async def get_snippet_content(framework: FrameworkEnum, is_schema: bool = False) -> str:

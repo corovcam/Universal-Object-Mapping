@@ -15,10 +15,10 @@ services:
     networks:
       - default
       - uom
-      - daytona-uom
       - ollama
     environment:
       - FF_PROFILE_IMPORTS=true
+      - OUTER_HOST_GATEWAY_IP=${OUTER_HOST_GATEWAY_IP:-host-gateway}
     #   - REDIS_URI=redis://langgraph-redis:6379
     #   - POSTGRES_URI=postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
     #   - NEO4J_DATABASE=neo4j
@@ -39,6 +39,3 @@ networks:
   uom:
     external: true
     name: uom
-  daytona-uom:
-    external: true
-    name: daytona-uom

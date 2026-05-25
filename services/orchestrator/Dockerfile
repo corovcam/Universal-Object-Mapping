@@ -9,6 +9,8 @@ ADD . /deps/orchestrator
 # -- Installing all local dependencies --
 RUN for dep in /deps/*; do             echo "Installing $dep";             if [ -d "$dep" ]; then                 echo "Installing $dep";                 (cd "$dep" && PYTHONDONTWRITEBYTECODE=1 uv pip install --system --no-cache-dir -c /api/constraints.txt -e .);             fi;         done
 # -- End of local dependencies install --
+ENV LANGGRAPH_HTTP='{"app": "/deps/orchestrator/src/server/main.py:app"}'
+ENV LANGGRAPH_CHECKPOINTER='{"serde": {"allowed_msgpack_modules": [["react_agent.constants", "FrameworkEnum"], ["react_agent.constants", "TranslationType"]]}}'
 ENV LANGSERVE_GRAPHS='{"universal-object-mapping-translator": {"path": "/deps/orchestrator/src/react_agent/graph.py:graph", "description": "Migrates code database entity schemas, mappings/context/settings and queries between Object-Relational Mapping (ORM), Object-Graph Mapping (OGM), and Object-Document Mapping (ODM) frameworks by performing LLM-based translation and validation workflow. Currently supports translation from .NET (Entity Framework Core, NHibernate, Dapper) to Java frameworks (Spring Data MongoDB, Spring Data Neo4j).\nTranslation Workflow:\n1. User provides source .NET schema, mappings/context/settings and queries.\n2. Orchestrator extracts target frameworks and checks user intent.\n3. Orchestrator connects to database via MCP to inspect DB schema mapping context.\n4. Generates code and testing harnesses without tools.\n5. Systematically validates schema, compiles queries, checks data equivalence, and evaluates if the result is correct (`ACCEPT` or `REJECT`).\n6. If rejected, it loops back to correct the code (up to 3 times) before eventually falling back to a human-in-the-loop if unresolved."}}'
 
 

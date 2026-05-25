@@ -26,7 +26,7 @@ from react_agent.custom_tools.sandbox_tools import (
 from react_agent.state import State
 from react_agent.utils.utils import (
     get_framework_config_content,
-    translate_localhost_to_host_docker_internal,
+    translate_localhost_to_host_gateway,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ async def compile_and_run_dotnet(
     sandbox_dir = f"/sandbox/sandbox-{timestamp}"
     results_dir = f"{sandbox_dir}/results"
     env_vars = {
-        "CONNECTION_STRING": translate_localhost_to_host_docker_internal(runtime.context.ms_sql_connection_string),
+        "CONNECTION_STRING": translate_localhost_to_host_gateway(runtime.context.ms_sql_connection_string),
         "EFCORE_RESULTS_PATH": results_dir,
         "DAPPER_RESULTS_PATH": results_dir,
         "NHIBERNATE_RESULTS_PATH": results_dir,

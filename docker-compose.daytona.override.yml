@@ -11,25 +11,31 @@ services:
       - OTEL_ENABLED=false
       - PUBLIC_OIDC_DOMAIN=http://localhost:5356/dex
     networks:
-      - daytona-uom
+      - uom
 
   proxy:
     environment:
       - OIDC_PUBLIC_DOMAIN=http://localhost:5356/dex
     networks:
-      - daytona-uom
+      - uom
 
   runner:
+    # build:
+    #   context: ../../../services/daytona/runner
     # environment:
+    #   - CONTAINER_NETWORK=host
+    #   - INTER_SANDBOX_NETWORK_ENABLED=true
     #   - RUNNER_API_KEY=secret_api_token
     #   - OTEL_LOGGING_ENABLED=true
     #   - OTEL_TRACING_ENABLED=true
     #   - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
     #   - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer otel_collector_api_key
     networks:
-      - daytona-uom
+      - uom
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:${OUTER_HOST_GATEWAY_IP:-host-gateway}"
+    volumes:
+      - ../../../services/daytona/runner/set-host-docker-internal.sh:/usr/local/bin/set-host-docker-internal.sh
   
   dex:
     volumes:
@@ -43,7 +49,7 @@ services:
   
   ssh-gateway:
     networks:
-      - daytona-uom
+      - uom
   
   maildev: !reset null
 
@@ -52,6 +58,6 @@ services:
   otel-collector: !reset null
 
 networks:
-  daytona-uom:
+  uom:
     external: true
-    name: daytona-uom
+    name: uom

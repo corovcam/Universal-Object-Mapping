@@ -26,7 +26,7 @@ from react_agent.custom_tools.sandbox_tools import (
 from react_agent.state import State
 from react_agent.utils.utils import (
     get_framework_config_content,
-    translate_localhost_to_host_docker_internal,
+    translate_localhost_to_host_gateway,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,8 +66,8 @@ async def compile_and_run_java(
     src_dir = f"{sandbox_dir}/src/main/java/uom/services"
     results_dir = f"{sandbox_dir}/results"
     env_vars = {
-        "MONGODB_URI": translate_localhost_to_host_docker_internal(runtime.context.mongodb_uri),
-        "NEO4J_URI": translate_localhost_to_host_docker_internal(runtime.context.neo4j_uri),
+        "MONGODB_URI": translate_localhost_to_host_gateway(runtime.context.mongodb_uri),
+        "NEO4J_URI": translate_localhost_to_host_gateway(runtime.context.neo4j_uri),
         "NEO4J_USERNAME": runtime.context.neo4j_username,
         "NEO4J_PASSWORD": runtime.context.neo4j_password,
         "MONGO_RESULTS_PATH": results_dir,

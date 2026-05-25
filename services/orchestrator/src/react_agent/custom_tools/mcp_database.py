@@ -24,7 +24,7 @@ from react_agent.context import Context
 from react_agent.utils.utils import (
     extract_mssql_connection_info,
     get_config_dir,
-    translate_localhost_to_host_docker_internal,
+    translate_localhost_to_host_gateway,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 async def modify_toolbox_sources(context: Context) -> None:
     """Modify the MCP Toolbox for Databases configuration file to set up data sources based on the current runtime context."""
     db_toolbox_path = os.path.join(get_config_dir(), "db_toolbox", "custom_config.yaml")
-    mssql_conn_info = extract_mssql_connection_info(translate_localhost_to_host_docker_internal(context.ms_sql_connection_string))
+    mssql_conn_info = extract_mssql_connection_info(translate_localhost_to_host_gateway(context.ms_sql_connection_string))
     data_sources = {
         "mssql-source": {
             "kind": "mssql",
@@ -45,7 +45,7 @@ async def modify_toolbox_sources(context: Context) -> None:
         },
         "neo4j-source": {
             "kind": "neo4j",
-            "uri": translate_localhost_to_host_docker_internal(context.neo4j_uri),
+            "uri": translate_localhost_to_host_gateway(context.neo4j_uri),
             "user": context.neo4j_username,
             "password": context.neo4j_password,
             "database": context.neo4j_database,
