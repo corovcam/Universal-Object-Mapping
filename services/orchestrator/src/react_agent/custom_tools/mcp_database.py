@@ -4,6 +4,7 @@ Loads tools from the running MCP Toolbox for Databases server, which provides
 prebuilt tools for MSSQL and Neo4j, plus custom MongoDB tools defined in
 database_tools.yaml.
 """
+
 import asyncio
 import logging
 import os
@@ -33,7 +34,9 @@ logger = logging.getLogger(__name__)
 async def modify_toolbox_sources(context: Context) -> None:
     """Modify the MCP Toolbox for Databases configuration file to set up data sources based on the current runtime context."""
     db_toolbox_path = os.path.join(get_config_dir(), "db_toolbox", "custom_config.yaml")
-    mssql_conn_info = extract_mssql_connection_info(translate_localhost_to_host_gateway(context.ms_sql_connection_string))
+    mssql_conn_info = extract_mssql_connection_info(
+        translate_localhost_to_host_gateway(context.ms_sql_connection_string)
+    )
     data_sources = {
         "mssql-source": {
             "kind": "mssql",
@@ -56,7 +59,11 @@ async def modify_toolbox_sources(context: Context) -> None:
             await f.write(yaml.dump({"sources": data_sources}))
         logger.info("Successfully updated MCP Toolbox configuration with data sources.")
     except Exception as e:
-        logger.error("Failed to update MCP Toolbox configuration at %s", db_toolbox_path, exc_info=True)
+        logger.error(
+            "Failed to update MCP Toolbox configuration at %s",
+            db_toolbox_path,
+            exc_info=True,
+        )
         raise e
 
 

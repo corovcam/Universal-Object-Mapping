@@ -3,6 +3,7 @@
 # ty:ignore[invalid-type-form]
 
 """Define the Universal Object Mapping orchestrator graph."""
+
 import asyncio
 import json
 import logging
@@ -25,6 +26,7 @@ from langchain.messages import AIMessage
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.cache.memory import InMemoryCache
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolCallRequest
@@ -89,9 +91,7 @@ class ExtractionOutput(BaseModel):
     translation_type: TranslationType = Field(
         description="The type of translation to perform.",
     )
-    source_target: FrameworkEnum = Field(
-        description="The identified origin framework."
-    )
+    source_target: FrameworkEnum = Field(description="The identified origin framework.")
     source_target_version: Union[str, None] = Field(
         description="The identified origin framework version."
     )
@@ -101,8 +101,8 @@ class ExtractionOutput(BaseModel):
     destination_target_version: Union[str, None] = Field(
         description="The identified target framework version."
     )
-    
-    @model_validator(mode='after')
+
+    @model_validator(mode="after")
     def join_lists(self):
         if isinstance(self.source_schema_code, list):
             self.source_schema_code = "\n".join(self.source_schema_code)
@@ -116,7 +116,7 @@ class BaseTranslationOutput(BaseModel):
 
     translated_schema_code: Union[list[str], str] = Field(
         min_length=1,
-        description="The precise translated schema definitions (entities/models) and context/session/config/bootstrap setup with runtime configs. Plain code only. Do not include usage queries. This corresponds to the example code below `--- Schema and Related Settings ---` comment. See examples in target_validation_schema_code description. Return as a list of strings (one string per line)."
+        description="The precise translated schema definitions (entities/models) and context/session/config/bootstrap setup with runtime configs. Plain code only. Do not include usage queries. This corresponds to the example code below `--- Schema and Related Settings ---` comment. See examples in target_validation_schema_code description. Return as a list of strings (one string per line).",
     )
     translated_query_code: Union[list[str], str] = Field(
         min_length=1,
@@ -124,42 +124,42 @@ class BaseTranslationOutput(BaseModel):
             "The precise translated production queries only. Keep query semantics and method shape equivalent to source query "
             "code. Plain code only. Do not include schema definitions, validation harness helpers, or synthetic validator-only "
             "parameters unless they already exist in source query code. This corresponds to the example code methods named `QueryX` or `queryX` inside main entry point class or in own classes. See examples in target_validation_harness_code description. Return as a list of strings (one string per line)."
-        )
+        ),
     )
     source_validation_schema_code: Union[list[str], str] = Field(
         min_length=1,
         description="Source schema validation code. This should include imports, serialization, runtime config, context/session/config/bootstrap setup, and any other code needed to run the query, but should keep "
-        "the Schema and Related Settings logic equivalent to the original source_schema_code (without JSON serialization related annotations). Should be fully valid and runnable code with entrypoint. Include simple one-entity fetch queries to validate each entity (see examples). Do not include source query related code here. See examples. Return as a list of strings (one string per line)."
+        "the Schema and Related Settings logic equivalent to the original source_schema_code (without JSON serialization related annotations). Should be fully valid and runnable code with entrypoint. Include simple one-entity fetch queries to validate each entity (see examples). Do not include source query related code here. See examples. Return as a list of strings (one string per line).",
     )
     source_validation_harness_code: Union[list[str], str] = Field(
         min_length=1,
         description=(
             "The full execution harness code for the SOURCE queries, including the source schema, query methods, any necessary helper classes/records, and the main entry point "
             "that executes the source queries and writes the resulting JSON to the environment path. See examples. Return as a list of strings (one string per line)."
-        )
+        ),
     )
     source_validation_entry_type_name: str = Field(
         min_length=1,
-        description="The name of the main entry point type (e.g., class) in the source validation code. This is needed to run the code and should be declared in the source_validation_schema_code or source_validation_harness_code. Type name should be just the name of the class/type, without namespace or module prefix. Examples: `EFCoreQueryEntrypoint`, `NHibernateQueryEntrypoint`, `DapperQueryEntrypoint`"
+        description="The name of the main entry point type (e.g., class) in the source validation code. This is needed to run the code and should be declared in the source_validation_schema_code or source_validation_harness_code. Type name should be just the name of the class/type, without namespace or module prefix. Examples: `EFCoreQueryEntrypoint`, `NHibernateQueryEntrypoint`, `DapperQueryEntrypoint`",
     )
     target_validation_schema_code: Union[list[str], str] = Field(
         min_length=1,
         description="Target schema validation code. This should include imports, serialization, runtime config, context/session/config/bootstrap setup, and any other code needed to run the query, but should keep "
-        "the Schema and Related Settings logic equivalent to the original translated_schema_code (without JSON serialization related annotations). Should be fully valid and runnable code with entrypoint. Include simple one-entity fetch queries to validate each entity (see examples). Do not include target query related code here. Return as a list of strings (one string per line)."
+        "the Schema and Related Settings logic equivalent to the original translated_schema_code (without JSON serialization related annotations). Should be fully valid and runnable code with entrypoint. Include simple one-entity fetch queries to validate each entity (see examples). Do not include target query related code here. Return as a list of strings (one string per line).",
     )
     target_validation_harness_code: Union[list[str], str] = Field(
         min_length=1,
         description=(
             "The full execution harness code for the translated TARGET queries, including the translated query methods, any necessary helper classes/records, and the main entry point "
             "that executes the target queries and writes the resulting JSON to the environment path. See examples. Return as a list of strings (one string per line)."
-        )
+        ),
     )
     target_validation_entry_type_name: str = Field(
         min_length=1,
-        description="The name of the main entry point type (e.g., class) in the target validation code. This is needed to run the code and should be declared in the source_validation_schema_code or target_validation_harness_code. Type name should be just the name of the class/type, without namespace or module prefix. Examples: `MongoQueryEntrypoint`, `Neo4jQueryEntrypoint`"
+        description="The name of the main entry point type (e.g., class) in the target validation code. This is needed to run the code and should be declared in the source_validation_schema_code or target_validation_harness_code. Type name should be just the name of the class/type, without namespace or module prefix. Examples: `MongoQueryEntrypoint`, `Neo4jQueryEntrypoint`",
     )
-    
-    @model_validator(mode='after')
+
+    @model_validator(mode="after")
     def check_entrypoint_names(self):
         # First, join any list fields into strings
         if isinstance(self.translated_schema_code, list):
@@ -167,31 +167,71 @@ class BaseTranslationOutput(BaseModel):
         if isinstance(self.translated_query_code, list):
             self.translated_query_code = "\n".join(self.translated_query_code)
         if isinstance(self.source_validation_schema_code, list):
-            self.source_validation_schema_code = "\n".join(self.source_validation_schema_code)
+            self.source_validation_schema_code = "\n".join(
+                self.source_validation_schema_code
+            )
         if isinstance(self.source_validation_harness_code, list):
-            self.source_validation_harness_code = "\n".join(self.source_validation_harness_code)
+            self.source_validation_harness_code = "\n".join(
+                self.source_validation_harness_code
+            )
         if isinstance(self.target_validation_schema_code, list):
-            self.target_validation_schema_code = "\n".join(self.target_validation_schema_code)
+            self.target_validation_schema_code = "\n".join(
+                self.target_validation_schema_code
+            )
         if isinstance(self.target_validation_harness_code, list):
-            self.target_validation_harness_code = "\n".join(self.target_validation_harness_code)
+            self.target_validation_harness_code = "\n".join(
+                self.target_validation_harness_code
+            )
 
         errors = []
         if "source_validation_harness_code" in self.__dict__:
-            if self.source_validation_harness_code is not None and self.source_validation_entry_type_name not in self.source_validation_harness_code:
-                errors.append(ValueError("source_validation_entry_type_name must be declared in source_validation_harness_code."))
+            if (
+                self.source_validation_harness_code is not None
+                and self.source_validation_entry_type_name
+                not in self.source_validation_harness_code
+            ):
+                errors.append(
+                    ValueError(
+                        "source_validation_entry_type_name must be declared in source_validation_harness_code."
+                    )
+                )
         if "source_validation_schema_code" in self.__dict__:
-            if self.source_validation_schema_code is not None and self.source_validation_entry_type_name not in self.source_validation_schema_code:
-                errors.append(ValueError("source_validation_entry_type_name must be declared in source_validation_schema_code."))
+            if (
+                self.source_validation_schema_code is not None
+                and self.source_validation_entry_type_name
+                not in self.source_validation_schema_code
+            ):
+                errors.append(
+                    ValueError(
+                        "source_validation_entry_type_name must be declared in source_validation_schema_code."
+                    )
+                )
         if "target_validation_harness_code" in self.__dict__:
-            if self.target_validation_harness_code is not None and self.target_validation_entry_type_name not in self.target_validation_harness_code:
-                errors.append(ValueError("target_validation_entry_type_name must be declared in target_validation_harness_code."))
+            if (
+                self.target_validation_harness_code is not None
+                and self.target_validation_entry_type_name
+                not in self.target_validation_harness_code
+            ):
+                errors.append(
+                    ValueError(
+                        "target_validation_entry_type_name must be declared in target_validation_harness_code."
+                    )
+                )
         if "target_validation_schema_code" in self.__dict__:
-            if self.target_validation_schema_code is not None and self.target_validation_entry_type_name not in self.target_validation_schema_code:
-                errors.append(ValueError("target_validation_entry_type_name must be declared in target_validation_schema_code."))
+            if (
+                self.target_validation_schema_code is not None
+                and self.target_validation_entry_type_name
+                not in self.target_validation_schema_code
+            ):
+                errors.append(
+                    ValueError(
+                        "target_validation_entry_type_name must be declared in target_validation_schema_code."
+                    )
+                )
         if errors:
             raise ExceptionGroup("Validation entry type name checks failed", errors)
         return self
-    
+
 
 async def _create_translation_output_model(state: State) -> type[BaseModel]:
     """Dynamically create a Pydantic model for the translation output based on the input model."""
@@ -205,73 +245,90 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
                 "attributes": {
                     "default": MISSING,
                     "exclude": True,
-                }
+                },
             },
             "source_validation_schema_code": {
                 "annotation": Union[list[str], str],
                 "attributes": {
-                    "description": base_model_fields["source_validation_schema_code"].description + 
-                    await create_example_for_prompt(state.source_target, True) 
-                    if base_model_fields["source_validation_schema_code"].description else None,
-                }
+                    "description": base_model_fields[
+                        "source_validation_schema_code"
+                    ].description
+                    + await create_example_for_prompt(state.source_target, True)
+                    if base_model_fields["source_validation_schema_code"].description
+                    else None,
+                },
             },
             "source_validation_harness_code": {
                 "annotation": None | MISSING,
                 "attributes": {
                     "default": MISSING,
                     "exclude": True,
-                }
+                },
             },
             "target_validation_schema_code": {
                 "annotation": Union[list[str], str],
                 "attributes": {
-                    "description": base_model_fields["target_validation_schema_code"].description + 
-                    await create_example_for_prompt(state.destination_target, True) 
-                    if base_model_fields["target_validation_schema_code"].description else None,
-                }
+                    "description": base_model_fields[
+                        "target_validation_schema_code"
+                    ].description
+                    + await create_example_for_prompt(state.destination_target, True)
+                    if base_model_fields["target_validation_schema_code"].description
+                    else None,
+                },
             },
             "target_validation_harness_code": {
                 "annotation": None | MISSING,
                 "attributes": {
                     "default": MISSING,
                     "exclude": True,
-                }
-            }
+                },
+            },
         }
-    elif state.translation_type == TranslationType.QUERY or state.translation_type == TranslationType.BOTH:
+    elif (
+        state.translation_type == TranslationType.QUERY
+        or state.translation_type == TranslationType.BOTH
+    ):
         output_schema_overrides = {
             "source_validation_schema_code": {
                 "annotation": None | MISSING,
                 "attributes": {
                     "default": MISSING,
                     "exclude": True,
-                }
+                },
             },
             "source_validation_harness_code": {
                 "annotation": Union[list[str], str],
                 "attributes": {
-                    "description": base_model_fields["source_validation_harness_code"].description + 
-                    await create_example_for_prompt(state.source_target, False) 
-                    if base_model_fields["source_validation_harness_code"].description else None,
-                }
+                    "description": base_model_fields[
+                        "source_validation_harness_code"
+                    ].description
+                    + await create_example_for_prompt(state.source_target, False)
+                    if base_model_fields["source_validation_harness_code"].description
+                    else None,
+                },
             },
             "target_validation_schema_code": {
                 "annotation": None | MISSING,
                 "attributes": {
                     "default": MISSING,
                     "exclude": True,
-                }
+                },
             },
             "target_validation_harness_code": {
                 "annotation": Union[list[str], str],
                 "attributes": {
-                    "description": base_model_fields["target_validation_harness_code"].description + 
-                    await create_example_for_prompt(state.destination_target, False) 
-                    if base_model_fields["target_validation_harness_code"].description else None,
-                }
-            }
+                    "description": base_model_fields[
+                        "target_validation_harness_code"
+                    ].description
+                    + await create_example_for_prompt(state.destination_target, False)
+                    if base_model_fields["target_validation_harness_code"].description
+                    else None,
+                },
+            },
         }
-    return override_pydantic_model_schema(BaseTranslationOutput, output_schema_overrides, model_name="TranslationOutput")
+    return override_pydantic_model_schema(
+        BaseTranslationOutput, output_schema_overrides, model_name="TranslationOutput"
+    )
 
 
 def is_input_extracted(state: State) -> bool:
@@ -309,14 +366,28 @@ async def extract_input(
     )
 
     extraction_agent = create_agent(
-        await get_model(config, runtime, AvailableModel.EINFRA_QWEN3_CODER_NEXT, temperature=0),
+        await get_model(
+            config, runtime, AvailableModel.EINFRA_QWEN3_CODER_NEXT, temperature=0
+        ),
         system_prompt=system_prompt,
         response_format=ProviderStrategy(ExtractionOutput, strict=True),
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
-                await get_model(config, runtime, AvailableModel.EINFRA_MINI, temperature=0, reasoning=False),
-                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0, reasoning=False),
+                await get_model(
+                    config,
+                    runtime,
+                    AvailableModel.EINFRA_MINI,
+                    temperature=0,
+                    reasoning=False,
+                ),
+                await get_model(
+                    config,
+                    runtime,
+                    AvailableModel.OLLAMA_QWEN3_CODER_30B,
+                    temperature=0,
+                    reasoning=False,
+                ),
             ),
         ],
         # debug=True if os.getenv("DEVELOPMENT") else False,
@@ -349,10 +420,13 @@ Conversation:
     extraction: ExtractionOutput = response["structured_response"]
     updates = {
         "messages": [
-            *response["messages"],
-            ToolMessage(content="Successfully extracted inputs.", tool_call_id="call_extract_input", name="extract_input"),
+            ToolMessage(
+                content="Successfully extracted inputs.",
+                tool_call_id="call_extract_input",
+                name="extract_input",
+            ),
         ],
-        **extraction.model_dump(warnings="error", exclude_unset=True)
+        **extraction.model_dump(warnings="error", exclude_unset=True),
     }
     return updates
 
@@ -365,30 +439,46 @@ async def schema_inspection(
     Runs a lightweight ReAct agent with only database tools to examine
     the relevant database schemas before translation begins.
     """
-    async with load_toolbox_tools() as toolbox_tools, load_mongodb_tools() as mongodb_tools:
+    async with (
+        load_toolbox_tools() as toolbox_tools,
+        load_mongodb_tools() as mongodb_tools,
+    ):
         db_tools = toolbox_tools + mongodb_tools
         if not db_tools:
             logger.warning("No database tools available for schema inspection.")
             return {
-                "messages": AIMessage(content="No database tools available. Skipping schema inspection."),
+                "messages": AIMessage(
+                    content="No database tools available. Skipping schema inspection."
+                ),
             }
 
-        if (state.destination_target == FrameworkEnum.JAVA_SPRING_DATA_MONGODB):
+        if state.destination_target == FrameworkEnum.JAVA_SPRING_DATA_MONGODB:
             database_mapping = await get_mongodb_standalone_mapping()
-        elif (state.destination_target == FrameworkEnum.JAVA_SPRING_DATA_NEO4J):
+        elif state.destination_target == FrameworkEnum.JAVA_SPRING_DATA_NEO4J:
             database_mapping = await get_neo4j_standalone_mapping()
         else:
-            database_mapping = await get_database_mapping_json(cast(FrameworkEnum, state.destination_target))
+            database_mapping = await get_database_mapping_json(
+                cast(FrameworkEnum, state.destination_target)
+            )
 
         agent = create_agent(
-            await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING, temperature=0),
+            await get_model(
+                config,
+                runtime,
+                AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING,
+                temperature=0,
+            ),
             tools=db_tools,
             system_prompt=SYSTEM_PROMPT_SCHEMA_INSPECTOR,
             middleware=[
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
-                    await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0),
-                    await get_model(config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0),
+                    await get_model(
+                        config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0
+                    ),
+                    await get_model(
+                        config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0
+                    ),
                     # await get_model(
                     #     config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0
                     # ),
@@ -414,28 +504,36 @@ async def schema_inspection(
 
         message = f"""Inspect the database schemas relevant to translating code from {cast(FrameworkEnum, state.source_target).value}{f" {state.source_target_version}" if state.source_target_version else ""} to {cast(FrameworkEnum, state.destination_target).value}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
 
-{f"Mapping from {database_mapping['databases']['source']} to {database_mapping['databases']['destination']}:\n<database_mapping>\n{orjson.dumps(database_mapping).decode("utf-8")}\n</database_mapping>\n" if database_mapping else ""}
+{f"Mapping from {database_mapping['databases']['source']} to {database_mapping['databases']['destination']}:\n<database_mapping>\n{orjson.dumps(database_mapping).decode('utf-8')}\n</database_mapping>\n" if database_mapping else ""}
 
 Source code being translated:
 {f"<schema_code>\n{state.source_schema_code}\n</schema_code>\n" if state.source_schema_code else ""}
 {f"<query_code>\n{state.source_query_code}\n</query_code>\n" if state.source_query_code else ""}"""
-        
+
         response = None
         try:
             response = await agent.ainvoke(
                 {"messages": [HumanMessage(content=message)]}
             )
             # Extract the final assistant response as schema context
-            schema_summary = response["messages"][-1].content if response["messages"] else ""
+            schema_summary = (
+                response["messages"][-1].content if response["messages"] else ""
+            )
             return {
                 "schema_context": str(schema_summary),
-                "messages": response["messages"],
+                "messages": [
+                    AIMessage(
+                        content=f"Schema inspection completed successfully:\n{schema_summary}"
+                    )
+                ],
             }
         except Exception:
             logger.warning("Schema inspection failed.", exc_info=True)
             return {
-                "messages": response["messages"] if response and response.get("messages") else [
-                    AIMessage(content="Schema inspection failed. Could not extract schema context."),
+                "messages": [
+                    AIMessage(
+                        content="Schema inspection failed. Could not extract schema context."
+                    ),
                 ]
             }
 
@@ -465,8 +563,16 @@ async def translation_agent(
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
-                await get_model(config, runtime, AvailableModel.EINFRA_THINKER, temperature=0, reasoning=False),
-                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0),
+                await get_model(
+                    config,
+                    runtime,
+                    AvailableModel.EINFRA_THINKER,
+                    temperature=0,
+                    reasoning=False,
+                ),
+                await get_model(
+                    config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0
+                ),
             ),
             ToolRetryMiddleware(),
             # LLMToolSelectorMiddleware(
@@ -553,8 +659,8 @@ async def generate_translation_node(
 ) -> dict[str, Any]:
     """Deterministically generate the translation using structured LLM output via a React Agent without tools."""
     TranslationOutput = await _create_translation_output_model(state)
-    
-    model = await get_model(config, runtime, temperature=0, reasoning=False)
+
+    model = await get_model(config, runtime, temperature=0)
 
     system_prompt = await build_system_prompt(state)
 
@@ -571,8 +677,12 @@ Source Code:
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
-                await get_model(config, runtime, AvailableModel.EINFRA_THINKER, temperature=0, reasoning=False),
-                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0),
+                await get_model(
+                    config, runtime, AvailableModel.EINFRA_THINKER, temperature=0
+                ),
+                await get_model(
+                    config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0
+                ),
             ),
             ToolRetryMiddleware(),
         ],
@@ -593,7 +703,12 @@ Source Code:
 
     if "structured_response" not in response:
         logger.warning("LLM did not return TranslationOutput properly.")
-        messages = [*response["messages"], AIMessage(content="Failed to generate translation. LLM did not return structured response in expected format.")]
+        messages = [
+            *response["messages"],
+            AIMessage(
+                content="Failed to generate translation. LLM did not return structured response in expected format."
+            ),
+        ]
         updates["messages"] = messages
         updates["translation_messages"] = messages
         return updates
@@ -601,7 +716,12 @@ Source Code:
     output = response["structured_response"]
     updates.update(output.model_dump(warnings="error", exclude_unset=True))
 
-    messages = [*response["messages"], AIMessage(content="Generated translation. Commencing deterministic validation...")]
+    messages = [
+        *response["messages"],
+        AIMessage(
+            content="Generated translation. Commencing deterministic validation..."
+        ),
+    ]
     updates["messages"] = messages
     updates["translation_messages"] = messages
 
@@ -613,26 +733,30 @@ class HumanInterventionResponse(BaseModel):
     feedback: str
 
 
-async def human_intervention_node(
-    state: State
-):
+async def human_intervention_node(state: State):
     """Pause the graph and ask for human feedback on the generated translation and validation results before proceeding to next steps."""
-    response = interrupt({
-        "instruction": "Review the current state, generated translation and validation results. Decide if the translation is correct or if another translation attempt is needed and provide feedback on what needs to be improved in the next attempt.",
-        "state": {
-            "translated_query_code": state.translated_query_code,
-            "translated_schema_code": state.translated_schema_code,
-            "explanation_message": state.explanation_message,
-            "query_equivalence_deep_diffs": state.query_equivalence_deep_diffs,
+    response = interrupt(
+        {
+            "instruction": "Review the current state, generated translation and validation results. Decide if the translation is correct or if another translation attempt is needed and provide feedback on what needs to be improved in the next attempt.",
+            "state": {
+                "translated_query_code": state.translated_query_code,
+                "translated_schema_code": state.translated_schema_code,
+                "explanation_message": state.explanation_message,
+                "query_equivalence_deep_diffs": state.query_equivalence_deep_diffs,
+            },
         }
-    })
+    )
     output = HumanInterventionResponse.model_validate(response)
-    
+
     if output.decision == "reject":
         if output.feedback:
-            feedback_message = HumanMessage(content=f"User rejected the translation with feedback:\n{output.feedback}")
+            feedback_message = HumanMessage(
+                content=f"User rejected the translation with feedback:\n{output.feedback}"
+            )
         else:
-            feedback_message = HumanMessage(content="User rejected the translation without providing feedback.")
+            feedback_message = HumanMessage(
+                content="User rejected the translation without providing feedback."
+            )
         return {
             "messages": feedback_message,
             "translation_messages": feedback_message,
@@ -653,27 +777,39 @@ def prep_schema_validation(state: State) -> dict[str, Any]:
     tool_calls = []
     target = state.destination_target
     if target and target.value in DotnetFramework:
-        tool_calls.append({
-            "name": "validate_dotnet_code",
-            "args": {
-                "source_code": state.target_validation_harness_code.strip() if state.target_validation_harness_code else "",
-                "framework": target.value,
-            },
-            "id": "schema_val_1",
-            "type": "tool_call"
-        })
+        tool_calls.append(
+            {
+                "name": "validate_dotnet_code",
+                "args": {
+                    "source_code": state.target_validation_harness_code.strip()
+                    if state.target_validation_harness_code
+                    else "",
+                    "framework": target.value,
+                },
+                "id": "schema_val_1",
+                "type": "tool_call",
+            }
+        )
     elif target and target.value in JavaFramework:
-        tool_calls.append({
-            "name": "validate_java_code",
-            "args": {
-                "source_code": state.target_validation_harness_code.strip() if state.target_validation_harness_code else "",
-                "framework": target.value,
-                "entry_type_name": state.target_validation_entry_type_name or "ValidationEntryPoint",
-            },
-            "id": "schema_val_1",
-            "type": "tool_call"
-        })
-    message = AIMessage(content="Commencing validation of translated schema and related settings...", tool_calls=tool_calls)
+        tool_calls.append(
+            {
+                "name": "validate_java_code",
+                "args": {
+                    "source_code": state.target_validation_harness_code.strip()
+                    if state.target_validation_harness_code
+                    else "",
+                    "framework": target.value,
+                    "entry_type_name": state.target_validation_entry_type_name
+                    or "ValidationEntryPoint",
+                },
+                "id": "schema_val_1",
+                "type": "tool_call",
+            }
+        )
+    message = AIMessage(
+        content="Commencing validation of translated schema and related settings...",
+        tool_calls=tool_calls,
+    )
     return {
         "messages": message,
         "translation_messages": message,
@@ -684,66 +820,90 @@ def prep_query_validation(state: State) -> dict[str, Any]:
     """Inject ToolCalls into state for parallel query validation."""
     tool_calls = []
     assert state.source_target is not None and state.destination_target is not None
-    
+
     # Source validation
-    if state.source_target in [FrameworkEnum.DOTNET_EFCORE, FrameworkEnum.DOTNET_DAPPER]:
-        tool_calls.append({
-            "name": "validate_dotnet_code",
-            "args": {
-                "source_code": state.source_validation_harness_code or "",
-                "framework": state.source_target.value,
-            },
-            "id": "source_query_val",
-            "type": "tool_call"
-        })
-    elif state.source_target in [FrameworkEnum.JAVA_SPRING_DATA_MONGODB, FrameworkEnum.JAVA_SPRING_DATA_NEO4J]:
-        tool_calls.append({
-            "name": "validate_java_code",
-            "args": {
-                "source_code": state.source_validation_harness_code or "",
-                "framework": state.source_target.value,
-                "entry_type_name": state.source_validation_entry_type_name or "ValidationEntryPoint",
-            },
-            "id": "source_query_val",
-            "type": "tool_call"
-        })
+    if state.source_target in [
+        FrameworkEnum.DOTNET_EFCORE,
+        FrameworkEnum.DOTNET_DAPPER,
+    ]:
+        tool_calls.append(
+            {
+                "name": "validate_dotnet_code",
+                "args": {
+                    "source_code": state.source_validation_harness_code or "",
+                    "framework": state.source_target.value,
+                },
+                "id": "source_query_val",
+                "type": "tool_call",
+            }
+        )
+    elif state.source_target in [
+        FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
+        FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
+    ]:
+        tool_calls.append(
+            {
+                "name": "validate_java_code",
+                "args": {
+                    "source_code": state.source_validation_harness_code or "",
+                    "framework": state.source_target.value,
+                    "entry_type_name": state.source_validation_entry_type_name
+                    or "ValidationEntryPoint",
+                },
+                "id": "source_query_val",
+                "type": "tool_call",
+            }
+        )
 
     # Target validation
-    if state.destination_target in [FrameworkEnum.DOTNET_EFCORE, FrameworkEnum.DOTNET_DAPPER]:
-        tool_calls.append({
-            "name": "validate_dotnet_code",
-            "args": {
-                "source_code": state.target_validation_harness_code or "",
-                "framework": state.destination_target.value,
-            },
-            "id": "target_query_val",
-            "type": "tool_call"
-        })
-    elif state.destination_target in [FrameworkEnum.JAVA_SPRING_DATA_MONGODB, FrameworkEnum.JAVA_SPRING_DATA_NEO4J]:
-        tool_calls.append({
-            "name": "validate_java_code",
-            "args": {
-                "source_code": state.target_validation_harness_code or "",
-                "framework": state.destination_target.value,
-                "entry_type_name": state.target_validation_entry_type_name or "ValidationEntryPoint",
-            },
-            "id": "target_query_val",
-            "type": "tool_call"
-        })
-    
-    message = AIMessage(content="Commencing parallel validation of source and target queries...", tool_calls=tool_calls)
-    return {
-        "messages": message,
-        "translation_messages": message
-    }
+    if state.destination_target in [
+        FrameworkEnum.DOTNET_EFCORE,
+        FrameworkEnum.DOTNET_DAPPER,
+    ]:
+        tool_calls.append(
+            {
+                "name": "validate_dotnet_code",
+                "args": {
+                    "source_code": state.target_validation_harness_code or "",
+                    "framework": state.destination_target.value,
+                },
+                "id": "target_query_val",
+                "type": "tool_call",
+            }
+        )
+    elif state.destination_target in [
+        FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
+        FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
+    ]:
+        tool_calls.append(
+            {
+                "name": "validate_java_code",
+                "args": {
+                    "source_code": state.target_validation_harness_code or "",
+                    "framework": state.destination_target.value,
+                    "entry_type_name": state.target_validation_entry_type_name
+                    or "ValidationEntryPoint",
+                },
+                "id": "target_query_val",
+                "type": "tool_call",
+            }
+        )
+
+    message = AIMessage(
+        content="Commencing parallel validation of source and target queries...",
+        tool_calls=tool_calls,
+    )
+    return {"messages": message, "translation_messages": message}
 
 
 def prep_query_equivalence(state: State) -> dict[str, Any]:
     """Inject ToolCall for check_query_equivalence if both validations passed."""
-    last_msgs = state.translation_messages[-2:] if len(state.translation_messages) >= 2 else []
+    last_msgs = (
+        state.translation_messages[-2:] if len(state.translation_messages) >= 2 else []
+    )
     src_str = str(last_msgs[0].content) if len(last_msgs) >= 2 else ""
     tgt_str = str(last_msgs[1].content) if len(last_msgs) >= 2 else ""
-    
+
     tool_calls = [
         {
             "name": "check_query_equivalence",
@@ -752,19 +912,19 @@ def prep_query_equivalence(state: State) -> dict[str, Any]:
                 "target_validation_output": tgt_str,
             },
             "id": "query_equiv_1",
-            "type": "tool_call"
+            "type": "tool_call",
         }
     ]
-    message = AIMessage(content="Commencing query equivalence check between source and target queries...", tool_calls=tool_calls)
-    return {
-        "messages": message,
-        "translation_messages": message
-    }
+    message = AIMessage(
+        content="Commencing query equivalence check between source and target queries...",
+        tool_calls=tool_calls,
+    )
+    return {"messages": message, "translation_messages": message}
 
 
 async def custom_tool_node_wrapper(
     request: ToolCallRequest,
-    execute: Callable[[ToolCallRequest], Awaitable[Union[ToolMessage, Command]]]
+    execute: Callable[[ToolCallRequest], Awaitable[Union[ToolMessage, Command]]],
 ) -> Union[ToolMessage, Command]:
     """Modify state and retry tool execution up to 4 times on Daytona/infrastructure errors."""
     max_retries = 4
@@ -774,62 +934,97 @@ async def custom_tool_node_wrapper(
         try:
             res = await execute(request)
             if isinstance(res, ToolMessage):
-                return Command(update={
-                    "messages": res,
-                    "translation_messages": res,
-                })
+                return Command(
+                    update={
+                        "messages": res,
+                        "translation_messages": res,
+                    }
+                )
             elif isinstance(res, Command):
                 if res.update and "messages" in res.update:
                     messages = res.update.get("messages", [])
-                    return Command(update={
-                        **res.update,
-                        "messages": messages,
-                        "translation_messages": messages,
-                    })
+                    return Command(
+                        update={
+                            **res.update,
+                            "messages": messages,
+                            "translation_messages": messages,
+                        }
+                    )
                 return res
             else:
                 return res
         except Exception as e:
             if attempt == max_retries:
-                logger.error(f"Tool {request.tool_call['name']} failed after {max_retries} attempts: {e}")
-                if request.tool_call["name"] in ["validate_dotnet_code", "validate_java_code"]:
-                    return ToolMessage(content=f"[Validation Failed] Error: {e}", tool_call_id=request.tool_call["id"], name=request.tool_call["name"])
+                logger.error(
+                    f"Tool {request.tool_call['name']} failed after {max_retries} attempts: {e}"
+                )
+                if request.tool_call["name"] in [
+                    "validate_dotnet_code",
+                    "validate_java_code",
+                ]:
+                    return ToolMessage(
+                        content=f"[Validation Failed] Error: {e}",
+                        tool_call_id=request.tool_call["id"],
+                        name=request.tool_call["name"],
+                    )
                 elif request.tool_call["name"] == "check_query_equivalence":
-                    return ToolMessage(content=f"[Query Equivalence Failed] Error: {e}", tool_call_id=request.tool_call["id"], name=request.tool_call["name"])
+                    return ToolMessage(
+                        content=f"[Query Equivalence Failed] Error: {e}",
+                        tool_call_id=request.tool_call["id"],
+                        name=request.tool_call["name"],
+                    )
                 else:
-                    return ToolMessage(content=f"[Tool Error] {type(e).__name__}: {e}", tool_call_id=request.tool_call["id"], name=request.tool_call["name"])
-            
+                    return ToolMessage(
+                        content=f"[Tool Error] {type(e).__name__}: {e}",
+                        tool_call_id=request.tool_call["id"],
+                        name=request.tool_call["name"],
+                    )
+
             delay = base_delay * (2 ** (attempt - 1))
-            logger.warning(f"Tool {request.tool_call['name']} threw infrastructure exception {type(e).__name__}. Retrying in {delay} seconds... (Attempt {attempt}/{max_retries})", exc_info=True)
+            logger.warning(
+                f"Tool {request.tool_call['name']} threw infrastructure exception {type(e).__name__}. Retrying in {delay} seconds... (Attempt {attempt}/{max_retries})",
+                exc_info=True,
+            )
             await asyncio.sleep(delay)
             continue
-            
-    return ToolMessage(content=f"[Tool Error] Failed after {max_retries} attempts. Please check the infrastructure and try again later. ToolCallRequest: {request.tool_call}", tool_call_id=request.tool_call["id"], name=request.tool_call["name"])
+
+    return ToolMessage(
+        content=f"[Tool Error] Failed after {max_retries} attempts. Please check the infrastructure and try again later. ToolCallRequest: {request.tool_call}",
+        tool_call_id=request.tool_call["id"],
+        name=request.tool_call["name"],
+    )
 
 
 validate_schema_node = ToolNode(
-    [validate_dotnet_code, validate_java_code], 
+    [validate_dotnet_code, validate_java_code],
     name="validate_schema_node",
     awrap_tool_call=custom_tool_node_wrapper,
 )
 
 validate_query_node = ToolNode(
-    [validate_dotnet_code, validate_java_code], 
+    [validate_dotnet_code, validate_java_code],
     name="validate_query_node",
     awrap_tool_call=custom_tool_node_wrapper,
 )
 
 check_query_equivalence_node = ToolNode(
-    [check_query_equivalence], 
+    [check_query_equivalence],
     name="check_query_equivalence_node",
     awrap_tool_call=custom_tool_node_wrapper,
 )
 
 
-def route_post_query_validation(state: State) -> Literal["prep_query_equivalence", "evaluation_node"]:
+def route_post_query_validation(
+    state: State,
+) -> Literal["prep_query_equivalence", "evaluation_node"]:
     """Route to equivalence check if validations passed, else skip to evaluation."""
-    last_msgs = state.translation_messages[-2:] if len(state.translation_messages) >= 2 else []
-    if len(last_msgs) >= 2 and state.translation_type in [TranslationType.QUERY, TranslationType.BOTH]:
+    last_msgs = (
+        state.translation_messages[-2:] if len(state.translation_messages) >= 2 else []
+    )
+    if len(last_msgs) >= 2 and state.translation_type in [
+        TranslationType.QUERY,
+        TranslationType.BOTH,
+    ]:
         src_str = str(last_msgs[0].content)
         tgt_str = str(last_msgs[1].content)
         if "Validation Passed]" in src_str and "Validation Passed]" in tgt_str:
@@ -850,9 +1045,7 @@ async def evaluation_node(
     """Evaluate validation outputs and deepdiff results to decide on translation acceptance."""
     model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6)
 
-    last_msgs = [
-        str(msg) for msg in state.translation_messages[-4:]
-    ]
+    last_msgs = [str(msg) for msg in state.translation_messages[-4:]]
 
     prompt = f"""Evaluate the following validation results for a schema/query translation.
 Based on the validation output and DeepDiff equivalence results, decide if the translation is ACCEPTABLE or if it should be REJECTED and retried.
@@ -870,7 +1063,7 @@ Is the translation logically equivalent and syntactically valid? Provide your re
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
                 await get_model(config, runtime, AvailableModel.EINFRA_THINKER),
-                # await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B),
+                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B),
             ),
             ToolRetryMiddleware(),
         ],
@@ -881,24 +1074,34 @@ Is the translation logically equivalent and syntactically valid? Provide your re
         response = await agent.ainvoke({"messages": [HumanMessage(content=prompt)]})
         messages = response["messages"] if response and response.get("messages") else []
         if "structured_response" not in response:
-            messages = [*messages, AIMessage(content="Failed to evaluate translation. LLM did not return structured response in expected format.")]
+            messages = [
+                *messages,
+                AIMessage(
+                    content="Failed to evaluate translation. LLM did not return structured response in expected format."
+                ),
+            ]
             return {
                 "messages": messages,
                 "translation_messages": messages,
             }
 
         output: EvaluationOutput = response["structured_response"]
-        messages = [*messages, AIMessage(content=f"[{output.decision}] {output.explanation}")]
+        messages = [
+            *messages,
+            AIMessage(content=f"[{output.decision}] {output.explanation}"),
+        ]
         return {
             "explanation_message": output.explanation,
             "messages": messages,
             "translation_messages": messages,
         }
-    except Exception as e: # TODO: narrow exception type OR remove these try-except blocks from all nodes - errors are handled by LangGraph already (retried)
+    except Exception as e:  # TODO: narrow exception type OR remove these try-except blocks from all nodes - errors are handled by LangGraph already (retried)
         logger.error(f"Evaluation node failed: {e}")
         messages = [
             *(response["messages"] if response and response.get("messages") else []),
-            AIMessage(content=f"[Evaluation Error] An error occurred during evaluation: {e}")
+            AIMessage(
+                content=f"[Evaluation Error] An error occurred during evaluation: {e}"
+            ),
         ]
         return {
             "messages": messages,
@@ -968,7 +1171,9 @@ def route_post_schema_validation(
 # structlog.stdlib.recreate_defaults(log_level=None)
 structlog.configure(
     processors=[
-        structlog.dev.ConsoleRenderer(exception_formatter=structlog.dev.RichTracebackFormatter(show_locals=False)),
+        structlog.dev.ConsoleRenderer(
+            exception_formatter=structlog.dev.RichTracebackFormatter(show_locals=False)
+        ),
     ],
 )
 
@@ -1018,7 +1223,7 @@ else:
 
     # from langchain_community.cache import AsyncRedisCache as NodeRedisCache
     from redis import Redis
-    
+
     redis_client = Redis.from_url(os.getenv("REDIS_URI", "redis://localhost:6379"))
     # Node Cache for caching graph states (not LLM calls)
     node_cache = NodeRedisCache(redis_client)
@@ -1027,7 +1232,7 @@ else:
     redis_cache = RedisCache(
         redis_url=os.getenv("REDIS_URI", "redis://localhost:6379"),
         prefix="langgraph:llm_cache:",
-        redis_client=redis_client
+        redis_client=redis_client,
     )
     set_llm_cache(redis_cache)
 
@@ -1043,22 +1248,22 @@ retry_policy = RetryPolicy(
 )
 
 builder.add_node(
-    extract_input, # type: ignore
+    extract_input,  # type: ignore
     cache_policy=CachePolicy(),
     retry_policy=retry_policy,
 )
 builder.add_node(
-    schema_inspection, # type: ignore
+    schema_inspection,  # type: ignore
     cache_policy=CachePolicy(ttl=900),
     retry_policy=retry_policy,
 )
 builder.add_node(
-    generate_translation_node, # type: ignore
+    generate_translation_node,  # type: ignore
     cache_policy=CachePolicy(),
     retry_policy=retry_policy,
 )
 builder.add_node(
-    human_intervention_node, # type: ignore
+    human_intervention_node,  # type: ignore
     retry_policy=retry_policy,
 )
 
@@ -1084,7 +1289,7 @@ builder.add_node(
     check_query_equivalence_node,
 )
 builder.add_node(
-    evaluation_node, # type: ignore
+    evaluation_node,  # type: ignore
     retry_policy=retry_policy,
 )
 
@@ -1107,7 +1312,6 @@ builder.add_edge("human_intervention_node", "generate_translation_node")
 graph = builder.compile(
     name="Universal Object Mapping Translator",
     # checkpointer=checkpointer,
-    # store=store,
     cache=node_cache,
     # debug=True if os.getenv("DEVELOPMENT") else False,
 )

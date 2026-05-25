@@ -13,6 +13,8 @@ from deepdiff import DeepDiff
 from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
+from langgraph.types import Command
+from langchain_core.messages import ToolMessage
 
 from react_agent.constants import (
     SourceFramework,
@@ -112,7 +114,7 @@ async def check_query_equivalence(
     source_validation_output: str,
     target_validation_output: str,
     runtime: ToolRuntime, # type: ignore
-) -> str:
+) -> Command | str:
     """Compare source and target query metadata for logical equivalence."""
     runtime: ToolRuntime[Context, State] = runtime  # type: ignore
     output = _check_validation_markers(
@@ -194,4 +196,20 @@ async def check_query_equivalence(
         else:
             diff_results[key] = OrderedDict((("status", "Differences Found"), ("diffs", awaited_tasks[i])))
 
-    return f"[Query Equivalence Results]\\n{orjson.dumps(diff_results).decode("utf-8")}"
+    tool_call_id = (
+        getattr(runtime, "tool_call_id", None)
+        or (runtime.config.get("metadata", {}).get("langgraph_tool_call_id") if runtime.config else None)
+        or (runtime.config.get("metadata", {}).get("tool_call_id") if runtime.config else None)
+    )
+    return Command(
+        update={
+            "query_equivalence_deep_diffs": diff_results,
+            "messages": [
+                ToolMessage(
+                    content=f"[Query Equivalence Results]\n{orjson.dumps(diff_results).decode('utf-8')}",
+                    tool_call_id=tool_call_id,
+                    name=check_query_equivalence.name
+                )
+            ]
+        }
+    )

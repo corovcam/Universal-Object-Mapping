@@ -1,4 +1,5 @@
 """Dotnet compilation and validation tool using execute_in_sandbox."""
+
 import base64
 import logging
 import os
@@ -47,7 +48,9 @@ async def compile_and_run_dotnet(
         return "Compilation Error: No class or record defined in C# source code.", None
 
     try:
-        csproj_content = await get_framework_config_content(FrameworkEnum(framework.value))
+        csproj_content = await get_framework_config_content(
+            FrameworkEnum(framework.value)
+        )
     except ValueError as e:
         raise RuntimeError(f"[Error] {e}") from e
 
@@ -57,15 +60,28 @@ async def compile_and_run_dotnet(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     sandbox_dir = f"/sandbox/sandbox-{timestamp}"
     results_dir = f"{sandbox_dir}/results"
+
+    configurable = runtime.config.get("configurable", {}) if runtime.config else {}
+    connection_string = (
+        configurable.get("ms_sql_connection_string")
+        or configurable.get("mssql_connection_string")
+        or runtime.context.ms_sql_connection_string
+    )
+    sandbox_execution_timeout = (
+        configurable.get("sandbox_execution_timeout")
+        or configurable.get("daytona_timeout")
+        or runtime.context.sandbox_execution_timeout
+    )
+
     env_vars = {
-        "CONNECTION_STRING": translate_localhost_to_host_gateway(runtime.context.ms_sql_connection_string),
+        "CONNECTION_STRING": translate_localhost_to_host_gateway(connection_string),
         "EFCORE_RESULTS_PATH": results_dir,
         "DAPPER_RESULTS_PATH": results_dir,
         "NHIBERNATE_RESULTS_PATH": results_dir,
     }
-    
+
     script = f"""
-{"\n".join([f"export {key}=\"{value}\"" for key, value in env_vars.items()])}
+{"\n".join([f'export {key}="{value}"' for key, value in env_vars.items()])}
 mkdir -p "{sandbox_dir}"
 mkdir -p "{results_dir}"
 echo "{csproj_b64}" | base64 -d > "{sandbox_dir}/sandbox.csproj"
@@ -75,7 +91,10 @@ dotnet build
 """
     if source_code.strip():
         script += "dotnet run\n"
-        if runtime.state.translation_type in [TranslationType.QUERY, TranslationType.BOTH]:
+        if runtime.state.translation_type in [
+            TranslationType.QUERY,
+            TranslationType.BOTH,
+        ]:
             script += f"""
 # Output newest json file path
 NEWEST_JSON=$(ls -t "{results_dir}"/*.json 2>/dev/null | head -n 1)
@@ -86,7 +105,13 @@ fi
 
     try:
         result = await execute_in_sandbox.ainvoke(
-            {"sandbox_type": SandboxType.DOTNET_10_SANDBOX, "command": script, "timeout": runtime.context.sandbox_execution_timeout, "env_vars": env_vars, "runtime": runtime},
+            {
+                "sandbox_type": SandboxType.DOTNET_10_SANDBOX,
+                "command": script,
+                "timeout": sandbox_execution_timeout,
+                "env_vars": env_vars,
+                "runtime": runtime,
+            },
             config=runtime.config,
         )
         output: str = result[0]
@@ -95,19 +120,36 @@ fi
         logger.error("Dotnet sandbox execution failed", exc_info=True)
         raise RuntimeError(f"[Error] Dotnet sandbox execution failed: {e}") from e
 
-    json_path_line = next((line for line in reversed(output.splitlines()) if line.startswith("JSON_PATH=")), None)
+    json_path_line = next(
+        (
+            line
+            for line in reversed(output.splitlines())
+            if line.startswith("JSON_PATH=")
+        ),
+        None,
+    )
     if exit_code == 0:
         if json_path_line is not None:
             remote_path = json_path_line.split("=")[1].strip()
             json_content = await download_file_from_sandbox.ainvoke(
-                {"sandbox_type": SandboxType.DOTNET_10_SANDBOX, "remote_path": remote_path, "runtime": runtime},
+                {
+                    "sandbox_type": SandboxType.DOTNET_10_SANDBOX,
+                    "remote_path": remote_path,
+                    "runtime": runtime,
+                },
                 config=runtime.config,
             )
             json_part = json_content
 
-            return f"[Dotnet Validation Passed] Validation successful. Framework targeted: {framework.value}\n{output}", json_part
+            return (
+                f"[Dotnet Validation Passed] Validation successful. Framework targeted: {framework.value}\n{output}",
+                json_part,
+            )
         else:
-            return f"[Dotnet Validation Failed] No JSON path found in output.\n{output}", None
+            return (
+                f"[Dotnet Validation Failed] No JSON path found in output.\n{output}",
+                None,
+            )
     else:
         return f"[Dotnet Validation Failed]\n{output}", None
 
@@ -120,7 +162,7 @@ async def validate_dotnet_code(
 ) -> Command | str:
     """Compile and validate C# source code through dotnet-service CLI."""
     output, json_part = await compile_and_run_dotnet(source_code, framework, runtime)
-    
+
     if json_part:
         if "===JSON ERROR===" in json_part:
             return f"{output}\n\n[JSON Results]\n{json_part}"
@@ -128,14 +170,45 @@ async def validate_dotnet_code(
             parsed = orjson.loads(json_part)
         except orjson.JSONDecodeError:
             return f"[Dotnet Validation Failed] Could not parse JSON output.\n{output}\n{json_part}"
-            
-        tool_call_id = getattr(runtime, "tool_call_id", None)
+
+        # Determine side (source or target)
+        side = None
+        if (
+            source_code.strip()
+            == (runtime.state.source_validation_harness_code or "").strip()
+        ):
+            side = "source"
+        elif (
+            source_code.strip()
+            == (runtime.state.target_validation_harness_code or "").strip()
+        ):
+            side = "target"
+
+        tool_call_id = (
+            getattr(runtime, "tool_call_id", None)
+            or (
+                runtime.config.get("metadata", {}).get("langgraph_tool_call_id")
+                if runtime.config
+                else None
+            )
+            or (
+                runtime.config.get("metadata", {}).get("tool_call_id")
+                if runtime.config
+                else None
+            )
+        )
+        if not side:
+            if tool_call_id == "source_query_val":
+                side = "source"
+            elif tool_call_id == "target_query_val":
+                side = "target"
+
         update_dict = {}
-        if tool_call_id == "source_query_val":
+        if side == "source":
             update_dict["source_query_validation_results"] = parsed
-        elif tool_call_id == "target_query_val":
+        elif side == "target":
             update_dict["target_query_validation_results"] = parsed
-            
+
         return Command(
             update={
                 **update_dict,
@@ -143,9 +216,9 @@ async def validate_dotnet_code(
                     ToolMessage(
                         content=output,
                         tool_call_id=tool_call_id,
-                        name=validate_dotnet_code.name
+                        name=validate_dotnet_code.name,
                     )
-                ]
+                ],
             }
         )
     return output
