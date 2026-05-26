@@ -8,33 +8,119 @@
         "hasToolResult": true
       },
       "response": {
-        "content": "Let me also sample some data from the source SQL tables and the target MongoDB collections to understand data shapes:\n\n\n\n\n\n",
+        "content": "Now let me get the detailed SQL Server table schemas and MongoDB collection schemas.\n\n",
         "toolCalls": [
           {
             "name": "execute_sql",
-            "arguments": "{\"sql\": \"SELECT TOP 3 * FROM Sales.Orders\"}",
-            "id": "call_43738a0106b048fba9f93e0f"
+            "arguments": "{\"sql\": \"SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, IS_NULLABLE, COLUMN_DEFAULT \\nFROM INFORMATION_SCHEMA.COLUMNS \\nWHERE TABLE_SCHEMA = 'Sales' AND TABLE_NAME IN ('Customers', 'CustomerTransactions', 'Orders', 'OrderLines')\\nORDER BY TABLE_NAME, ORDINAL_POSITION\"}",
+            "id": "call_95b2caaf2b9e4c07b5cb4d5f"
           },
           {
-            "name": "execute_sql",
-            "arguments": "{\"sql\": \"SELECT TOP 3 * FROM Sales.OrderLines\"}",
-            "id": "call_eb8d376f92644bf8a51fd9e0"
+            "name": "collection-schema",
+            "arguments": "{\"database\": \"uom\", \"collection\": \"orders\"}",
+            "id": "call_86d62447503e4616ae9c1b3a"
           },
           {
-            "name": "execute_sql",
-            "arguments": "{\"sql\": \"SELECT TOP 3 * FROM Sales.Customers\"}",
-            "id": "call_7d7f88e71bc544b7879b3701"
+            "name": "collection-schema",
+            "arguments": "{\"database\": \"uom\", \"collection\": \"orderLines\"}",
+            "id": "call_66c1627b39c04881947f0313"
           },
           {
-            "name": "execute_sql",
-            "arguments": "{\"sql\": \"SELECT TOP 3 * FROM Sales.CustomerTransactions\"}",
-            "id": "call_e7950e0b70f0460cb931fc34"
+            "name": "collection-schema",
+            "arguments": "{\"database\": \"uom\", \"collection\": \"people\"}",
+            "id": "call_dc2aab9a101d41848f6ba14d"
+          },
+          {
+            "name": "collection-schema",
+            "arguments": "{\"database\": \"uom\", \"collection\": \"suppliers\"}",
+            "id": "call_b561b6a01ef149daa6472bd2"
           }
         ]
       },
+      "recordedTimings": {
+        "ttftMs": 1,
+        "interChunkDelaysMs": [
+          0,
+          6,
+          26,
+          24,
+          26,
+          27,
+          51,
+          6,
+          32,
+          20,
+          29,
+          24,
+          38,
+          15,
+          33,
+          30,
+          26,
+          29,
+          34,
+          26,
+          21,
+          30,
+          18,
+          34,
+          18,
+          34,
+          26,
+          33,
+          28,
+          26,
+          35,
+          16,
+          30,
+          25,
+          23,
+          29,
+          28,
+          21,
+          89,
+          43,
+          24,
+          24,
+          26,
+          27,
+          26,
+          30,
+          39,
+          31,
+          17,
+          24,
+          53,
+          27,
+          36,
+          22,
+          20,
+          31,
+          23,
+          26,
+          42,
+          16,
+          19,
+          33,
+          33,
+          26,
+          42,
+          12,
+          24,
+          10358,
+          1482,
+          1586,
+          1418,
+          1391,
+          257,
+          0,
+          0
+        ],
+        "totalDurationMs": 18355
+      },
       "metadata": {
         "systemHash": "10ffa925",
-        "toolsHash": "23569c7a"
+        "toolsHash": "36631658"
       }
     }
   ]
