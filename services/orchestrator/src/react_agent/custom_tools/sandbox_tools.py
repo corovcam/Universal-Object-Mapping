@@ -43,7 +43,7 @@ async def execute_in_sandbox(
     """
     try:
         async with AsyncDaytona() as daytona:
-            sandbox = await ValidationSandbox.get_sandbox(daytona, sandbox_type, runtime, env_vars)
+            sandbox = await ValidationSandbox.get_sandbox(daytona, sandbox_type, runtime.stream_writer, env_vars)
             
             session_id = f"{sandbox.name}-{uuid4()}"
             await sandbox.process.create_session(session_id)
@@ -113,7 +113,7 @@ async def download_file_from_sandbox(
     """
     try:
         async with AsyncDaytona() as daytona:
-            sandbox = await ValidationSandbox.get_sandbox(daytona, sandbox_type, runtime)
+            sandbox = await ValidationSandbox.get_sandbox(daytona, sandbox_type, runtime.stream_writer)
             logger.info("Daytona retrieving file: %s from service: %s", remote_path, sandbox_type)
             content = await sandbox.fs.download_file(remote_path)
         

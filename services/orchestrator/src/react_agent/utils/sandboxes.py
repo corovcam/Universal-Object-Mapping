@@ -1,8 +1,7 @@
 """Handles creation and management of Daytona sandboxes for code execution."""
 import asyncio
-import logging
 import os
-from typing import Any
+from typing import Any, Callable
 
 import structlog
 from daytona import (
@@ -13,7 +12,6 @@ from daytona import (
     Image,
     SandboxState,
 )
-from langchain.tools import ToolRuntime
 
 from react_agent.constants import SandboxType
 from react_agent.utils.utils import process_streaming_chunks
@@ -39,13 +37,13 @@ class ValidationSandbox:
     }
     
     @staticmethod
-    async def get_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, runtime: ToolRuntime, env_vars: dict[str, Any] | None = None) -> AsyncSandbox:
-        await ValidationSandbox.create_snapshot(daytona, sandbox_type, runtime)
+    async def get_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, stream_writer: Callable[[Any], None], env_vars: dict[str, Any] | None = None) -> AsyncSandbox:
+        await ValidationSandbox.create_snapshot(daytona, sandbox_type, stream_writer)
         await ValidationSandbox.initialize_validation_sandbox(daytona, sandbox_type, env_vars)
         return ValidationSandbox.SANDBOXES[sandbox_type]
     
     @staticmethod
-    async def create_snapshot(daytona: AsyncDaytona, sandbox_type: SandboxType, runtime: ToolRuntime) -> None:
+    async def create_snapshot(daytona: AsyncDaytona, sandbox_type: SandboxType, stream_writer: Callable[[Any], None]) -> None:
         """Create a snapshot for the specified sandbox type."""
         params = CreateSnapshotParams(
             name=f"validation-snapshot-{sandbox_type.value.lower()}",
@@ -63,7 +61,7 @@ class ValidationSandbox:
                 except Exception as e:
                     logger.info(f"Snapshot '{params.name}' not found or error retrieving: {e}")
                 chunk_buffer = []
-                snapshot = await daytona.snapshot.create(params, on_logs=lambda chunk: process_streaming_chunks(chunk, runtime.stream_writer, chunk_buffer))
+                snapshot = await daytona.snapshot.create(params, on_logs=lambda chunk: process_streaming_chunks(chunk, stream_writer, chunk_buffer))
                 logger.info(f"Snapshot created with ID: {snapshot.id}")
                 break
             except Exception as e:
