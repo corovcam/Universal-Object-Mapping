@@ -1,15 +1,40 @@
 """Main application entry point for the API server."""
-
+from contextlib import asynccontextmanager
 from enum import StrEnum
 from typing import Dict
 
+import structlog
 from daytona import AsyncDaytona
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from react_agent.constants import SandboxType
+from react_agent.utils.sandboxes import ValidationSandbox
 
-app = FastAPI()
+structlog.configure(
+    processors=[
+        structlog.dev.ConsoleRenderer(
+            exception_formatter=structlog.dev.RichTracebackFormatter(show_locals=False)
+        ),
+    ],
+)
+
+
+async def init_sandbox_snapshots():
+    """Creates snapshots of the sandbox environments."""
+    async with AsyncDaytona() as daytona:
+        await ValidationSandbox.create_snapshot(daytona, SandboxType.DOTNET_10_SANDBOX, print)
+        await ValidationSandbox.create_snapshot(daytona, SandboxType.JAVA_25_SANDBOX, print)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan."""
+    await init_sandbox_snapshots()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 class NormalizedFramework(StrEnum):
