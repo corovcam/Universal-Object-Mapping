@@ -64,6 +64,9 @@ class OutputState:
     target_validation_schema_code: str | None = field(default=None)
     target_validation_harness_code: str | None = field(default=None)
     explanation_message: str | None = field(default=None)
+    messages: Annotated[Sequence[AnyMessage], add_messages] = field(
+        default_factory=list
+    )
 
 
 @dataclass
@@ -91,4 +94,5 @@ class State(InputState, OutputState):
     translation_messages: Annotated[Sequence[AnyMessage], add_messages] = field(
         default_factory=list
     )
+    extraction_loop_count: int = field(default=0)
     translation_loop_count: int = field(default=0)

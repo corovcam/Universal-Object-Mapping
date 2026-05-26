@@ -36,6 +36,8 @@ from pydantic import BaseModel, Field, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from react_agent.constants import (
+    MAX_EXTRACTION_LOOPS,
+    MAX_TRANSLATION_LOOPS,
     AvailableModel,
     DotnetFramework,
     FrameworkEnum,
@@ -100,6 +102,10 @@ class ExtractionOutput(BaseModel):
     )
     destination_target_version: Union[str, None] = Field(
         description="The identified target framework version."
+    )
+    error: Union[str, None] = Field(
+        description="The error message if something went wrong with the extraction. For example if source schema or query code is not valid or is not provided. If there is no error, return None.",
+        default=None,
     )
 
     @model_validator(mode="after")
@@ -331,7 +337,7 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
     )
 
 
-def is_input_extracted(state: State) -> bool:
+def is_input_extracted(state: State | ExtractionOutput) -> bool:
     """Check if the input has been extracted."""
     if state.translation_type == TranslationType.SCHEMA:
         is_code_extracted = state.source_schema_code is not None
@@ -354,9 +360,6 @@ async def extract_input(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ):
     """Extract raw source code and targets from recent messages if missing from structured input."""
-    if is_input_extracted(state):
-        return {}
-
     # model = await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B)
     # structured_llm = model.with_structured_output(ExtractionOutput)
 
@@ -415,18 +418,51 @@ Conversation:
 
     if "structured_response" not in response:
         logger.warning("Extraction agent did not return structured response.")
-        return {}
+        return {
+            "messages": [
+                *response["messages"],
+                AIMessage(content="Extraction agent did not return structured response.")],
+            "extraction_loop_count": state.extraction_loop_count + 1,
+        }
 
     extraction: ExtractionOutput = response["structured_response"]
+    if extraction.error:
+        return Command(
+            update={
+                "messages": [
+                    *response["messages"],
+                    AIMessage(content=extraction.error),
+                ],
+                "extraction_loop_count": state.extraction_loop_count + 1,
+            },
+            goto=END,
+        )
+    if is_input_extracted(extraction):
+        msg = ToolMessage(
+            content="Successfully extracted inputs.",
+            tool_call_id="call_extract_input",
+            name="extract_input",
+        )
+    else:
+        if state.extraction_loop_count >= MAX_EXTRACTION_LOOPS - 1:
+            return Command(
+                update={
+                    "messages": [
+                        *response["messages"],
+                        AIMessage(content=f"Extraction agent has reached the maximum number of {MAX_EXTRACTION_LOOPS} loops. Please fix your input message or provide the structured input manually."),
+                    ]
+                },
+                goto=END,
+            )
+        msg = ToolMessage(content="Extraction agent could not extract inputs.", tool_call_id="call_extract_input", name="extract_input")
+    
     updates = {
         "messages": [
-            ToolMessage(
-                content="Successfully extracted inputs.",
-                tool_call_id="call_extract_input",
-                name="extract_input",
-            ),
+            *response["messages"],
+            msg
         ],
-        **extraction.model_dump(warnings="error", exclude_unset=True),
+        "extraction_loop_count": state.extraction_loop_count + 1,
+        **extraction.model_dump(warnings="error", exclude_unset=True, exclude={"error"}),
     }
     return updates
 
@@ -522,8 +558,9 @@ Source code being translated:
             return {
                 "schema_context": str(schema_summary),
                 "messages": [
+                    *response["messages"][:-1],
                     AIMessage(
-                        content=f"Schema inspection completed successfully:\n{schema_summary}"
+                        content=f"Schema inspection completed successfully:\n\n{schema_summary}"
                     )
                 ],
             }
@@ -531,6 +568,7 @@ Source code being translated:
             logger.warning("Schema inspection failed.", exc_info=True)
             return {
                 "messages": [
+                    *(response["messages"] if response and "messages" in response else []),
                     AIMessage(
                         content="Schema inspection failed. Could not extract schema context."
                     ),
@@ -1121,18 +1159,21 @@ def route_post_evaluation(
         or "[Evaluation Failed]" in last_msg
         or "[Evaluation Error]" in last_msg
     ):
-        if state.translation_loop_count >= 3:
+        if state.translation_loop_count >= MAX_TRANSLATION_LOOPS:
             return "human_intervention_node"
         return "generate_translation_node"
     return "__end__"
 
 
-def should_extract_input(state: State) -> Literal["schema_inspection", "extract_input"]:
+def should_extract_input(state: State) -> Literal["schema_inspection", "extract_input", "__end__"]:
     """Route execution to extraction until mandatory input fields are present."""
     if is_input_extracted(state):
         return "schema_inspection"
-    else:
+    elif state.extraction_loop_count < MAX_EXTRACTION_LOOPS:
         return "extract_input"
+    else:
+        logger.error(f"Failed to extract input after {MAX_EXTRACTION_LOOPS} attempts.")
+        return "__end__"
 
 
 def route_post_translation(
@@ -1157,7 +1198,7 @@ def route_post_schema_validation(
         state.translation_messages[-1].content if state.translation_messages else ""
     )
     if "Failed]" in last_msg:
-        if state.translation_loop_count >= 3:
+        if state.translation_loop_count >= MAX_TRANSLATION_LOOPS:
             return "human_intervention_node"
         return "generate_translation_node"
 
