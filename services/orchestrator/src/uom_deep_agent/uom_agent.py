@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 from daytona import AsyncDaytona
 from deepagents import (
-    CompiledSubAgent,
+    AsyncSubAgent,
     GeneralPurposeSubagentProfile,
     HarnessProfile,
     ProviderProfile,
@@ -65,9 +65,24 @@ When using the Task tool, you must specify a subagent_type parameter to select w
 6. IMPORTANT: When the agent descriptions mention that the user input should be copied fully, verbatim, as-is, do exactly that and put it inside "description" field of Task tool. Do NOT truncate or modify it. Do NOT include any additional text apart from the initial "user input". Expecially if there is any code, you MUST NOT modify it in any way. You MUST include line breaks and formatting verbatim if present.
 """
 
+ASYNC_TASK_TOOL_DESCRIPTION = """Start an async subagent on a remote server. The subagent runs in the background and returns a task ID immediately.
+
+Available async agent types:
+{available_agents}
+
+## Usage notes:
+1. This tool launches a background task and returns immediately with a task ID. Report the task ID to the user and stop — do NOT immediately check status.
+2. Use `check_async_task` only when the user asks for a status update or result.
+3. Use `update_async_task` to send new instructions to a running task.
+4. Multiple async subagents can run concurrently — launch several and let them run in the background.
+5. The subagent runs on a remote server, so it has its own tools and capabilities.
+6. IMPORTANT: When the agent descriptions mention that the user input should be copied fully, verbatim, as-is, do exactly that and put it inside "description" field of `start_async_task` tool. Do NOT truncate or modify it. Do NOT include any additional text apart from the initial "user input". Expecially if there is any code, you MUST NOT modify it in any way. You MUST include line breaks and formatting verbatim if present.
+"""
+
 DEFAULT_HARNESS_PROFILE = HarnessProfile(
     tool_description_overrides={
-        "task": TASK_TOOL_DESCRIPTION
+        "task": TASK_TOOL_DESCRIPTION,
+        "start_async_task": ASYNC_TASK_TOOL_DESCRIPTION,
     },
     general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
 )
@@ -131,8 +146,8 @@ def custom_system_prompt(request: ModelRequest[Context]) -> str:
     return request.system_prompt or ""
 
 
-def _get_compiled_uom_graph() -> CompiledSubAgent:
-    return CompiledSubAgent(
+def _get_compiled_uom_graph() -> AsyncSubAgent:
+    return AsyncSubAgent(
         name="universal-object-mapping-translator",
         description="""Migrates code database entity schemas, mappings/context/settings and queries between Object-Relational Mapping (ORM), Object-Graph Mapping (OGM), and Object-Document Mapping (ODM) frameworks by performing LLM-based translation and validation workflow. Currently supports translation from .NET (Entity Framework Core, NHibernate, Dapper) to Java frameworks (Spring Data MongoDB, Spring Data Neo4j).
 Translation Workflow:
@@ -157,7 +172,7 @@ Example Input Messages for "universal-object-mapping-translator" sub-agent:
 {get_example_input(NHIBERNATE_MONGODB_INPUT)}
 ```
 """,
-        runnable=graph,
+        graph_id="universal-object-mapping-translator",
     )
     
 def build_deep_agent(
@@ -179,7 +194,7 @@ def build_deep_agent(
         _root_dir = context.cwd
         interrupt_config = _get_interrupt_config(context.mode)
     else:
-        _root_dir = os.getcwd()
+        _root_dir = "." # os.getcwd()
         interrupt_config = _get_interrupt_config()
 
     ephemeral_backend = StateBackend()

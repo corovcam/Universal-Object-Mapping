@@ -13,11 +13,11 @@ install:
 
 dev:
 	powershell -ExecutionPolicy Bypass -File scripts/load_env.ps1 .env.dev
-	langgraph dev --allow-blocking
+	langgraph dev --allow-blocking --n-jobs-per-worker 20
 
 debug:
 	powershell -ExecutionPolicy Bypass -File scripts/load_env.ps1 .env.dev
-	langgraph dev --debug-port 5678 --wait-for-client --allow-blocking
+	langgraph dev --debug-port 5678 --wait-for-client --allow-blocking --n-jobs-per-worker 20
 else
 install:
 	uv sync --all-extras
@@ -25,10 +25,10 @@ install:
 	./scripts/install_logdy.sh
 
 dev:
-	langgraph dev --allow-blocking
+	langgraph dev --allow-blocking --n-jobs-per-worker 20
 
 debug:
-	langgraph dev --debug-port 5678 --wait-for-client --allow-blocking
+	langgraph dev --debug-port 5678 --wait-for-client --allow-blocking --n-jobs-per-worker 20
 endif
 
 mock_server:

@@ -12,8 +12,6 @@ from acp.schema import (
     SessionModeState,
 )
 from daytona import AsyncDaytona
-from deepagents import CompiledSubAgent, create_deep_agent
-from deepagents.backends import CompositeBackend, LocalShellBackend, StateBackend
 from deepagents_acp.server import AgentServerACP, AgentSessionContext
 from dotenv import find_dotenv, load_dotenv
 from langchain.chat_models import BaseChatModel
@@ -22,7 +20,6 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import Checkpointer, CompiledStateGraph
 
 from react_agent.constants import AvailableModel, SandboxType
-from react_agent.graph import graph
 from react_agent.utils import load_chat_model
 from react_agent.utils.sandboxes import ValidationSandbox
 from uom_deep_agent.uom_agent import build_deep_agent
@@ -84,14 +81,7 @@ async def _serve_uom_deep_agent() -> None:
         dotnet_sandbox = DaytonaSandbox(sandbox = await ValidationSandbox.get_sandbox(daytona, SandboxType.DOTNET_10_SANDBOX, print))  # ty:ignore[invalid-argument-type]
         java_sandbox = DaytonaSandbox(sandbox = await ValidationSandbox.get_sandbox(daytona, SandboxType.JAVA_25_SANDBOX, print))  # ty:ignore[invalid-argument-type]
         
-        model = await load_chat_model(
-            AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING.value,
-            config={
-                "openai_api_url": os.getenv("OPENAI_API_URL"),
-                "openai_api_key": os.getenv("OPENAI_API_KEY"),
-            },
-        )
-
+        model = MODELS[AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING.value]
 
         def build_agent(context: AgentSessionContext) -> CompiledStateGraph:
             """Agent factory based in the given root directory."""
