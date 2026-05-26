@@ -34,17 +34,11 @@ logger = logging.getLogger(__name__)
 
 
 def get_context_dir() -> str:
-    return os.getenv(
-        "CONTEXT_ABSOLUTE_PATH",
-        os.path.join(os.path.dirname(__file__), "..", "..", "context"),
-    )
+    return os.path.join(os.path.dirname(__file__), "..", "..", "context")
 
 
 def get_config_dir() -> str:
-    return os.getenv(
-        "CONFIG_ABSOLUTE_PATH",
-        os.path.join(os.path.dirname(__file__), "..", "..", "config"),
-    )
+    return os.path.join(os.path.dirname(__file__), "..", "..", "config")
 
 
 def extract_mssql_connection_info(

@@ -26,7 +26,6 @@ from langchain.messages import AIMessage
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.cache.memory import InMemoryCache
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolCallRequest
@@ -1210,13 +1209,13 @@ def route_post_schema_validation(
 # Observability
 
 # structlog.stdlib.recreate_defaults(log_level=None)
-structlog.configure(
-    processors=[
-        structlog.dev.ConsoleRenderer(
-            exception_formatter=structlog.dev.RichTracebackFormatter(show_locals=False)
-        ),
-    ],
-)
+# structlog.configure(
+#     processors=[
+#         structlog.dev.ConsoleRenderer(
+#             exception_formatter=structlog.dev.RichTracebackFormatter(show_locals=False)
+#         ),
+#     ],
+# )
 
 # langfuse = get_client()
 
