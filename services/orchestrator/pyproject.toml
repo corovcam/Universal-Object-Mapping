@@ -36,6 +36,7 @@ dependencies = [
     "langgraph-api>=0.8.7",
     "structlog>=25.5.0",
     "deepagents-acp>=0.0.6",
+    "langchain-daytona>=0.0.6",
 ]
 # external-dependencies = [
 #     "pkg:generic/node@24",
