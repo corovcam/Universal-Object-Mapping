@@ -1,0 +1,96 @@
+Translate Dapper to Spring Data MongoDB:
+
+public class Customer
+{
+    public required int CustomerID { get; set; }
+    public required string CustomerName { get; set; }
+    public required DateTime AccountOpenedDate { get; set; }
+    public decimal? CreditLimit { get; set; }
+    public List<CustomerTransaction> CustomerTransactions { get; set; } = [];
+}
+public class CustomerTransaction
+{
+    public int CustomerTransactionID { get; set; }
+    public int CustomerID { get; set; }
+    public DateTime TransactionDate { get; set; }
+    public decimal TransactionAmount { get; set; }
+}
+public class Order
+{
+    public int OrderID { get; set; }
+    public int CustomerID { get; set; }
+    public Customer Customer { get; set; } = null!;
+    public List<OrderLine> OrderLines { get; set; } = [];
+}
+public class OrderLine
+{
+    public int OrderLineID { get; set; }
+    public int OrderID { get; set; }
+    public required string Description { get; set; }
+    public int PackageTypeID { get; set; }
+    public int Quantity { get; set; }
+    public decimal? UnitPrice { get; set; }
+    public decimal TaxRate { get; set; }
+    public int PickedQuantity { get; set; }
+    public DateTime? PickingCompletedWhen { get; set; }
+    public int LastEditedBy { get; set; }
+    public DateTime LastEditedWhen { get; set; }
+}
+
+public static IEnumerable<OrderLine> Query1(SqlConnection conn)
+    {
+        var from = new DateTime(2014, 12, 20);
+        var to = new DateTime(2014, 12, 31);
+        string sql = @"SELECT * FROM Sales.OrderLines WHERE PickingCompletedWhen >= @From AND PickingCompletedWhen <= @To";
+        return conn.Query<OrderLine>(sql, new { From = from, To = to });
+    }
+
+static Order Query2mapRow(Order o, Customer c, CustomerTransaction t,  OrderLine ol)
+    {
+        o.Customer = c;
+        o.OrderLines.Add(ol);
+        if (c != null) {
+            if (t != null)
+            {
+                c.CustomerTransactions.Add(t);
+            }
+        }
+        return o;
+    }
+    public static IEnumerable<Order> Query2(SqlConnection conn)
+    {
+        string sql = @"
+            SELECT o.*, c.*, t.*, ol.*
+            FROM Sales.Orders o
+            LEFT JOIN Sales.Customers c ON o.CustomerID = c.CustomerID
+            LEFT JOIN Sales.CustomerTransactions t ON c.CustomerID = t.CustomerID
+            LEFT JOIN Sales.OrderLines ol ON o.OrderID = ol.OrderID
+            WHERE o.CustomerID = 1";
+        var duplicates = conn.Query<Order, Customer, CustomerTransaction, OrderLine, Order>(
+            sql, Query2mapRow, splitOn: "CustomerID,CustomerTransactionID,OrderLineID");
+        var result = duplicates.GroupBy(o => o.OrderID).Select(g => {
+            var order = g.First();
+            order.OrderLines = g.SelectMany(o => o.OrderLines).Where(ol => ol != null).GroupBy(ol => ol.OrderLineID).Select(g2 => g2.First()).ToList();
+            order.Customer?.CustomerTransactions = g.SelectMany(o => o.Customer.CustomerTransactions).Where(t => t != null).GroupBy(t => t.CustomerTransactionID).Select(g2 => g2.First()).ToList();
+            return order;
+        });
+        return result;
+    }
+
+public static IEnumerable<(decimal TaxRate, int Count)> Query3(SqlConnection conn)
+    {
+        string sql = @"SELECT TaxRate, COUNT(*) as Count FROM Sales.OrderLines GROUP BY TaxRate ORDER BY Count DESC";
+        return conn.Query<(decimal TaxRate, int Count)>(sql);
+    }
+
+public static IEnumerable<OrderLine> Query4(SqlConnection conn)
+    {
+        string sql = @"SELECT TOP 50 * FROM Sales.OrderLines ORDER BY Quantity DESC";
+        return conn.Query<OrderLine>(sql);
+    }
+
+public static IEnumerable<(int OrderLineID, int Quantity)> Query5(SqlConnection conn)
+    {
+        string sql = @"SELECT OrderLineID, Quantity FROM Sales.OrderLines";
+        return conn.Query<(int OrderLineID, int Quantity)>(sql);
+    }
