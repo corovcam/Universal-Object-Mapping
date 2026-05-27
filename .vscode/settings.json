@@ -82,5 +82,11 @@
 			}
 		}
   },
-  "editor.formatOnSave": false
+  "editor.formatOnSave": false,
+  "files.associations": {
+    "*.css": "tailwindcss"
+  },
+  "editor.quickSuggestions": {
+    "strings": "on"
+  }
 }

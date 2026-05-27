@@ -4,7 +4,7 @@ import base64
 import logging
 import os
 from datetime import datetime
-from typing import cast
+from urllib.parse import urlparse
 
 import orjson
 from langchain.tools import ToolRuntime
@@ -14,6 +14,13 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from react_agent.constants import (
+    AGENTS_MD_CONTENT,
+    FRAMEWORK_TO_NORMALIZED_NAME,
+    GENERAL_SANDBOX_README,
+    JAVA_SPRING_DATA_MONGODB_SANDBOX_README,
+    JAVA_SPRING_DATA_NEO4J_SANDBOX_README,
+    JAVA_VSCODE_EXTENSIONS,
+    MCP_CONFIG_CONTENT,
     FrameworkEnum,
     JavaFramework,
     SandboxType,
@@ -53,22 +60,40 @@ async def compile_and_run_java(
     runtime: ToolRuntime[Context, State],
 ) -> tuple[str, str | None]:
     """Helper to compile and run Java source code, returning (output, json_part)."""
+    framework_type = FrameworkEnum(framework.value)
     try:
-        pom_content = await get_framework_config_content(FrameworkEnum(framework.value))
+        pom_content = await get_framework_config_content(framework_type)
     except ValueError as e:
         raise RuntimeError(f"[Error] {e}") from e
 
     pom_b64 = base64.b64encode(pom_content.encode()).decode()
     java_b64 = base64.b64encode(source_code.encode()).decode()
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    sandbox_dir = f"/sandbox/sandbox-{timestamp}"
+    configurable = runtime.config.get("configurable", {}) if runtime.config else {}
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    normalized_name = FRAMEWORK_TO_NORMALIZED_NAME[framework_type]
+    thread_id = (
+        runtime.execution_info.thread_id
+        if runtime.execution_info
+        else configurable.get("thread_id", "unknown_thread")
+    )
+    sandbox_dir = f"/sandbox/{thread_id}/sandbox-{normalized_name}-{timestamp}"
     src_dir = f"{sandbox_dir}/src/main/java/uom/services"
     results_dir = f"{sandbox_dir}/results"
 
-    configurable = runtime.config.get("configurable", {}) if runtime.config else {}
+    ms_sql_connection_string = (
+        configurable.get("ms_sql_connection_string")
+        or configurable.get("mssql_connection_string")
+        or runtime.context.ms_sql_connection_string
+    )
     mongodb_uri = configurable.get("mongodb_uri") or runtime.context.mongodb_uri
     neo4j_uri = configurable.get("neo4j_uri") or runtime.context.neo4j_uri
+
+    neo4j_browser_uri = os.environ.get("NEO4J_BROWSER_URI")
+    if not neo4j_browser_uri:
+        parsed_neo4j_uri = urlparse(neo4j_uri)
+        neo4j_browser_uri = f"http://{parsed_neo4j_uri.hostname or 'localhost'}:7474"
     neo4j_username = (
         configurable.get("neo4j_username") or runtime.context.neo4j_username
     )
@@ -90,26 +115,80 @@ async def compile_and_run_java(
         "NEO4J_RESULTS_PATH": results_dir,
     }
 
-    script = f"""
+    daytona_url = (
+        configurable.get("daytona_api_url") or runtime.context.daytona_api_url
+    ).replace("/api", "")
+    general_readme = GENERAL_SANDBOX_README.format(
+        daytona_url=daytona_url,
+        ms_sql_connection_string=translate_localhost_to_host_gateway(
+            ms_sql_connection_string
+        ),
+        mongodb_uri=translate_localhost_to_host_gateway(mongodb_uri),
+        neo4j_uri=translate_localhost_to_host_gateway(neo4j_uri),
+        neo4j_browser_uri=translate_localhost_to_host_gateway(neo4j_browser_uri),
+    )
+    general_readme_b64 = base64.b64encode(general_readme.encode()).decode()
+
+    readme_template = {
+        FrameworkEnum.JAVA_SPRING_DATA_MONGODB: JAVA_SPRING_DATA_MONGODB_SANDBOX_README,
+        FrameworkEnum.JAVA_SPRING_DATA_NEO4J: JAVA_SPRING_DATA_NEO4J_SANDBOX_README,
+    }[framework_type]
+
+    specific_readme = readme_template.format(
+        thread_id=thread_id,
+        timestamp=timestamp,
+        framework=framework.value,
+        mongodb_uri=translate_localhost_to_host_gateway(mongodb_uri),
+        neo4j_uri=translate_localhost_to_host_gateway(neo4j_uri),
+    )
+    specific_readme_b64 = base64.b64encode(specific_readme.encode()).decode()
+
+    run_sh_content = f"""#!/bin/bash
 {"\n".join([f'export {key}="{value}"' for key, value in env_vars.items()])}
-mkdir -p "{src_dir}"
-mkdir -p "{results_dir}"
-echo "{pom_b64}" | base64 -d > "{sandbox_dir}/pom.xml"
-echo "{java_b64}" | base64 -d > "{src_dir}/{entry_type_name}.java"
-cd "{sandbox_dir}"
 mvn -q -B --no-transfer-progress dependency:resolve clean compile
 """
     if source_code.strip():
-        script += f'mvn -q -B --no-transfer-progress exec:java -Dexec.mainClass="uom.services.{entry_type_name}" -Dexec.classpathScope=compile'
+        run_sh_content += f'mvn -q -B --no-transfer-progress exec:java -Dexec.mainClass="uom.services.{entry_type_name}" -Dexec.classpathScope=compile\n'
         if runtime.state.translation_type in [
             TranslationType.QUERY,
             TranslationType.BOTH,
         ]:
-            script += f"""
+            run_sh_content += f"""
 NEWEST_JSON=$(ls -t "{results_dir}"/*.json 2>/dev/null | head -n 1)
 if [ -n "$NEWEST_JSON" ]; then
-    printf "\nJSON_PATH=%s\n" "$NEWEST_JSON"
+    printf "\\nJSON_PATH=%s\\n" "$NEWEST_JSON"
 fi
+"""
+
+    run_sh_b64 = base64.b64encode(run_sh_content.encode()).decode()
+    vscode_ext_b64 = base64.b64encode(JAVA_VSCODE_EXTENSIONS.encode()).decode()
+    agents_md_b64 = base64.b64encode(AGENTS_MD_CONTENT.encode()).decode()
+    host_gateway_ip = os.getenv("OUTER_HOST_GATEWAY_IP", "host.docker.internal")
+    mcp_config_b64 = base64.b64encode(
+        MCP_CONFIG_CONTENT.format(host_gateway_ip=host_gateway_ip).encode()
+    ).decode()
+
+    script = f"""
+mkdir -p "/sandbox/.vscode"
+mkdir -p "{src_dir}"
+mkdir -p "{results_dir}"
+mkdir -p "{sandbox_dir}/.vscode"
+
+echo "{general_readme_b64}" | base64 -d > "/sandbox/README.md"
+echo "{agents_md_b64}" | base64 -d > "/sandbox/AGENTS.md"
+echo "{vscode_ext_b64}" | base64 -d > "/sandbox/.vscode/extensions.json"
+echo "{mcp_config_b64}" | base64 -d > "/sandbox/.vscode/mcp.json"
+
+echo "{specific_readme_b64}" | base64 -d > "{sandbox_dir}/README.md"
+echo "{agents_md_b64}" | base64 -d > "{sandbox_dir}/AGENTS.md"
+echo "{vscode_ext_b64}" | base64 -d > "{sandbox_dir}/.vscode/extensions.json"
+echo "{mcp_config_b64}" | base64 -d > "{sandbox_dir}/.vscode/mcp.json"
+echo "{pom_b64}" | base64 -d > "{sandbox_dir}/pom.xml"
+echo "{java_b64}" | base64 -d > "{src_dir}/{entry_type_name}.java"
+echo "{run_sh_b64}" | base64 -d > "{sandbox_dir}/run.sh"
+chmod +x "{sandbox_dir}/run.sh"
+cd "{sandbox_dir}"
+./run.sh
 """
 
     try:

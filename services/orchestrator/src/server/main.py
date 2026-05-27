@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import Dict
 
 import structlog
-from daytona import AsyncDaytona, AsyncSandbox
+from daytona import AsyncDaytona, AsyncSandbox, SandboxState
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -151,11 +151,18 @@ async def create_ssh_token(sandbox_id: str):
     """
     try:
         async with AsyncDaytona() as daytona:
-            # Get the sandbox by id or name
+            daytona: AsyncDaytona = daytona
+            # Get the sandbox by id
             sandbox = await daytona.get(sandbox_id)
-
+            
+            # Start the sandbox if it is not already running
+            if sandbox.state == SandboxState.STARTING:
+                await sandbox.wait_for_sandbox_start()
+            elif sandbox.state != SandboxState.STARTED:
+                await sandbox.start()
+            
             # Create an SSH access token that never expires
-            ssh_access = await sandbox.create_ssh_access(expires_in_minutes=0)
+            ssh_access = await sandbox.create_ssh_access(expires_in_minutes=60)
 
             return SshAccessResponse(
                 sandbox_id=sandbox_id,
@@ -165,5 +172,5 @@ async def create_ssh_token(sandbox_id: str):
     except Exception as e:
         raise HTTPException(
             status_code=getattr(e, "status_code", 500) or 500,
-            detail=f"Failed to create SSH token for sandbox '{sandbox_id}': " + str(e),
+            detail=f"Failed to create SSH token for sandbox '{sandbox_id}'{f' (state: {sandbox.state})' if sandbox else ''}: " + str(e),
         )

@@ -73,7 +73,6 @@ class ValidationSandbox:
             finally:
                 if len(chunk_buffer) > 0:
                     await logger.adebug("snapshot_creation_logs", sandbox_type=sandbox_type.value, logs="".join(chunk_buffer))
-            raise
   
     @staticmethod
     async def create_validation_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, env_vars: dict[str, Any] | None = None) -> AsyncSandbox:

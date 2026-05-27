@@ -41,6 +41,11 @@ class Context:
         default=os.environ.get("OPENAI_API_KEY", ""),
         metadata={"description": "API Key for the OpenAI-compatible provider."},
     )
+    
+    ollama_host: str = field(
+        default=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
+        metadata={"description": "Base URL for Ollama."},
+    )
 
     max_search_results: int = field(
         default=10,
