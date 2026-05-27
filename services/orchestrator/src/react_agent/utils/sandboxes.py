@@ -39,7 +39,7 @@ class ValidationSandbox:
     @staticmethod
     async def get_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, stream_writer: Callable[[Any], None], env_vars: dict[str, Any] | None = None) -> AsyncSandbox:
         await ValidationSandbox.create_snapshot(daytona, sandbox_type, stream_writer)
-        await ValidationSandbox.initialize_validation_sandbox(daytona, sandbox_type, env_vars)
+        await ValidationSandbox.create_validation_sandbox(daytona, sandbox_type, env_vars)
         return ValidationSandbox.SANDBOXES[sandbox_type]
     
     @staticmethod
@@ -76,7 +76,7 @@ class ValidationSandbox:
             raise
   
     @staticmethod
-    async def initialize_validation_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, env_vars: dict[str, Any] | None = None) -> None:
+    async def create_validation_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, env_vars: dict[str, Any] | None = None) -> AsyncSandbox:
         """Initialize a validation sandbox."""
         params = CreateSandboxFromSnapshotParams(
             snapshot=f"validation-snapshot-{sandbox_type.value.lower()}",
@@ -147,7 +147,7 @@ class ValidationSandbox:
                 if sandbox_instance.state == SandboxState.STARTED:
                     ValidationSandbox.SANDBOXES[sandbox_type] = sandbox_instance
                     logger.debug("Sandbox details:\n%s", sandbox_instance.model_dump_json(indent=2))
-                    return
+                    return sandbox_instance
                 else:
                     logger.warning(f"Sandbox '{params.name}' failed to reach STARTED state. Current state: {sandbox_instance.state}")
                     
@@ -161,5 +161,5 @@ class ValidationSandbox:
                     logger.error(f"Failed to handle sandbox '{params.name}' after {max_retries} attempts.")
                     raise RuntimeError(f"Failed to initialize sandbox '{params.name}' after {max_retries} attempts.") from e
         
-        logger.warning(f"Exhausted retries for sandbox '{params.name}'. Continuing gracefully.")
-    
+        logger.error(f"Failed to initialize sandbox {params.name} with snapshot {params.snapshot}")
+        raise RuntimeError(f"Failed to initialize sandbox {params.name} with snapshot {params.snapshot}")

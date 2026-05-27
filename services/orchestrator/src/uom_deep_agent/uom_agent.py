@@ -4,7 +4,6 @@ import os
 import sys
 from typing import Any, Callable
 
-from daytona import AsyncDaytona
 from deepagents import (
     AsyncSubAgent,
     GeneralPurposeSubagentProfile,
@@ -29,7 +28,6 @@ from langgraph.graph.state import Checkpointer
 
 from react_agent.constants import AvailableModel, SandboxType
 from react_agent.context import Context
-from react_agent.graph import graph
 from react_agent.utils import load_chat_model
 from react_agent.utils.sandboxes import ValidationSandbox
 from react_agent.utils.utils import get_context_dir
@@ -301,16 +299,21 @@ IMPORTANT: Always call "universal-object-mapping-translator" sub-agent to perfor
 
 
 async def build_uom_agent():
-    async with AsyncDaytona() as daytona:
-        dotnet_sandbox = DaytonaSandbox(sandbox = await ValidationSandbox.get_sandbox(daytona, SandboxType.DOTNET_10_SANDBOX, print))  # ty:ignore[invalid-argument-type]
-        java_sandbox = DaytonaSandbox(sandbox = await ValidationSandbox.get_sandbox(daytona, SandboxType.JAVA_25_SANDBOX, print))  # ty:ignore[invalid-argument-type]
-        
-        model = await load_chat_model(
-            AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING.value,
-            config={
-                "openai_api_url": os.getenv("OPENAI_API_URL"),
-                "openai_api_key": os.getenv("OPENAI_API_KEY"),
-                "temperature": 0.2
-            },
-        )
-        return build_deep_agent(model=model, dotnet_sandbox=dotnet_sandbox, java_sandbox=java_sandbox, extra_middleware=[custom_system_prompt])
+    """Builds the Universal Object Mapping Assistant using LangChain's DeepAgents SDK."""
+    model = await load_chat_model(
+        AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING.value,
+        config={
+            "openai_api_url": os.getenv("OPENAI_API_URL"),
+            "openai_api_key": os.getenv("OPENAI_API_KEY"),
+            "temperature": 0.2
+        },
+    )
+    
+    dotnet_sandbox = DaytonaSandbox(sandbox=ValidationSandbox.SANDBOXES[SandboxType.DOTNET_10_SANDBOX])  # type: ignore
+    java_sandbox = DaytonaSandbox(sandbox=ValidationSandbox.SANDBOXES[SandboxType.JAVA_25_SANDBOX])  # type: ignore
+    return build_deep_agent(
+        model=model,
+        dotnet_sandbox=dotnet_sandbox,
+        java_sandbox=java_sandbox,
+        extra_middleware=[custom_system_prompt]
+    )

@@ -1123,10 +1123,25 @@ Is the translation logically equivalent and syntactically valid? Provide your re
             }
 
         output: EvaluationOutput = response["structured_response"]
-        messages = [
-            *messages,
-            AIMessage(content=f"[{output.decision}] {output.explanation}"),
-        ]
+        if (output.decision == "ACCEPT"):
+            messages = [
+                *messages,
+                AIMessage(content=f"""The translation is accepted. Here is the final translated code:
+
+Translated schema:
+{state.translated_schema_code if state.translation_type in [TranslationType.SCHEMA, TranslationType.BOTH] else ""}
+
+{f"Translated query:\n{state.translated_query_code}\n" if state.translation_type in [TranslationType.QUERY, TranslationType.BOTH] else ""}
+Evaluation:
+{output.explanation}
+""")
+            ]
+        else:
+            messages = [
+                *messages,
+                AIMessage(content=f"[{output.decision}] {output.explanation}"),
+            ]
+            
         return {
             "explanation_message": output.explanation,
             "messages": messages,

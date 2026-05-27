@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import Dict
 
 import structlog
-from daytona import AsyncDaytona
+from daytona import AsyncDaytona, AsyncSandbox
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -19,18 +19,36 @@ structlog.configure(
     ],
 )
 
+async def init_sandboxes():
+    """Initialize the application's sandboxes.
 
-async def init_sandbox_snapshots():
-    """Creates snapshots of the sandbox environments."""
+    :raises RuntimeError: If the application's sandboxes cannot be initialized.
+    """
     async with AsyncDaytona() as daytona:
-        await ValidationSandbox.create_snapshot(daytona, SandboxType.DOTNET_10_SANDBOX, print)
-        await ValidationSandbox.create_snapshot(daytona, SandboxType.JAVA_25_SANDBOX, print)
+        await create_sandbox_snapshots(daytona)
+        await cache_sandboxes(daytona)
 
+async def create_sandbox_snapshots(daytona: AsyncDaytona):
+    """Creates snapshots of the sandbox environments."""
+    await ValidationSandbox.create_snapshot(daytona, SandboxType.DOTNET_10_SANDBOX, print)
+    await ValidationSandbox.create_snapshot(daytona, SandboxType.JAVA_25_SANDBOX, print)
+
+async def cache_sandboxes(daytona: AsyncDaytona):
+    """Create and cache the sandboxes.
+
+    :param daytona: The Daytona API client.
+    :raises RuntimeError: If the application's sandboxes cannot be initialized.
+    """
+    try:
+        await ValidationSandbox.create_validation_sandbox(daytona, SandboxType.DOTNET_10_SANDBOX)
+        await ValidationSandbox.create_validation_sandbox(daytona, SandboxType.JAVA_25_SANDBOX)
+    except Exception as e:
+        raise RuntimeError("Failed to initialize sandboxes") from e
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan."""
-    await init_sandbox_snapshots()
+    await init_sandboxes()
     yield
 
 
