@@ -169,3 +169,4 @@ misc/
 .env.dev
 bin/
 obj/
+tests/aimock/recorded/
