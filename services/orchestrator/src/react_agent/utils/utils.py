@@ -621,7 +621,7 @@ def override_pydantic_model_schema(
 def process_streaming_chunks(
     chunk: Any, writer: Callable[[Any], None], log_buffer: list | None = None
 ):
-    """Process streaming chunks by writing them and optionally buffering them."""
+    """Process streaming chunks from nested tools/graphs by writing them in LangGraph custom stream (by key) and optionally buffering them."""
     writer(chunk)
     if log_buffer is not None:
         log_buffer.append(chunk)

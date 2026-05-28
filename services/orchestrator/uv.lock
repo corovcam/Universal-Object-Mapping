@@ -3565,11 +3565,19 @@ dev = [
     { name = "anyio" },
     { name = "debugpy" },
     { name = "langgraph-cli", extra = ["inmem"] },
+    { name = "langgraph-sdk" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-recording" },
     { name = "ruff" },
     { name = "ty" },
+]
+test = [
+    { name = "aimock-pytest" },
+    { name = "langgraph-sdk" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-recording" },
 ]
 
 [package.metadata]
@@ -3614,11 +3622,19 @@ dev = [
     { name = "anyio", specifier = ">=4.13.0" },
     { name = "debugpy", specifier = ">=1.8.20" },
     { name = "langgraph-cli", extras = ["inmem"], specifier = ">=0.4.24" },
+    { name = "langgraph-sdk", specifier = ">=0.3.14" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "pytest-recording", specifier = ">=0.13.4" },
     { name = "ruff", specifier = ">=0.15.13" },
     { name = "ty", specifier = ">=0.0.34" },
+]
+test = [
+    { name = "aimock-pytest", specifier = ">=0.4.0" },
+    { name = "langgraph-sdk", specifier = ">=0.3.14" },
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "pytest-asyncio", specifier = ">=1.3.0" },
+    { name = "pytest-recording", specifier = ">=0.13.4" },
 ]
 
 [[package]]

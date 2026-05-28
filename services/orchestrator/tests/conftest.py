@@ -5,15 +5,18 @@ and live service connections (MongoDB, DB Toolbox, Ollama).
 """
 import os
 from pathlib import Path
+from typing import AsyncGenerator
 from uuid import uuid4
 
 import orjson
 import pytest
+from aiohttp.test_utils import TestClient
 from langchain.tools import ToolRuntime
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.runtime import DEFAULT_RUNTIME, Runtime
+from langgraph_sdk.client import LangGraphClient
 
 from react_agent.constants import AvailableModel, FrameworkEnum, TranslationType
 from react_agent.context import Context
@@ -194,3 +197,18 @@ def sample_efcore_results(config) -> dict:
 def sample_mongo_results(config) -> dict:
     """Sample MongoDB results for testing."""
     return orjson.loads((config["FIXTURES_DIR"] / "mongo_results.json").read_bytes())
+
+
+# ---------------------------------------------------------------------------
+# API Client & Test Runs
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def client() -> LangGraphClient:
+    """Get the LangGraph SDK client."""
+    from langgraph_sdk import get_client
+    
+    client = get_client(url=os.getenv("LANGGRAPH_API_URL"))
+
+    return client

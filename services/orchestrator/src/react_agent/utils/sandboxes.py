@@ -13,7 +13,7 @@ from daytona import (
     SandboxState,
 )
 
-from react_agent.constants import SandboxType
+from react_agent.constants import LanggraphCustomEventKeys, SandboxType
 from react_agent.utils.utils import process_streaming_chunks
 
 logger = structlog.stdlib.get_logger()
@@ -50,6 +50,14 @@ class ValidationSandbox:
             image=ValidationSandbox.DAYTONA_SANDBOX_IMAGES[sandbox_type],
         )
         
+        def custom_event_stream_writer(chunk):
+            if sandbox_type == SandboxType.JAVA_25_SANDBOX:
+                return stream_writer({"type": LanggraphCustomEventKeys.JAVA_SANDBOX_SNAPSHOT_CREATION, "data": chunk})
+            elif sandbox_type == SandboxType.DOTNET_10_SANDBOX:
+                return stream_writer({"type": LanggraphCustomEventKeys.DOTNET_SANDBOX_SNAPSHOT_CREATION, "data": chunk})
+            else:
+                return stream_writer({"type": LanggraphCustomEventKeys.UNKNOWN, "data": chunk})
+        
         chunk_buffer = []
         max_retries = 5
         for attempt in range(max_retries):
@@ -61,7 +69,7 @@ class ValidationSandbox:
                 except Exception as e:
                     logger.info(f"Snapshot '{params.name}' not found or error retrieving: {e}")
                 chunk_buffer = []
-                snapshot = await daytona.snapshot.create(params, on_logs=lambda chunk: process_streaming_chunks(chunk, stream_writer, chunk_buffer))
+                snapshot = await daytona.snapshot.create(params, on_logs=lambda chunk: process_streaming_chunks(chunk, custom_event_stream_writer, chunk_buffer))
                 logger.info(f"Snapshot created with ID: {snapshot.id}")
                 break
             except Exception as e:

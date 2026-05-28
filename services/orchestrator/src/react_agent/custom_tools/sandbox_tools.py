@@ -14,7 +14,7 @@ from daytona import (
 from langchain.tools import InjectedToolArg, ToolRuntime
 from langchain_core.tools import tool
 
-from react_agent.constants import SandboxType
+from react_agent.constants import LanggraphCustomEventKeys, SandboxType
 from react_agent.utils.sandboxes import ValidationSandbox
 from react_agent.utils.utils import process_streaming_chunks
 
@@ -41,6 +41,18 @@ async def execute_in_sandbox(
         - The standard output and standard error from the executed command, or an error message if it failed.
         - The exit code from the command.
     """
+    def custom_event_stream_writer(chunk, channel):
+        if sandbox_type == SandboxType.JAVA_25_SANDBOX:
+            if channel == "stdout":
+                runtime.stream_writer({"type": LanggraphCustomEventKeys.JAVA_SANDBOX_COMMAND_EXECUTION_STDOUT, "data": chunk})
+            else:
+                runtime.stream_writer({"type": LanggraphCustomEventKeys.JAVA_SANDBOX_COMMAND_EXECUTION_STDERR, "data": chunk})
+        elif sandbox_type == SandboxType.DOTNET_10_SANDBOX:
+            if channel == "stdout":
+                runtime.stream_writer({"type": LanggraphCustomEventKeys.DOTNET_SANDBOX_COMMAND_EXECUTION_STDOUT, "data": chunk})
+            else:
+                runtime.stream_writer({"type": LanggraphCustomEventKeys.DOTNET_SANDBOX_COMMAND_EXECUTION_STDERR, "data": chunk})
+    
     try:
         async with AsyncDaytona() as daytona:
             sandbox = await ValidationSandbox.get_sandbox(daytona, sandbox_type, runtime.stream_writer, env_vars)
@@ -63,8 +75,8 @@ async def execute_in_sandbox(
                 sandbox.process.get_session_command_logs_async(
                     session_id,
                     exec_response.cmd_id,
-                    lambda stdout: process_streaming_chunks(stdout, runtime.stream_writer),
-                    lambda stderr: process_streaming_chunks(stderr, runtime.stream_writer),
+                    lambda stdout: process_streaming_chunks(stdout, lambda chunk: custom_event_stream_writer(chunk, "stdout")),
+                    lambda stderr: process_streaming_chunks(stderr, lambda chunk: custom_event_stream_writer(chunk, "stderr")),
                 )
             )
             # Wait for the logs to complete

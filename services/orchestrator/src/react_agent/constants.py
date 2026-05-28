@@ -88,6 +88,16 @@ class TargetFramework(str, Enum):
 class SandboxType(str, Enum):
     DOTNET_10_SANDBOX = "dotnet-10-sandbox"
     JAVA_25_SANDBOX = "java-25-sandbox"
+    
+
+class LanggraphCustomEventKeys(str, Enum):
+    DOTNET_SANDBOX_SNAPSHOT_CREATION = "dotnet_sandbox_snapshot_creation"
+    JAVA_SANDBOX_SNAPSHOT_CREATION = "java_sandbox_snapshot_creation"
+    DOTNET_SANDBOX_COMMAND_EXECUTION_STDOUT = "dotnet_sandbox_command_execution_stdout"
+    DOTNET_SANDBOX_COMMAND_EXECUTION_STDERR = "dotnet_sandbox_command_execution_stderr"
+    JAVA_SANDBOX_COMMAND_EXECUTION_STDOUT = "java_sandbox_command_execution_stdout"
+    JAVA_SANDBOX_COMMAND_EXECUTION_STDERR = "java_sandbox_command_execution_stderr"
+    UNKNOWN = "unknown"
 
 
 FRAMEWORK_TO_NORMALIZED_NAME = {
@@ -161,7 +171,7 @@ Navigate to the specific folder to see the generated code, configuration, and ex
   - Relational Database (SQL Server): `{ms_sql_connection_string}`
   - MongoDB: `{mongodb_uri}`
   - Neo4j: `{neo4j_uri}`
-    - Neo4j Browser: `{neo4j_browser_uri}`
+    - Neo4j Browser (this is only default URI, check your own configuration if needed): `{neo4j_browser_uri}`
 
 ## Documentation
 - [Daytona Documentation](https://www.daytona.io/docs)
@@ -312,8 +322,10 @@ Check the `results/` folder (if applicable) for the JSON output of the execution
 
 DOTNET_VSCODE_EXTENSIONS = """{
   "recommendations": [
+    "ms-dotnettools.csdevkit",
     "ms-dotnettools.csharp",
     "ms-dotnettools.vscode-dotnet-runtime",
+    "jetbrains.resharper-code",
     "mtxr.sqltools",
     "mtxr.sqltools-driver-mssql"
   ]
@@ -322,8 +334,7 @@ DOTNET_VSCODE_EXTENSIONS = """{
 JAVA_VSCODE_EXTENSIONS = """{
   "recommendations": [
     "vscjava.vscode-java-pack",
-    "vscjava.vscode-maven",
-    "redhat.java",
+    "vmware.vscode-boot-dev-pack",
     "vmware.vscode-spring-boot",
     "mongodb.mongodb-vscode"
   ]
