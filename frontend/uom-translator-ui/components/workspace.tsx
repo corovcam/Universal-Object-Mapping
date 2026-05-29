@@ -66,22 +66,72 @@ export function Workspace() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Active state data fetched directly from Python state.py model
-  const [graphState, setGraphState] = useState<any>({});
+  const [graphState, setGraphState] = useState<Partial<BackendState>>({});
   const [activeInterrupt, setActiveInterrupt] = useState<any>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [isSubmittingInterrupt, setIsSubmittingInterrupt] = useState(false);
   const [activeNode, setActiveNode] = useState<string | null>(null);
 
-  // Theme toggler
+  // Real-time server state sync
+  const [threads, setThreads] = useState<ThreadItem[]>([]);
+  const [serverActive, setServerActive] = useState(true);
+  const [runError, setRunError] = useState<string | null>(null);
+
+  // Fetch threads directly from LangGraph API server
+  const fetchThreads = async () => {
+    try {
+      const list = await client.threads.search({ 
+        limit: 50, 
+        select: ["thread_id", "metadata", "created_at"],
+        sortBy: "created_at",
+        sortOrder: "desc",
+        // metadata: { "title": "Migration" } 
+      });
+      const mapped = list.map((t) => ({
+        id: t.thread_id,
+        title: (t.metadata as { title?: string } | undefined)?.title || `Migration ${t.thread_id.slice(0, 4)}`,
+        createdAt: t.created_at || new Date().toISOString()
+      }));
+      setThreads(mapped);
+      setServerActive(true);
+      return mapped;
+    } catch (e) {
+      console.error("Failed to query threads list from server", e);
+      setServerActive(false);
+      return [];
+    }
+  };
+
+  // Check connection active status on mount and load initial threads
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const onboarded = localStorage.getItem("uom_config_onboarded");
+      if (!onboarded) {
+        setIsConfigOpen(true);
+      }
+    }
+
+    const loadInitialThreads = async () => {
+      const currentList = await fetchThreads();
+      if (currentList.length > 0) {
+        setCurrentThreadId(currentList[0].id);
+      } else {
+        await handleNewThread();
+      }
+    };
+    loadInitialThreads();
+  }, []);
+
+  // Theme loading & toggler (defaulting to dark variables, adding light class if requested)
   useEffect(() => {
     if (typeof window !== "undefined") {
       const savedTheme = localStorage.getItem("uom_ui_theme") as "light" | "dark" | null;
       const initialTheme = savedTheme || "dark";
       setTheme(initialTheme);
-      if (initialTheme === "dark") {
-        document.documentElement.classList.add("dark");
+      if (initialTheme === "light") {
+        document.documentElement.classList.add("light");
       } else {
-        document.documentElement.classList.remove("dark");
+        document.documentElement.classList.remove("light");
       }
     }
   }, []);
@@ -91,10 +141,10 @@ export function Workspace() {
     setTheme(nextTheme);
     if (typeof window !== "undefined") {
       localStorage.setItem("uom_ui_theme", nextTheme);
-      if (nextTheme === "dark") {
-        document.documentElement.classList.add("dark");
+      if (nextTheme === "light") {
+        document.documentElement.classList.add("light");
       } else {
-        document.documentElement.classList.remove("dark");
+        document.documentElement.classList.remove("light");
       }
     }
   };
