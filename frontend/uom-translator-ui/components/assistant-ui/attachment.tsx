@@ -18,6 +18,7 @@ import {
 import {
   Dialog,
   DialogTitle,
+  DialogDescription,
   DialogContent,
   DialogTrigger,
 } from "@/components/ui/dialog";
@@ -98,6 +99,9 @@ const AttachmentPreviewDialog: FC<PropsWithChildren> = ({ children }) => {
         <DialogTitle className="aui-sr-only sr-only">
           Image Attachment Preview
         </DialogTitle>
+        <DialogDescription className="sr-only">
+          Preview of the uploaded image attachment
+        </DialogDescription>
         <div className="aui-attachment-preview relative mx-auto flex max-h-[80dvh] w-full items-center justify-center overflow-hidden bg-background">
           <AttachmentPreview src={src} />
         </div>
