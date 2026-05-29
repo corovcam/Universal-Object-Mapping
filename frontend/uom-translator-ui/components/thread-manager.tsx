@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { MessageSquare, Plus, Trash2, FolderGit, ChevronLeft, ChevronRight, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -16,6 +16,9 @@ interface ThreadManagerProps {
   onNewThread: () => Promise<void>;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  threads: ThreadItem[];
+  onDeleteThread: (id: string) => void;
+  serverActive: boolean;
 }
 
 export function ThreadManager({
@@ -24,29 +27,11 @@ export function ThreadManager({
   onNewThread,
   isCollapsed,
   onToggleCollapse,
+  threads,
+  onDeleteThread,
+  serverActive,
 }: ThreadManagerProps) {
-  const [threads, setThreads] = useState<ThreadItem[]>([]);
   const [loading, setLoading] = useState(false);
-
-  // Load threads list from localStorage on mount & when currentThreadId changes
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("uom_saved_threads");
-      if (saved) {
-        try {
-          setThreads(JSON.parse(saved));
-        } catch (e) {
-          console.error("Failed to parse saved threads", e);
-        }
-      }
-    }
-  }, [currentThreadId]);
-
-  // Save threads list to localStorage when changed
-  const saveThreads = (newThreads: ThreadItem[]) => {
-    setThreads(newThreads);
-    localStorage.setItem("uom_saved_threads", JSON.stringify(newThreads));
-  };
 
   const handleCreateNew = async () => {
     setLoading(true);
@@ -61,17 +46,7 @@ export function ThreadManager({
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const updated = threads.filter((t) => t.id !== id);
-    saveThreads(updated);
-    
-    // If deleted current, select another or trigger a new one
-    if (currentThreadId === id) {
-      if (updated.length > 0) {
-        onSelectThread(updated[0].id);
-      } else {
-        handleCreateNew();
-      }
-    }
+    onDeleteThread(id);
   };
 
   return (
@@ -167,16 +142,18 @@ export function ThreadManager({
         </div>
       </div>
 
-      {/* Footer Info */}
+      {/* Footer Connection Status Info */}
       <div className="p-3 bg-slate-950 border-t border-slate-900 shrink-0">
         <div className={`p-2.5 bg-slate-900/60 rounded-lg border border-slate-850/60 flex items-center transition-all duration-300 ${
-          isCollapsed ? "justify-center" : "gap-2"
+          isCollapsed ? "justify-center" : "gap-2.5"
         }`}>
-          <Terminal className="size-4 text-emerald-400 shrink-0" />
+          <Terminal className={`size-4 shrink-0 ${serverActive ? "text-emerald-400" : "text-rose-500 animate-pulse"}`} />
           {!isCollapsed && (
             <div className="min-w-0">
               <span className="text-[9px] text-slate-500 block uppercase font-bold tracking-wider leading-none">Connection</span>
-              <span className="text-[10px] text-emerald-400 font-semibold truncate block mt-0.5">LangGraph Active</span>
+              <span className={`text-[10px] font-semibold truncate block mt-0.5 ${serverActive ? "text-emerald-400" : "text-rose-500"}`}>
+                {serverActive ? "LangGraph Active" : "Server Offline"}
+              </span>
             </div>
           )}
         </div>

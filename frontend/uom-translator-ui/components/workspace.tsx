@@ -1,38 +1,35 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { 
-  AssistantRuntimeProvider,
-  useAuiState
+import {
+  type RemoteThreadListAdapter
 } from "@assistant-ui/react";
+import { DevToolsModal } from "@assistant-ui/react-devtools";
 import {
   useLangGraphRuntime,
   type LangChainMessage
 } from "@assistant-ui/react-langgraph";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { createClient } from "@/lib/chatApi";
 import { Thread } from "@/components/assistant-ui/thread";
-import { ThreadManager, type ThreadItem } from "@/components/thread-manager";
-import { ConfigModal, type UomConfig } from "@/components/config-modal";
-import { LoadingEngagement } from "@/components/loading-engagement";
 import { CodeComparison } from "@/components/code-comparison";
+import { ConfigModal } from "@/components/config-modal";
 import { ExecutionTrace } from "@/components/execution-trace";
-import { ManualIntervention } from "@/components/manual-intervention";
 import { IdeLink } from "@/components/ide-link";
+import { LoadingEngagement } from "@/components/loading-engagement";
+import { ManualIntervention } from "@/components/manual-intervention";
+import { ThreadManager, type ThreadItem } from "@/components/thread-manager";
+import { createClient } from "@/lib/chatApi";
 
-import { 
-  Settings, 
-  Terminal, 
-  GitFork, 
-  HelpCircle,
-  FolderOpen,
-  ArrowLeftRight,
-  Sparkles,
-  Info,
-  Sun,
-  Moon
-} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { BackendState, UomConfig } from "@/lib/types";
+import {
+  AlertCircle,
+  ArrowLeftRight,
+  GitFork,
+  Settings,
+  X
+} from "lucide-react";
+import { UomRuntime } from "./assistant-ui/runtime/uom-runtime";
 
 const ASSISTANT_ID = process.env.NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID || "universal-object-mapping-translator";
 
@@ -176,37 +173,12 @@ export function Workspace() {
     };
   }, [isDragging]);
 
-  // Onboarding auto-open trigger
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const onboarded = localStorage.getItem("uom_config_onboarded");
-      if (!onboarded) {
-        setIsConfigOpen(true);
-      }
-      
-      // Auto-load or create initial thread
-      const savedThreads = localStorage.getItem("uom_saved_threads");
-      if (savedThreads) {
-        try {
-          const list: ThreadItem[] = JSON.parse(savedThreads);
-          if (list.length > 0) {
-            setCurrentThreadId(list[0].id);
-            return;
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      // Trigger new thread if none exists
-      handleNewThread();
-    }
-  }, []);
-
   // Initialize stream for assistant-ui runtime
   const stream = useMemo(() => {
     return async (messages: any[], streamConfig: any) => {
+      setRunError(null);
       const savedConfig = typeof window !== "undefined" ? localStorage.getItem("uom_translator_config") : null;
-      const configurable = savedConfig ? JSON.parse(savedConfig) : {};
+      const configurable: UomConfig = savedConfig ? JSON.parse(savedConfig) : {};
 
       const { externalId } = await streamConfig.initialize();
       if (!externalId) {
@@ -216,59 +188,176 @@ export function Workspace() {
       const payload = {
         input: messages.length ? { messages } : null,
         streamMode: ["messages", "updates", "custom"],
+        streamSubgraphs: true,
         signal: streamConfig.abortSignal,
         onDisconnect: "cancel",
+        multitaskStrategy: "reject",
         ...(streamConfig.command != null && { command: streamConfig.command }),
         ...(streamConfig.checkpointId != null && {
           checkpoint: { checkpoint_id: streamConfig.checkpointId },
         }),
-        config: {
-          configurable: {
-            ollama_host: configurable.ollamaHost,
-            model: configurable.model,
-            openai_api_url: configurable.openaiApiUrl,
-            openai_api_key: configurable.openaiApiKey,
-            mssql_connection_string: configurable.mssqlConnectionString,
-            mongodb_uri: configurable.mongodbUri,
-            neo4j_uri: configurable.neo4jUri,
-            neo4j_password: configurable.neo4jPassword,
-            daytona_timeout: configurable.daytonaTimeout
-          }
+        context: {
+          ollama_host: configurable.ollamaHost || undefined,
+          openai_api_url: configurable.openaiApiUrl || undefined,
+          openai_api_key: configurable.openaiApiKey || undefined,
+          model: configurable.model || undefined,
+          db_toolbox_uri: configurable.dbToolboxUri || undefined,
+          mongodb_mcp_uri: configurable.mongodbMcpUri || undefined,
+          ms_sql_connection_string: configurable.mssqlConnectionString || undefined,
+          mongodb_uri: configurable.mongodbUri || undefined,
+          neo4j_uri: configurable.neo4jUri || undefined,
+          neo4j_password: configurable.neo4jPassword || undefined,
+          sandbox_execution_timeout: configurable.daytonaTimeout || undefined
         }
       };
       
+      // TODO: clieant.runs.stream is deprecated, use client.threads.stream https://github.com/langchain-ai/langgraphjs/blob/2f0010e3a59e79cae1ff22b05985c7c82f8a2261/libs/sdk/docs/runs.md
+      // const threadStream = await client.threads.stream(externalId, { assistantId: ASSISTANT_ID });
+      // threadStream.run.start({ input: payload })
+      // threadStream.messages
       const eventStream = await client.runs.stream(externalId, ASSISTANT_ID, payload as any);
-      async function* makeGenerator() {
-        for await (const chunk of eventStream) {
-          // Process chunk
-          if (chunk.event === "updates" && chunk.data) {
-            setGraphState((prev: any) => {
-              const next = { ...prev };
-              for (const [nodeName, nodeState] of Object.entries(chunk.data)) {
-                if (nodeState && typeof nodeState === "object") {
-                  Object.assign(next, nodeState);
-                }
-                if (NODE_NAME_MAP[nodeName]) {
-                  setActiveNode(NODE_NAME_MAP[nodeName]);
-                }
-              }
-              return next;
-            });
-          }
-          if (chunk.event === "values" && chunk.data) {
-            setGraphState((prev: any) => ({ ...prev, ...chunk.data }));
-          }
-          if (chunk.event === "messages/metadata" && chunk.data) {
-            const entry = Object.values(chunk.data)[0] as any;
-            const nodeName = entry?.metadata?.langgraph_node;
-            if (nodeName && NODE_NAME_MAP[nodeName]) {
-              setActiveNode(NODE_NAME_MAP[nodeName]);
+      return eventStream;
+      // async function* makeGenerator() {
+      //   try {
+      //     for await (const chunk of eventStream) {
+      //       // Process chunk
+      //       if (chunk.event === "updates" && chunk.data) {
+      //         setGraphState((prev: any) => {
+      //           const next = { ...prev };
+      //           for (const [nodeName, nodeState] of Object.entries(chunk.data)) {
+      //             if (nodeState && typeof nodeState === "object") {
+      //               Object.assign(next, nodeState);
+      //             }
+      //             if (NODE_NAME_MAP[nodeName]) {
+      //               setActiveNode(NODE_NAME_MAP[nodeName]);
+      //             }
+      //           }
+      //           return next;
+      //         });
+      //       }
+      //       // not used
+      //       if (chunk.event === "values" && chunk.data) {
+      //         setGraphState((prev: any) => ({ ...prev, ...chunk.data }));
+      //       }
+      //       if (chunk.event === "messages/metadata" && chunk.data) {
+      //         const entry = Object.values(chunk.data)[0] as any;
+      //         const nodeName = entry?.metadata?.langgraph_node;
+      //         if (nodeName && NODE_NAME_MAP[nodeName]) {
+      //           setActiveNode(NODE_NAME_MAP[nodeName]);
+      //         }
+      //       }
+      //       if (chunk.event === "error") {
+      //         const errMsg = (chunk.data as any)?.message || JSON.stringify(chunk.data);
+      //         setRunError(errMsg);
+      //         setServerActive(false);
+      //       }
+      //       if (chunk.event === "custom") {
+      //         console.log("Custom event from LangGraph:", chunk.data);
+      //       }
+      //       yield chunk;
+      //     }
+      //   } catch (err: any) {
+      //     console.error("Error during LangGraph run stream:", err);
+      //     setRunError(err.message || String(err));
+      //     setServerActive(false);
+      //     throw err;
+      //   }
+      // }
+      // return makeGenerator();
+    };
+  }, [client, currentThreadId]);
+
+  // Adapter to feed custom thread list to assistant-ui runtime (server-backed)
+  const threadListAdapter = useMemo<RemoteThreadListAdapter>(() => {
+    return {
+      async list() {
+        try {
+          const list = await client.threads.search({ 
+            limit: 50, 
+            select: ["thread_id", "metadata", "created_at"],
+            sortBy: "created_at",
+            sortOrder: "desc",
+            // metadata: { "title": "Migration" } 
+          });
+          setServerActive(true);
+          return {
+            threads: list.map((t) => ({
+              remoteId: t.thread_id,
+              externalId: t.thread_id,
+              status: "regular",
+              title: (t.metadata as { title?: string } | undefined)?.title || `Migration ${t.thread_id.slice(0, 4)}`,
+            })),
+          };
+        } catch (e) {
+          console.error("Failed to list threads in adapter:", e);
+          setServerActive(false);
+          return { threads: [] };
+        }
+      },
+      async rename(remoteId, newTitle) {
+        try {
+          await client.threads.update(remoteId, { metadata: { title: newTitle } });
+          await fetchThreads();
+        } catch (e) {
+          console.error("Failed to rename thread in adapter:", e);
+          setServerActive(false);
+          setRunError("Failed renaming migration session on LangGraph server.");
+        }
+      },
+      async archive() {},
+      async unarchive() {},
+      async delete(remoteId) {
+        try {
+          await client.threads.delete(remoteId);
+          const currentList = await fetchThreads();
+          // If deleted current, select another
+          if (currentThreadId === remoteId) {
+            if (currentList.length > 0) {
+              setCurrentThreadId(currentList[0].id);
+            } else {
+              await handleNewThread();
             }
           }
-          yield chunk;
+        } catch (e) {
+          console.error("Failed to delete thread in adapter:", e);
+          setServerActive(false);
+          setRunError("Failed deleting migration session from LangGraph server.");
         }
+      },
+      async initialize(threadId) {
+        return {
+          remoteId: threadId,
+          externalId: threadId,
+        };
+      },
+      async fetch(threadId) {
+        try {
+          const t = await client.threads.get(threadId, {
+            include: ["thread_id", "metadata"],
+          });
+          return {
+            remoteId: threadId,
+            externalId: threadId,
+            status: "regular",
+            title: (t.metadata as { title?: string } | undefined)?.title || `Migration ${threadId.slice(0, 4)}`,
+          };
+        } catch (e) {
+          console.error("Failed to fetch thread in adapter:", e);
+          return {
+            remoteId: threadId,
+            externalId: threadId,
+            status: "regular",
+            title: "New Migration",
+          };
+        }
+      },
+      async generateTitle() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield { type: "text", text: "" };
+          }
+        } as any;
       }
-      return makeGenerator();
     };
   }, [client, currentThreadId]);
 
@@ -276,25 +365,95 @@ export function Workspace() {
   const runtime = useLangGraphRuntime({
     unstable_allowCancellation: true,
     stream,
-    create: async () => {
-      const { thread_id } = await client.threads.create();
-      return { externalId: thread_id };
-    },
+    unstable_threadListAdapter: threadListAdapter,
     load: async (externalId) => {
-      const state = await client.threads.getState<{
-        messages: LangChainMessage[];
-      }>(externalId);
-      return {
-        messages: state.values.messages,
-        interrupts: state.tasks[0]?.interrupts,
-      };
+      try {
+        const state = await client.threads.getState<{
+          messages: LangChainMessage[];
+        }>(externalId);
+        setServerActive(true);
+        return {
+          messages: state.values?.messages || [],
+          interrupts: state.tasks?.[0]?.interrupts || [],
+        };
+      } catch (e) {
+        console.error("Failed to load thread in runtime:", e);
+        setServerActive(false);
+        return { messages: [], interrupts: [] };
+      }
     },
+    eventHandlers: {
+      onMessageChunk: (chunk: any, metadata: any) => {
+        const nodeName = metadata?.langgraph_node;
+        if (nodeName && NODE_NAME_MAP[nodeName]) {
+          setActiveNode(NODE_NAME_MAP[nodeName]);
+        }
+      },
+      onValues: (values: any) => {
+        if (values) {
+          setGraphState((prev) => ({ ...prev, ...values }));
+        }
+      },
+      onUpdates: (updates: any) => {
+        if (updates) {
+          setGraphState((prev: any) => {
+            const next = { ...prev };
+            for (const [nodeName, nodeState] of Object.entries(updates)) {
+              if (nodeState && typeof nodeState === "object") {
+                Object.assign(next, nodeState);
+              }
+              if (NODE_NAME_MAP[nodeName]) {
+                setActiveNode(NODE_NAME_MAP[nodeName]);
+              }
+            }
+            return next;
+          });
+        }
+      },
+      onSubgraphValues: (namespace: string, values: any) => {
+        console.log(`Subgraph values received for namespace: ${namespace}`, values);
+        if (values) {
+          setGraphState((prev) => ({ ...prev, ...values }));
+        }
+      },
+      onSubgraphUpdates: (namespace: string, updates: any) => {
+        console.log(`Subgraph updates received for namespace: ${namespace}`, updates);
+        if (updates) {
+          setGraphState((prev: any) => {
+            const next = { ...prev };
+            for (const [nodeName, nodeState] of Object.entries(updates)) {
+              if (nodeState && typeof nodeState === "object") {
+                Object.assign(next, nodeState);
+              }
+            }
+            return next;
+          });
+        }
+      },
+      onError: (error: any) => {
+        console.error("LangGraph runtime error event:", error);
+        setRunError(error.message || String(error));
+        setServerActive(false);
+      },
+      onSubgraphError: (namespace: string, error: any) => {
+        console.error(`LangGraph subgraph [${namespace}] error event:`, error);
+        setRunError(`Subgraph [${namespace}] failure: ${error.message || String(error)}`);
+        setServerActive(false);
+      },
+      onCustomEvent: (type: string, data: any) => {
+        console.log(`Custom event received: ${type}`, data);
+      }
+    }
   });
 
   // Keep track of current thread ID inside assistant-ui runtime
   useEffect(() => {
     if (currentThreadId) {
-      runtime.threads.switchToThread(currentThreadId);
+      try {
+        runtime.threads.switchToThread(currentThreadId);
+      } catch (e) {
+        console.warn("Could not switch thread in runtime:", e);
+      }
       fetchFullBackendState();
     }
   }, [currentThreadId, runtime]);
@@ -305,7 +464,8 @@ export function Workspace() {
     try {
       const state = await client.threads.getState(currentThreadId);
       if (state && state.values) {
-        setGraphState(state.values);
+        setGraphState(state.values as any);
+        setServerActive(true);
         
         // Grab current interrupt
         const activeTask = state.tasks?.[0];
@@ -317,6 +477,7 @@ export function Workspace() {
       }
     } catch (e) {
       console.error("Failed to query backend thread state", e);
+      setServerActive(false);
     }
   };
 
@@ -333,25 +494,20 @@ export function Workspace() {
     };
   }, [isPolling, currentThreadId]);
 
-  // Start new translation session
+  // Start new translation session on LangGraph server
   const handleNewThread = async () => {
     try {
-      const { thread_id } = await client.threads.create();
+      const defaultTitle = `Migration ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      const thread = await client.threads.create({
+        metadata: { title: defaultTitle }
+      });
       
-      const newThread: ThreadItem = {
-        id: thread_id,
-        title: `Migration ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-        createdAt: new Date().toISOString()
-      };
-
-      const saved = localStorage.getItem("uom_saved_threads");
-      const currentList: ThreadItem[] = saved ? JSON.parse(saved) : [];
-      const updatedList = [newThread, ...currentList];
-      
-      localStorage.setItem("uom_saved_threads", JSON.stringify(updatedList));
-      setCurrentThreadId(thread_id);
+      setCurrentThreadId(thread.thread_id);
+      await fetchThreads();
     } catch (e) {
       console.error("Error provisioning new thread", e);
+      setServerActive(false);
+      setRunError("LangGraph Server Offline. Please ensure the Python orchestrator is running.");
     }
   };
 
@@ -381,6 +537,7 @@ export function Workspace() {
       }, 1500);
     } catch (e) {
       console.error("Failed submitting manual intervention to LangGraph runtime", e);
+      setRunError("Failed submitting manual intervention feedback to LangGraph.");
       setIsSubmittingInterrupt(false);
     }
   };
@@ -410,8 +567,6 @@ export function Workspace() {
     }
   }, [isRunning]);
 
-  // Find active node is managed via state variables dynamically updated during runs
-
   return (
     <div className="flex h-screen w-screen bg-slate-950 font-sans overflow-hidden">
       {/* Sidebar Thread Navigation */}
@@ -421,6 +576,24 @@ export function Workspace() {
         onNewThread={handleNewThread}
         isCollapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        threads={threads}
+        onDeleteThread={async (id) => {
+          try {
+            await client.threads.delete(id);
+            const currentList = await fetchThreads();
+            if (currentThreadId === id) {
+              if (currentList.length > 0) {
+                setCurrentThreadId(currentList[0].id);
+              } else {
+                await handleNewThread();
+              }
+            }
+          } catch (err: any) {
+            console.error("Failed to delete thread:", err);
+            setRunError("Failed deleting migration session from LangGraph server.");
+          }
+        }}
+        serverActive={serverActive}
       />
 
       {/* Main Dual Pane Workspace */}
