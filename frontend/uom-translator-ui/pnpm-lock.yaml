@@ -10,22 +10,22 @@ importers:
     dependencies:
       '@assistant-ui/react':
         specifier: latest
-        version: 0.14.5(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
+        version: 0.14.8(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
       '@assistant-ui/react-langgraph':
         specifier: latest
-        version: 0.14.0(@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6))(@langchain/langgraph-sdk@1.9.4(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@types/react@19.2.15)(react@19.2.6)(zustand@5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))
+        version: 0.14.2(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@langchain/langgraph-sdk@1.9.6(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@types/react@19.2.15)(react@19.2.6)(zustand@5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))
       '@assistant-ui/react-markdown':
         specifier: latest
-        version: 0.14.0(@assistant-ui/react@0.14.5(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 0.14.1(@assistant-ui/react@0.14.8(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@langchain/anthropic':
-        specifier: ^1.3.28
-        version: 1.4.0(@langchain/core@1.1.47(ws@8.20.1))
+        specifier: ^1.4.0
+        version: 1.4.0(@langchain/core@1.1.48(ws@8.21.0))
       '@langchain/langgraph':
-        specifier: ^1.3.0
-        version: 1.3.2(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3)
+        specifier: ^1.3.2
+        version: 1.3.2(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3)
       '@langchain/langgraph-sdk':
-        specifier: ^1.9.1
-        version: 1.9.4(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: ^1.9.6
+        version: 1.9.6(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@radix-ui/react-avatar':
         specifier: ^1.1.11
         version: 1.1.11(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -51,25 +51,25 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       lucide-react:
-        specifier: ^1.14.0
+        specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
       next:
-        specifier: ^16.2.4
+        specifier: ^16.2.6
         version: 16.2.6(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       radix-ui:
         specifier: ^1.4.3
         version: 1.4.3(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react:
-        specifier: ^19.2.5
+        specifier: ^19.2.6
         version: 19.2.6
       react-dom:
-        specifier: ^19.2.5
+        specifier: ^19.2.6
         version: 19.2.6(react@19.2.6)
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
       tailwind-merge:
-        specifier: ^3.5.0
+        specifier: ^3.6.0
         version: 3.6.0
       tw-animate-css:
         specifier: ^1.4.0
@@ -81,23 +81,26 @@ importers:
         specifier: ^5.0.13
         version: 5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
     devDependencies:
+      '@assistant-ui/react-devtools':
+        specifier: ^1.2.1
+        version: 1.2.1(@assistant-ui/react@0.14.8(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@biomejs/biome':
-        specifier: ^2.4.14
+        specifier: ^2.4.15
         version: 2.4.15
       '@langchain/core':
-        specifier: ^1.1.44
-        version: 1.1.47(ws@8.20.1)
+        specifier: ^1.1.48
+        version: 1.1.48(ws@8.21.0)
       '@langchain/langgraph-cli':
-        specifier: ^1.2.1
-        version: 1.2.2(@langchain/core@1.1.47(ws@8.20.1))(@langchain/langgraph-checkpoint@1.0.2(@langchain/core@1.1.47(ws@8.20.1)))(@langchain/langgraph-sdk@1.9.4(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@langchain/langgraph@1.3.2(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3))(typescript@6.0.3)(ws@8.20.1)
+        specifier: ^1.2.2
+        version: 1.2.2(@langchain/core@1.1.48(ws@8.21.0))(@langchain/langgraph-checkpoint@1.0.2(@langchain/core@1.1.48(ws@8.21.0)))(@langchain/langgraph-sdk@1.9.6(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@langchain/langgraph@1.3.2(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3))(typescript@6.0.3)(ws@8.21.0)
       '@tailwindcss/postcss':
-        specifier: ^4.2.4
+        specifier: ^4.3.0
         version: 4.3.0
       '@types/node':
-        specifier: ^25.6.0
+        specifier: ^25.9.1
         version: 25.9.1
       '@types/react':
-        specifier: ^19.2.14
+        specifier: ^19.2.15
         version: 19.2.15
       '@types/react-dom':
         specifier: ^19.2.3
@@ -106,7 +109,7 @@ importers:
         specifier: ^9.2.1
         version: 9.2.1
       tailwindcss:
-        specifier: ^4.2.4
+        specifier: ^4.3.0
         version: 4.3.0
       typescript:
         specifier: ^6.0.3
@@ -127,13 +130,13 @@ packages:
       zod:
         optional: true
 
-  '@assistant-ui/core@0.2.2':
-    resolution: {integrity: sha512-y1LY7P7T+X3zAZZpfwYppaCkuscDCvbtDtIx87E9fdsY3t9o0h6tjunYdRgExcRQyzfCOE4bECeylYTs4Ky/NA==}
+  '@assistant-ui/core@0.2.5':
+    resolution: {integrity: sha512-Hx5KJHfHe2YEQ85jOE5pvOJsji6iYp75IYzBj8XN9+ONu11wf5kvy0iyojwNoPo0TAjsnqgnv0WfZpnYOqGR2Q==}
     peerDependencies:
-      '@assistant-ui/store': ^0.2.10
-      '@assistant-ui/tap': ^0.5.11
+      '@assistant-ui/store': ^0.2.12
+      '@assistant-ui/tap': ^0.5.12
       '@types/react': '*'
-      assistant-cloud: ^0.1.27
+      assistant-cloud: ^0.1.29
       react: ^18 || ^19
       zustand: ^5.0.11
     peerDependenciesMeta:
@@ -146,8 +149,23 @@ packages:
       zustand:
         optional: true
 
-  '@assistant-ui/react-langgraph@0.14.0':
-    resolution: {integrity: sha512-DKhyM0KCjDlCgTCOOwBW8kc124skx4Gl/XdrijfistEITnBECjQlg6GHtbkCwbNWXIqtKi1RWX5MdocmE+Sjmw==}
+  '@assistant-ui/react-devtools@1.2.1':
+    resolution: {integrity: sha512-V6x9xI9lci8PiKOCBcUgFXC4yrO3nKp/TkHinhw5c4uPpadOzQeeIpIvnFKFR5uOlnm0gj9TizHzyMSNkOKrOw==}
+    peerDependencies:
+      '@assistant-ui/react': ^0.14.8
+      '@assistant-ui/tap': ^0.5.12
+      '@types/react': '*'
+      '@types/react-dom': '*'
+      react: ^18 || ^19
+      react-dom: ^18 || ^19
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      '@types/react-dom':
+        optional: true
+
+  '@assistant-ui/react-langgraph@0.14.2':
+    resolution: {integrity: sha512-iX/LLnyos2Buw36CfRFQ9mPpOm5IpJyKHcirwy101SFeksi5XvcUnWZa07Ng6R1RF/v7fCuAw0O7Zzb2S7Askg==}
     peerDependencies:
       '@langchain/langgraph-sdk': ^1.8.0
       '@types/react': '*'
@@ -158,18 +176,18 @@ packages:
       '@types/react':
         optional: true
 
-  '@assistant-ui/react-markdown@0.14.0':
-    resolution: {integrity: sha512-G29cz4UHnQFyxTXCHsloMfyqHSuKSiPhkaAa069tWdf/Px3ZKCyhcP0TENCnsjqsw2iTFMVm8/Nqa0d5OwsdYw==}
+  '@assistant-ui/react-markdown@0.14.1':
+    resolution: {integrity: sha512-Q1S66rLS0J+b7jUjKrPGryLZsdg8v9NX/QdSTRmOCi5H6smWHfgMYvDypQ4BHn+4Tc+m3ggLKFPCgBV6t6iLhQ==}
     peerDependencies:
-      '@assistant-ui/react': ^0.14.0
+      '@assistant-ui/react': ^0.14.8
       '@types/react': '*'
       react: ^18 || ^19
     peerDependenciesMeta:
       '@types/react':
         optional: true
 
-  '@assistant-ui/react@0.14.5':
-    resolution: {integrity: sha512-Zx0Dtk39MEE+Bj3FFjCy9AylsXk2sN7sVqM5/ReVTtJOyUPk6c5NjvY2ovtMbtksXH3ZYVVP25J2AHBEwngruA==}
+  '@assistant-ui/react@0.14.8':
+    resolution: {integrity: sha512-Pus6hZ9JGjN3t/SBAvbhf76FBgYa0tS9j7RyOorgRCWy9YjL5z+jR5L73AIpv+tPkrlwqyfsv7WJtL+FhK4dwA==}
     peerDependencies:
       '@types/react': '*'
       '@types/react-dom': '*'
@@ -181,18 +199,18 @@ packages:
       '@types/react-dom':
         optional: true
 
-  '@assistant-ui/store@0.2.10':
-    resolution: {integrity: sha512-cgbSFIv0Ovu6yls4GQy7brLVx6qwUyLTf1Ki/lkj3UFJrO6oktxstosWvQBwk5mNgH6t3DOIrGSBDJSKRfCW5Q==}
+  '@assistant-ui/store@0.2.12':
+    resolution: {integrity: sha512-XIm0XfbC4gdZLuwbqnOTZgp3Okl8BGdl0LlDIRHV/KYHo1KGH572Gow0t/W0KfuAKbmOtngiZDoHn6pu7nhzjg==}
     peerDependencies:
-      '@assistant-ui/tap': ^0.5.11
+      '@assistant-ui/tap': ^0.5.12
       '@types/react': '*'
       react: ^18 || ^19
     peerDependenciesMeta:
       '@types/react':
         optional: true
 
-  '@assistant-ui/tap@0.5.11':
-    resolution: {integrity: sha512-wsEp6mn6BOQnP56OksWHarIQiMeCDcTzEiAORTUq0yxWa/co6a06UowFe6zZS6WQ56EQ3w02bfSBFrGnsrIv5A==}
+  '@assistant-ui/tap@0.5.12':
+    resolution: {integrity: sha512-V1U98eFG6+rB1r1upXfqdsRUHIuvFEGh+MP1aveA5NKN1oAvzbm30zGqO0dX2KsX/QgPIX1tox9XyYTSJFmQ4A==}
     peerDependencies:
       '@types/react': '*'
       react: ^18 || ^19
@@ -202,16 +220,16 @@ packages:
       react:
         optional: true
 
-  '@babel/code-frame@7.29.0':
-    resolution: {integrity: sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw==}
+  '@babel/code-frame@7.29.7':
+    resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
     engines: {node: '>=6.9.0'}
 
-  '@babel/helper-validator-identifier@7.28.5':
-    resolution: {integrity: sha512-qSs4ifwzKJSV39ucNjsvc6WVHs6b7S03sOh2OcHF9UHfVPqWWALUsNUVzhSBiItjRZoLHx7nIarVjqKVusUZ1Q==}
+  '@babel/helper-validator-identifier@7.29.7':
+    resolution: {integrity: sha512-qehxGkRj55h/ff8EMaJ+cYhyaKlHIxqYDn682wQD7RNp9UujOQsHog2uS0r2vzr4pW+sXf90NeeayjcNaX3fFg==}
     engines: {node: '>=6.9.0'}
 
-  '@babel/runtime@7.29.2':
-    resolution: {integrity: sha512-JiDShH45zKHWyGe4ZNVRrCjBz8Nh9TMmZG1kh4QTK8hCBTWBi8Da+i7s1fJw7/lYpM4ccepSNfqzZ/QvABBi5g==}
+  '@babel/runtime@7.29.7':
+    resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
     engines: {node: '>=6.9.0'}
 
   '@biomejs/biome@2.4.15':
@@ -820,8 +838,8 @@ packages:
     peerDependencies:
       '@langchain/core': ^1.1.47
 
-  '@langchain/core@1.1.47':
-    resolution: {integrity: sha512-+fiPu6ZFnJMrZyKeM77OIVPoMPAY6OKWacnPlojHtXTbMMzb2cEOKAJV0U07cDl86NHSCIYYa0i4CyKZzXbHQQ==}
+  '@langchain/core@1.1.48':
+    resolution: {integrity: sha512-fQU6Guyb1pwc2fEplmA8FPbKfOMAofjnyJzExevro0FxEiuGHE18Ov/ZHmT9trWCDTZRI9eW1VIc6aChxV8pAQ==}
     engines: {node: '>=20'}
 
   '@langchain/langgraph-api@1.2.2':
@@ -848,8 +866,8 @@ packages:
     engines: {node: ^18.19.0 || >=20.16.0}
     hasBin: true
 
-  '@langchain/langgraph-sdk@1.9.4':
-    resolution: {integrity: sha512-hhASJGKa2MDJDtDkuIFdWGysMTog/HkYe0r6B6Gn1XqsURWnF7FIFl9diITAPOv1tB8YpyjnbpsBj/NkT5d+jQ==}
+  '@langchain/langgraph-sdk@1.9.6':
+    resolution: {integrity: sha512-cem5LckknNULd8o4WiOpf+rv+Qxvfpf5MzXiCQb9JnEfJdCRrWsl0/qBeZRpAXMf/1Va3uDMZouTmw9odmI0Hw==}
     peerDependencies:
       '@langchain/core': ^1.1.44
       react: ^18 || ^19
@@ -1862,11 +1880,11 @@ packages:
     resolution: {integrity: sha512-ik3ZgC9dY/lYVVM++OISsaYDeg1tb0VtP5uL3ouh1koGOaUMDPpbFIei4JkFimWUFPn90sbMNMXQAIVOlnYKJA==}
     engines: {node: '>=10'}
 
-  assistant-cloud@0.1.27:
-    resolution: {integrity: sha512-BGfVnx7YFN5xtB/kbrgGxRI0TfSWq4yxB3MwYn6RDPlv4JvdtPupvDC1Y6An0EhAe42Z0AYtSmDSsR6p6eeBng==}
+  assistant-cloud@0.1.29:
+    resolution: {integrity: sha512-MumJHqA0eumNCSYYWgYJvbPhqsZ2K1y28pGQ7dPCJxPNUDXhUxOfYU9vuL786i5uawS2asf7ibzvKTCi2+LZuw==}
 
-  assistant-stream@0.3.14:
-    resolution: {integrity: sha512-LWJt+6cjukoEKaN3LHwx40QbnODnoMmGCPkF4Tjg3fwTjgUTWsYnNJ5H2dnRmJFbxVgKTNMdJHjkCIOSemE2tg==}
+  assistant-stream@0.3.16:
+    resolution: {integrity: sha512-jrz5TxUNnZCy5SHdEFGEbYc/So0AlRS1Uw0k6/K8rCwulrs81s8oC+XT3LsHVDVz1KEdosCWbb27DG4ItS1vxQ==}
     peerDependencies:
       ioredis: ^5.10.1
       redis: ^5.12.1
@@ -1892,8 +1910,8 @@ packages:
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
 
-  baseline-browser-mapping@2.10.31:
-    resolution: {integrity: sha512-MujYO3eP72uvmSE0i4wltsodRfIpZATP3jvzRNRGGxgzId7aVocVJJV3nf01qnzzKFGxQVC9bpWxl5cjxTr/7Q==}
+  baseline-browser-mapping@2.10.32:
+    resolution: {integrity: sha512-wbPvpyjJPC0zdfdKXxqEL3Ea+bOMD/87X4lftiJkkaBiuG6ALQy1SLmEd7BSmVCuwCQsBrCamgBoLyfFDD1EPg==}
     engines: {node: '>=6.0.0'}
     hasBin: true
 
@@ -2065,8 +2083,8 @@ packages:
     resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
     engines: {node: '>=12'}
 
-  electron-to-chromium@1.5.359:
-    resolution: {integrity: sha512-8lPELWuYZIWk7NDvCNthtmMw/7Q5Wu25NpM4djFMHBmk8DubPAtL4YTOp7ou0e7HyJtwkVlWv8XMLURnrtgJQw==}
+  electron-to-chromium@1.5.361:
+    resolution: {integrity: sha512-Q6Hts7N9FnJc5LeGRINFvLhCI9xZmNtTDe5ZbcVezQz7cU4a8Aua3GH1b8J2XY8Al9PF+OCwYqhgsOOheMdvkA==}
 
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
@@ -2077,8 +2095,8 @@ packages:
   end-of-stream@1.4.5:
     resolution: {integrity: sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg==}
 
-  enhanced-resolve@5.21.5:
-    resolution: {integrity: sha512-mLCNbrQli11K1ySUmuNt4ZUB3OpGIDq4q2vTBTf5cL2lpsRjI9QKqSD0ndjW8FyvcW/Jj46gMe9syyHAsvMa/A==}
+  enhanced-resolve@5.22.0:
+    resolution: {integrity: sha512-xYcDWrpELkFzz9SpZ3PlI6Eu6eD93Yf0WLDRxikGhWJ3MAir2SNZTIVCVZqZ/NUyx8AdMc2gT9C0gPiw18kG+A==}
     engines: {node: '>=10.13.0'}
 
   esbuild-plugin-tailwindcss@2.2.0:
@@ -2183,8 +2201,8 @@ packages:
   hast-util-whitespace@3.0.0:
     resolution: {integrity: sha512-88JUN06ipLwsnv+dVn+OIYOvAuvBMy/Qoi6O7mQHxdPXpjy+Cd6xRkWwux7DKO+4sYILtLBRIKgsdpS2gQc7qw==}
 
-  hono@4.12.21:
-    resolution: {integrity: sha512-uV63apnb0kyPtAUwoWgaGh9HyIFcv8lgmzPZSiTBQAFOFGIzka5EZ1dZocmGnn0XdX0+XTqJ6Tqv7selMuGLRQ==}
+  hono@4.12.23:
+    resolution: {integrity: sha512-eIaZ9qDgu7XV0pxOCrg7/WhnQ6Ivm22UcxhXx/A3dcbqbbYgBEkc6e/J/s7j2tS96zoB0S9VBdLwQNCWwUo4LA==}
     engines: {node: '>=16.9.0'}
 
   html-url-attributes@3.0.1:
@@ -2300,8 +2318,8 @@ packages:
       ws:
         optional: true
 
-  langsmith@0.7.1:
-    resolution: {integrity: sha512-Wjk90UjNoY5cBHMlNAC/eZx5clI8jnjBOBW8uJu8+MWBtx0QesNjsUiLtjI+I3UnrpxFFpDqGXcnhBjH654Mqg==}
+  langsmith@0.7.2:
+    resolution: {integrity: sha512-3dZUwQDJluxi2ih5eIygFODtlrQKrs3Tua0Ck3l+DAUkSGFkB1Dc0JPqkGbqiVSN+TQDElnkev/ydAOAz6jndA==}
     peerDependencies:
       '@opentelemetry/api': '*'
       '@opentelemetry/exporter-trace-otlp-proto': '*'
@@ -2594,8 +2612,9 @@ packages:
       sass:
         optional: true
 
-  node-releases@2.0.44:
-    resolution: {integrity: sha512-5WUyunoPMsvvEhS8AxHtRzP+oA8UCkJ7YRxatWKjngndhDGLiqEVAQKWjFAiAiuL8zMRGzGSJxFnLetoa43qGQ==}
+  node-releases@2.0.46:
+    resolution: {integrity: sha512-GYVXHE2KnrzAfsAjl4uP++evGFCrAU1jta4ubEjIG7YWt/64Gqv66a30yKwWczVjA6j3bM4nBwH7Pk1JmDHaxQ==}
+    engines: {node: '>=18'}
 
   npm-run-path@6.0.0:
     resolution: {integrity: sha512-9qny7Z9DsQU8Ou39ERsPU4OZQlSTP47ShQzuKZ6PRXpYLtIFgl/DEBYEXKlvcEa+9tHVcK8CF81Y2V72qaZhWA==}
@@ -2811,8 +2830,8 @@ packages:
   safe-buffer@5.2.1:
     resolution: {integrity: sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==}
 
-  safe-content-frame@0.0.19:
-    resolution: {integrity: sha512-+R0IHHjvghT5O8bc8itf9AoS9MvzhUcD0p+hNINLgyEuFQJug3wt3ZuhLFZFG3bUzHi8UfQED4p6J3/Ft9oCtg==}
+  safe-content-frame@0.0.20:
+    resolution: {integrity: sha512-saE3fBeGWOsi04PzTUaRi6RsBIjDYrZX4KzgIZUjbq3xQeOKYMcW1DeTb573Zyx1ggCDVJKoD/THchblISwjiQ==}
 
   safe-stable-stringify@2.5.0:
     resolution: {integrity: sha512-b3rppTKm9T+PsVCBEOUR46GWI7fdOs00VKZ1+9c1EWDaDMvjQc6tUwuFyIprgGgTcWoVHSKrU8H31ZHA2e0RHA==}
@@ -2824,8 +2843,8 @@ packages:
   secure-json-parse@4.1.0:
     resolution: {integrity: sha512-l4KnYfEyqYJxDwlNVyRfO2E4NTHfMKAWdUuA8J0yve2Dz/E/PdBepY03RvyJpssIpRFwJoCD55wA+mEDs6ByWA==}
 
-  semver@7.8.0:
-    resolution: {integrity: sha512-AcM7dV/5ul4EekoQ29Agm5vri8JNqRyj39o0qpX6vDF2GZrtutZl5RwgD1XnZjiTAfncsJhMI48QQH3sN87YNA==}
+  semver@7.8.1:
+    resolution: {integrity: sha512-rkVq3IXh+4FDGch+KwzX3aV9W3kO54GyEgpvBzSyctDA6Xtd7RJQV1xmXbeQp5v7+VzLOfVqiutSE6GICgPFvg==}
     engines: {node: '>=10'}
     hasBin: true
 
@@ -3113,8 +3132,8 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
-  ws@8.20.1:
-    resolution: {integrity: sha512-It4dO0K5v//JtTXuPkfEOaI3uUN87iYPnqo/ZzqCoG3g8uhA66QUMs/SrM0YK7/NAu+r4LMh/9dq2A7k+rHs+w==}
+  ws@8.21.0:
+    resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -3192,31 +3211,42 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
-  '@assistant-ui/core@0.2.2(@assistant-ui/store@0.2.10(@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6))(@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(assistant-cloud@0.1.27)(react@19.2.6)(zustand@5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))':
+  '@assistant-ui/core@0.2.5(@assistant-ui/store@0.2.12(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6))(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(assistant-cloud@0.1.29)(react@19.2.6)(zustand@5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))':
     dependencies:
-      '@assistant-ui/store': 0.2.10(@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6)
-      '@assistant-ui/tap': 0.5.11(@types/react@19.2.15)(react@19.2.6)
-      assistant-stream: 0.3.14
+      '@assistant-ui/store': 0.2.12(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6)
+      '@assistant-ui/tap': 0.5.12(@types/react@19.2.15)(react@19.2.6)
+      assistant-stream: 0.3.16
       nanoid: 5.1.11
     optionalDependencies:
       '@types/react': 19.2.15
-      assistant-cloud: 0.1.27
+      assistant-cloud: 0.1.29
       react: 19.2.6
       zustand: 5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
     transitivePeerDependencies:
       - ioredis
       - redis
 
-  '@assistant-ui/react-langgraph@0.14.0(@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6))(@langchain/langgraph-sdk@1.9.4(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@types/react@19.2.15)(react@19.2.6)(zustand@5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))':
+  '@assistant-ui/react-devtools@1.2.1(@assistant-ui/react@0.14.8(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@assistant-ui/core': 0.2.2(@assistant-ui/store@0.2.10(@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6))(@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(assistant-cloud@0.1.27)(react@19.2.6)(zustand@5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))
-      '@assistant-ui/store': 0.2.10(@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6)
-      assistant-cloud: 0.1.27
-      assistant-stream: 0.3.14
+      '@assistant-ui/react': 0.14.8(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
+      '@assistant-ui/tap': 0.5.12(@types/react@19.2.15)(react@19.2.6)
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+      zod: 4.4.3
+    optionalDependencies:
+      '@types/react': 19.2.15
+      '@types/react-dom': 19.2.3(@types/react@19.2.15)
+
+  '@assistant-ui/react-langgraph@0.14.2(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@langchain/langgraph-sdk@1.9.6(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@types/react@19.2.15)(react@19.2.6)(zustand@5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))':
+    dependencies:
+      '@assistant-ui/core': 0.2.5(@assistant-ui/store@0.2.12(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6))(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(assistant-cloud@0.1.29)(react@19.2.6)(zustand@5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))
+      '@assistant-ui/store': 0.2.12(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6)
+      assistant-cloud: 0.1.29
+      assistant-stream: 0.3.16
       react: 19.2.6
       uuid: 14.0.0
     optionalDependencies:
-      '@langchain/langgraph-sdk': 1.9.4(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@langchain/langgraph-sdk': 1.9.6(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@types/react': 19.2.15
     transitivePeerDependencies:
       - '@assistant-ui/tap'
@@ -3224,9 +3254,9 @@ snapshots:
       - redis
       - zustand
 
-  '@assistant-ui/react-markdown@0.14.0(@assistant-ui/react@0.14.5(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@assistant-ui/react-markdown@0.14.1(@assistant-ui/react@0.14.8(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@assistant-ui/react': 0.14.5(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
+      '@assistant-ui/react': 0.14.8(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
       '@radix-ui/react-primitive': 2.1.4(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@radix-ui/react-use-callback-ref': 1.1.1(@types/react@19.2.15)(react@19.2.6)
       classnames: 2.5.1
@@ -3239,25 +3269,25 @@ snapshots:
       - react-dom
       - supports-color
 
-  '@assistant-ui/react@0.14.5(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))':
+  '@assistant-ui/react@0.14.8(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))':
     dependencies:
-      '@assistant-ui/core': 0.2.2(@assistant-ui/store@0.2.10(@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6))(@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(assistant-cloud@0.1.27)(react@19.2.6)(zustand@5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))
-      '@assistant-ui/store': 0.2.10(@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6)
-      '@assistant-ui/tap': 0.5.11(@types/react@19.2.15)(react@19.2.6)
+      '@assistant-ui/core': 0.2.5(@assistant-ui/store@0.2.12(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6))(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(assistant-cloud@0.1.29)(react@19.2.6)(zustand@5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)))
+      '@assistant-ui/store': 0.2.12(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6)
+      '@assistant-ui/tap': 0.5.12(@types/react@19.2.15)(react@19.2.6)
       '@radix-ui/primitive': 1.1.3
       '@radix-ui/react-compose-refs': 1.1.2(@types/react@19.2.15)(react@19.2.6)
       '@radix-ui/react-context': 1.1.3(@types/react@19.2.15)(react@19.2.6)
       '@radix-ui/react-primitive': 2.1.4(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@radix-ui/react-use-callback-ref': 1.1.1(@types/react@19.2.15)(react@19.2.6)
       '@radix-ui/react-use-escape-keydown': 1.1.1(@types/react@19.2.15)(react@19.2.6)
-      assistant-cloud: 0.1.27
-      assistant-stream: 0.3.14
+      assistant-cloud: 0.1.29
+      assistant-stream: 0.3.16
       nanoid: 5.1.11
       radix-ui: 1.4.3(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
       react-textarea-autosize: 8.5.9(@types/react@19.2.15)(react@19.2.6)
-      safe-content-frame: 0.0.19
+      safe-content-frame: 0.0.20
       zod: 4.4.3
       zustand: 5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
     optionalDependencies:
@@ -3269,28 +3299,28 @@ snapshots:
       - redis
       - use-sync-external-store
 
-  '@assistant-ui/store@0.2.10(@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6)':
+  '@assistant-ui/store@0.2.12(@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6))(@types/react@19.2.15)(react@19.2.6)':
     dependencies:
-      '@assistant-ui/tap': 0.5.11(@types/react@19.2.15)(react@19.2.6)
+      '@assistant-ui/tap': 0.5.12(@types/react@19.2.15)(react@19.2.6)
       react: 19.2.6
       use-effect-event: 2.0.3(react@19.2.6)
     optionalDependencies:
       '@types/react': 19.2.15
 
-  '@assistant-ui/tap@0.5.11(@types/react@19.2.15)(react@19.2.6)':
+  '@assistant-ui/tap@0.5.12(@types/react@19.2.15)(react@19.2.6)':
     optionalDependencies:
       '@types/react': 19.2.15
       react: 19.2.6
 
-  '@babel/code-frame@7.29.0':
+  '@babel/code-frame@7.29.7':
     dependencies:
-      '@babel/helper-validator-identifier': 7.28.5
+      '@babel/helper-validator-identifier': 7.29.7
       js-tokens: 4.0.0
       picocolors: 1.1.1
 
-  '@babel/helper-validator-identifier@7.28.5': {}
+  '@babel/helper-validator-identifier@7.29.7': {}
 
-  '@babel/runtime@7.29.2': {}
+  '@babel/runtime@7.29.7': {}
 
   '@biomejs/biome@2.4.15':
     optionalDependencies:
@@ -3530,22 +3560,22 @@ snapshots:
 
   '@floating-ui/utils@0.2.11': {}
 
-  '@hono/node-server@1.19.14(hono@4.12.21)':
+  '@hono/node-server@1.19.14(hono@4.12.23)':
     dependencies:
-      hono: 4.12.21
+      hono: 4.12.23
 
-  '@hono/node-ws@1.3.1(@hono/node-server@1.19.14(hono@4.12.21))(hono@4.12.21)':
+  '@hono/node-ws@1.3.1(@hono/node-server@1.19.14(hono@4.12.23))(hono@4.12.23)':
     dependencies:
-      '@hono/node-server': 1.19.14(hono@4.12.21)
-      hono: 4.12.21
-      ws: 8.20.1
+      '@hono/node-server': 1.19.14(hono@4.12.23)
+      hono: 4.12.23
+      ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@hono/zod-validator@0.7.6(hono@4.12.21)(zod@4.4.3)':
+  '@hono/zod-validator@0.7.6(hono@4.12.23)(zod@4.4.3)':
     dependencies:
-      hono: 4.12.21
+      hono: 4.12.23
       zod: 4.4.3
 
   '@img/colour@1.1.0':
@@ -3668,18 +3698,18 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@langchain/anthropic@1.4.0(@langchain/core@1.1.47(ws@8.20.1))':
+  '@langchain/anthropic@1.4.0(@langchain/core@1.1.48(ws@8.21.0))':
     dependencies:
       '@anthropic-ai/sdk': 0.95.2(zod@4.4.3)
-      '@langchain/core': 1.1.47(ws@8.20.1)
+      '@langchain/core': 1.1.48(ws@8.21.0)
       zod: 4.4.3
 
-  '@langchain/core@1.1.47(ws@8.20.1)':
+  '@langchain/core@1.1.48(ws@8.21.0)':
     dependencies:
       '@cfworker/json-schema': 4.1.1
       '@standard-schema/spec': 1.1.0
       js-tiktoken: 1.0.21
-      langsmith: 0.7.1(ws@8.20.1)
+      langsmith: 0.7.2(ws@8.21.0)
       mustache: 4.2.0
       p-queue: 6.6.2
       zod: 4.4.3
@@ -3690,15 +3720,15 @@ snapshots:
       - openai
       - ws
 
-  '@langchain/langgraph-api@1.2.2(@langchain/core@1.1.47(ws@8.20.1))(@langchain/langgraph-checkpoint@1.0.2(@langchain/core@1.1.47(ws@8.20.1)))(@langchain/langgraph-sdk@1.9.4(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@langchain/langgraph@1.3.2(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3))(typescript@6.0.3)(ws@8.20.1)':
+  '@langchain/langgraph-api@1.2.2(@langchain/core@1.1.48(ws@8.21.0))(@langchain/langgraph-checkpoint@1.0.2(@langchain/core@1.1.48(ws@8.21.0)))(@langchain/langgraph-sdk@1.9.6(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@langchain/langgraph@1.3.2(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3))(typescript@6.0.3)(ws@8.21.0)':
     dependencies:
-      '@babel/code-frame': 7.29.0
-      '@hono/node-server': 1.19.14(hono@4.12.21)
-      '@hono/node-ws': 1.3.1(@hono/node-server@1.19.14(hono@4.12.21))(hono@4.12.21)
-      '@hono/zod-validator': 0.7.6(hono@4.12.21)(zod@4.4.3)
-      '@langchain/core': 1.1.47(ws@8.20.1)
-      '@langchain/langgraph': 1.3.2(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3)
-      '@langchain/langgraph-checkpoint': 1.0.2(@langchain/core@1.1.47(ws@8.20.1))
+      '@babel/code-frame': 7.29.7
+      '@hono/node-server': 1.19.14(hono@4.12.23)
+      '@hono/node-ws': 1.3.1(@hono/node-server@1.19.14(hono@4.12.23))(hono@4.12.23)
+      '@hono/zod-validator': 0.7.6(hono@4.12.23)(zod@4.4.3)
+      '@langchain/core': 1.1.48(ws@8.21.0)
+      '@langchain/langgraph': 1.3.2(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3)
+      '@langchain/langgraph-checkpoint': 1.0.2(@langchain/core@1.1.48(ws@8.21.0))
       '@langchain/langgraph-ui': 1.2.2
       '@langchain/protocol': 0.0.15
       '@types/json-schema': 7.0.15
@@ -3706,10 +3736,10 @@ snapshots:
       dedent: 1.7.2
       dotenv: 16.6.1
       exit-hook: 4.0.0
-      hono: 4.12.21
-      langsmith: 0.6.3(ws@8.20.1)
+      hono: 4.12.23
+      langsmith: 0.6.3(ws@8.21.0)
       open: 10.2.0
-      semver: 7.8.0
+      semver: 7.8.1
       stacktrace-parser: 0.1.11
       superjson: 2.2.6
       tsx: 4.22.3
@@ -3719,7 +3749,7 @@ snapshots:
       winston-console-format: 1.0.8
       zod: 4.4.3
     optionalDependencies:
-      '@langchain/langgraph-sdk': 1.9.4(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@langchain/langgraph-sdk': 1.9.6(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
     transitivePeerDependencies:
       - '@opentelemetry/api'
       - '@opentelemetry/exporter-trace-otlp-proto'
@@ -3731,16 +3761,16 @@ snapshots:
       - utf-8-validate
       - ws
 
-  '@langchain/langgraph-checkpoint@1.0.2(@langchain/core@1.1.47(ws@8.20.1))':
+  '@langchain/langgraph-checkpoint@1.0.2(@langchain/core@1.1.48(ws@8.21.0))':
     dependencies:
-      '@langchain/core': 1.1.47(ws@8.20.1)
+      '@langchain/core': 1.1.48(ws@8.21.0)
       uuid: 10.0.0
 
-  '@langchain/langgraph-cli@1.2.2(@langchain/core@1.1.47(ws@8.20.1))(@langchain/langgraph-checkpoint@1.0.2(@langchain/core@1.1.47(ws@8.20.1)))(@langchain/langgraph-sdk@1.9.4(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@langchain/langgraph@1.3.2(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3))(typescript@6.0.3)(ws@8.20.1)':
+  '@langchain/langgraph-cli@1.2.2(@langchain/core@1.1.48(ws@8.21.0))(@langchain/langgraph-checkpoint@1.0.2(@langchain/core@1.1.48(ws@8.21.0)))(@langchain/langgraph-sdk@1.9.6(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@langchain/langgraph@1.3.2(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3))(typescript@6.0.3)(ws@8.21.0)':
     dependencies:
-      '@babel/code-frame': 7.29.0
+      '@babel/code-frame': 7.29.7
       '@commander-js/extra-typings': 13.1.0(commander@13.1.0)
-      '@langchain/langgraph-api': 1.2.2(@langchain/core@1.1.47(ws@8.20.1))(@langchain/langgraph-checkpoint@1.0.2(@langchain/core@1.1.47(ws@8.20.1)))(@langchain/langgraph-sdk@1.9.4(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@langchain/langgraph@1.3.2(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3))(typescript@6.0.3)(ws@8.20.1)
+      '@langchain/langgraph-api': 1.2.2(@langchain/core@1.1.48(ws@8.21.0))(@langchain/langgraph-checkpoint@1.0.2(@langchain/core@1.1.48(ws@8.21.0)))(@langchain/langgraph-sdk@1.9.6(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@langchain/langgraph@1.3.2(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3))(typescript@6.0.3)(ws@8.21.0)
       chokidar: 4.0.3
       commander: 13.1.0
       create-langgraph: 1.1.5
@@ -3749,7 +3779,7 @@ snapshots:
       execa: 9.6.1
       exit-hook: 4.0.0
       extract-zip: 2.0.1
-      langsmith: 0.6.3(ws@8.20.1)
+      langsmith: 0.6.3(ws@8.21.0)
       open: 10.2.0
       package-manager-detector: 1.6.0
       stacktrace-parser: 0.1.11
@@ -3774,9 +3804,9 @@ snapshots:
       - utf-8-validate
       - ws
 
-  '@langchain/langgraph-sdk@1.9.4(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@langchain/langgraph-sdk@1.9.6(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@langchain/core': 1.1.47(ws@8.20.1)
+      '@langchain/core': 1.1.48(ws@8.21.0)
       '@langchain/protocol': 0.0.15
       '@types/json-schema': 7.0.15
       p-queue: 9.3.0
@@ -3794,11 +3824,11 @@ snapshots:
       esbuild-plugin-tailwindcss: 2.2.0
       zod: 4.4.3
 
-  '@langchain/langgraph@1.3.2(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3)':
+  '@langchain/langgraph@1.3.2(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.4.3)':
     dependencies:
-      '@langchain/core': 1.1.47(ws@8.20.1)
-      '@langchain/langgraph-checkpoint': 1.0.2(@langchain/core@1.1.47(ws@8.20.1))
-      '@langchain/langgraph-sdk': 1.9.4(@langchain/core@1.1.47(ws@8.20.1))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@langchain/core': 1.1.48(ws@8.21.0)
+      '@langchain/langgraph-checkpoint': 1.0.2(@langchain/core@1.1.48(ws@8.21.0))
+      '@langchain/langgraph-sdk': 1.9.6(@langchain/core@1.1.48(ws@8.21.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@langchain/protocol': 0.0.15
       '@standard-schema/spec': 1.1.0
       uuid: 10.0.0
@@ -4648,7 +4678,7 @@ snapshots:
   '@tailwindcss/node@4.3.0':
     dependencies:
       '@jridgewell/remapping': 2.3.5
-      enhanced-resolve: 5.21.5
+      enhanced-resolve: 5.22.0
       jiti: 2.7.0
       lightningcss: 1.32.0
       magic-string: 0.30.21
@@ -4778,14 +4808,14 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  assistant-cloud@0.1.27:
+  assistant-cloud@0.1.29:
     dependencies:
-      assistant-stream: 0.3.14
+      assistant-stream: 0.3.16
     transitivePeerDependencies:
       - ioredis
       - redis
 
-  assistant-stream@0.3.14:
+  assistant-stream@0.3.16:
     dependencies:
       '@standard-schema/spec': 1.1.0
       nanoid: 5.1.11
@@ -4806,14 +4836,14 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  baseline-browser-mapping@2.10.31: {}
+  baseline-browser-mapping@2.10.32: {}
 
   browserslist@4.28.2:
     dependencies:
-      baseline-browser-mapping: 2.10.31
+      baseline-browser-mapping: 2.10.32
       caniuse-lite: 1.0.30001793
-      electron-to-chromium: 1.5.359
-      node-releases: 2.0.44
+      electron-to-chromium: 1.5.361
+      node-releases: 2.0.46
       update-browserslist-db: 1.2.3(browserslist@4.28.2)
 
   buffer-crc32@0.2.13: {}
@@ -4954,7 +4984,7 @@ snapshots:
 
   dotenv@16.6.1: {}
 
-  electron-to-chromium@1.5.359: {}
+  electron-to-chromium@1.5.361: {}
 
   emoji-regex@8.0.0: {}
 
@@ -4964,7 +4994,7 @@ snapshots:
     dependencies:
       once: 1.4.0
 
-  enhanced-resolve@5.21.5:
+  enhanced-resolve@5.22.0:
     dependencies:
       graceful-fs: 4.2.11
       tapable: 2.3.3
@@ -5137,7 +5167,7 @@ snapshots:
     dependencies:
       '@types/hast': 3.0.4
 
-  hono@4.12.21: {}
+  hono@4.12.23: {}
 
   html-url-attributes@3.0.1: {}
 
@@ -5198,22 +5228,22 @@ snapshots:
 
   json-schema-to-ts@3.1.1:
     dependencies:
-      '@babel/runtime': 7.29.2
+      '@babel/runtime': 7.29.7
       ts-algebra: 2.0.0
 
   kuler@2.0.0: {}
 
-  langsmith@0.6.3(ws@8.20.1):
+  langsmith@0.6.3(ws@8.21.0):
     dependencies:
       p-queue: 6.6.2
     optionalDependencies:
-      ws: 8.20.1
+      ws: 8.21.0
 
-  langsmith@0.7.1(ws@8.20.1):
+  langsmith@0.7.2(ws@8.21.0):
     dependencies:
       p-queue: 6.6.2
     optionalDependencies:
-      ws: 8.20.1
+      ws: 8.21.0
 
   lightningcss-android-arm64@1.32.0:
     optional: true
@@ -5651,7 +5681,7 @@ snapshots:
     dependencies:
       '@next/env': 16.2.6
       '@swc/helpers': 0.5.15
-      baseline-browser-mapping: 2.10.31
+      baseline-browser-mapping: 2.10.32
       caniuse-lite: 1.0.30001793
       postcss: 8.4.31
       react: 19.2.6
@@ -5671,7 +5701,7 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
-  node-releases@2.0.44: {}
+  node-releases@2.0.46: {}
 
   npm-run-path@6.0.0:
     dependencies:
@@ -5915,7 +5945,7 @@ snapshots:
 
   react-textarea-autosize@8.5.9(@types/react@19.2.15)(react@19.2.6):
     dependencies:
-      '@babel/runtime': 7.29.2
+      '@babel/runtime': 7.29.7
       react: 19.2.6
       use-composed-ref: 1.4.0(@types/react@19.2.15)(react@19.2.6)
       use-latest: 1.3.0(@types/react@19.2.15)(react@19.2.6)
@@ -5976,7 +6006,7 @@ snapshots:
 
   safe-buffer@5.2.1: {}
 
-  safe-content-frame@0.0.19: {}
+  safe-content-frame@0.0.20: {}
 
   safe-stable-stringify@2.5.0: {}
 
@@ -5984,13 +6014,13 @@ snapshots:
 
   secure-json-parse@4.1.0: {}
 
-  semver@7.8.0: {}
+  semver@7.8.1: {}
 
   sharp@0.34.5:
     dependencies:
       '@img/colour': 1.1.0
       detect-libc: 2.1.2
-      semver: 7.8.0
+      semver: 7.8.1
     optionalDependencies:
       '@img/sharp-darwin-arm64': 0.34.5
       '@img/sharp-darwin-x64': 0.34.5
@@ -6278,7 +6308,7 @@ snapshots:
 
   wrappy@1.0.2: {}
 
-  ws@8.20.1: {}
+  ws@8.21.0: {}
 
   wsl-utils@0.1.0:
     dependencies:
