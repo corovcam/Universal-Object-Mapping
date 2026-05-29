@@ -616,10 +616,10 @@ export function Workspace() {
           </div>
 
           <div className="flex items-center gap-3">
-            <IdeLink />
+            <IdeLink graphState={graphState} />
 
             {/* Premium Theme Switcher */}
-            <Button
+            {/* <Button
               size="icon"
               variant="outline"
               onClick={toggleTheme}
