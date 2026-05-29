@@ -1,15 +1,15 @@
 "use client";
 
-import { useMemo } from "react";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import {
   unstable_createLangGraphStream,
   useLangGraphRuntime,
   type LangChainMessage,
 } from "@assistant-ui/react-langgraph";
+import { useMemo } from "react";
 
-import { createClient } from "@/lib/chatApi";
 import { Thread } from "@/components/assistant-ui/thread";
+import { createClient } from "@/lib/chatApi";
 
 const ASSISTANT_ID = process.env.NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID || "universal-object-mapping-translator";
 
@@ -20,6 +20,7 @@ export function Assistant() {
       unstable_createLangGraphStream({
         client,
         assistantId: ASSISTANT_ID,
+        streamMode: ["messages", "updates", "tools", "custom"]
       }),
     [client],
   );
@@ -44,6 +45,7 @@ export function Assistant() {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      {/* <DevToolsModal /> */}
       <Thread />
     </AssistantRuntimeProvider>
   );

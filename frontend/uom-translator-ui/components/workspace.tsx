@@ -483,9 +483,10 @@ export function Workspace() {
             }}
             className="border-r border-slate-850 flex flex-col min-h-0 bg-slate-950/20"
           >
-            <AssistantRuntimeProvider runtime={runtime}>
+            <UomRuntime runtime={runtime}>
+              <DevToolsModal />
               <Thread />
-            </AssistantRuntimeProvider>
+            </UomRuntime>
           </div>
 
           {/* Draggable Divider Slider Handle */}
