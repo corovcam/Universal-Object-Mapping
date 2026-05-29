@@ -631,7 +631,7 @@ export function Workspace() {
               ) : (
                 <Moon className="size-4 text-indigo-400" />
               )}
-            </Button>
+            </Button> */}
             
             <Button
               size="icon"
@@ -684,6 +684,7 @@ export function Workspace() {
           {/* Collapsible divider toggle */}
           <button
             type="button"
+            onMouseDown={() => setIsDragging(true)}
             onClick={() => setIsRightPaneExpanded(prev => !prev)}
             style={{ 
               left: isRightPaneExpanded ? "12px" : `${leftWidth}%` 
@@ -701,9 +702,34 @@ export function Workspace() {
             style={{ 
               width: isRightPaneExpanded ? "100%" : `${100 - leftWidth}%` 
             }}
-            className="flex flex-col min-h-0 p-4 space-y-4 bg-slate-950/45"
+            className="flex flex-col min-h-0 p-4 space-y-4 bg-slate-950/45 overflow-y-auto custom-scrollbar"
           >
             
+            {/* Dynamic floating exception/error toast */}
+            {runError && (
+              <div className="bg-rose-950/85 border border-rose-800/40 rounded-xl p-4 flex items-start justify-between shadow-2xl animate-in slide-in-from-top-2 duration-300 relative overflow-hidden">
+                {/* Visual red gradient glow behind */}
+                <div className="absolute -left-16 -top-16 size-32 bg-rose-500/10 rounded-full blur-2xl pointer-events-none"></div>
+                
+                <div className="flex gap-3">
+                  <div className="size-8 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shrink-0">
+                    <AlertCircle className="size-4.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-semibold text-rose-200 uppercase tracking-wider leading-none">Translation Exception Details</h4>
+                    <p className="text-[11px] text-rose-300/90 mt-2 leading-relaxed whitespace-pre-wrap max-h-[140px] overflow-y-auto custom-scrollbar select-text">{runError}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRunError(null)}
+                  className="size-6 hover:bg-rose-900/40 rounded flex items-center justify-center text-rose-400/70 hover:text-rose-200 transition-colors shrink-0"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            )}
+
             {/* Boredom Mitigation Active Loader */}
             <LoadingEngagement
               currentNode={activeNode}
@@ -722,21 +748,21 @@ export function Workspace() {
             )}
 
             {/* Split Comparison & Timelines */}
-            <div className="flex-1 grid grid-rows-5 gap-4 min-h-0">
+            <div className="flex-1 grid grid-rows-5 gap-4 min-h-[500px]">
               
               {/* Code comparison panel (rows 1-3) */}
               <div className="row-span-3 min-h-0">
-                <CodeComparison
-                  sourceSchema={graphState.source_schema_code}
-                  translatedSchema={graphState.translated_schema_code}
-                  sourceQuery={graphState.source_query_code}
-                  translatedQuery={graphState.translated_query_code}
-                  sourceHarness={graphState.source_validation_harness_code}
-                  translatedHarness={graphState.target_validation_harness_code}
-                  sourceTarget={graphState.source_target}
-                  destinationTarget={graphState.destination_target}
-                  sourceValidationResults={graphState.source_query_validation_results}
-                  targetValidationResults={graphState.target_query_validation_results}
+                 <CodeComparison
+                  sourceSchema={graphState.source_schema_code || null}
+                  translatedSchema={graphState.translated_schema_code || null}
+                  sourceQuery={graphState.source_query_code || null}
+                  translatedQuery={graphState.translated_query_code || null}
+                  sourceHarness={graphState.source_validation_harness_code || null}
+                  translatedHarness={graphState.target_validation_harness_code || null}
+                  sourceTarget={graphState.source_target || null}
+                  destinationTarget={graphState.destination_target || null}
+                  sourceValidationResults={graphState.source_query_validation_results || null}
+                  targetValidationResults={graphState.target_query_validation_results || null}
                 />
               </div>
 
@@ -747,7 +773,7 @@ export function Workspace() {
                   history={[]}
                   loopCount={graphState.translation_loop_count || 0}
                   deepDiffs={graphState.query_equivalence_deep_diffs}
-                  schemaContext={graphState.schema_context}
+                  schemaContext={graphState.schema_context || ""}
                   rawState={graphState}
                 />
               </div>
