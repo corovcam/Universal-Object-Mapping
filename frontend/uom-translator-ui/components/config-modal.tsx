@@ -1,26 +1,20 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle,
-  DialogDescription,
-  DialogFooter
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { 
-  Settings, 
-  Database, 
-  Cpu, 
-  Terminal, 
-  HelpCircle, 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle
+} from "@/components/ui/dialog";
+import {
   CheckCircle,
   ExternalLink,
-  BookOpen,
-  Info
+  Info,
+  Settings,
+  Terminal
 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export interface UomConfig {
   ollamaHost: string;
@@ -36,14 +30,14 @@ export interface UomConfig {
 
 const DEFAULT_CONFIG: UomConfig = {
   ollamaHost: "http://localhost:11434",
-  model: "ollama/qwen3-coder:30b",
-  openaiApiUrl: "https://einfra.net/v1",
+  model: "einfra/kimi-k2.6",
+  openaiApiUrl: "http://localhost:4010/v1",
   openaiApiKey: "",
-  mssqlConnectionString: "Server=localhost;Database=uom_relational;User Id=sa;Password=YourStrongPass123!;",
-  mongodbUri: "mongodb://localhost:27017/uom_document",
-  neo4jUri: "bolt://localhost:7687",
-  neo4jPassword: "neo4jpassword",
-  daytonaTimeout: 300,
+  mssqlConnectionString: "Server=localhost,1333;Database=WideWorldImporters;User Id=uom_readonly;Password=Uomreadonly123;TrustServerCertificate=True",
+  mongodbUri: "mongodb://uom_readonly:uom_readonly@localhost:27027/uom",
+  neo4jUri: "neo4j://localhost:7697",
+  neo4jPassword: "password",
+  daytonaTimeout: 480,
 };
 
 interface ConfigModalProps {
@@ -90,16 +84,15 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-3xl bg-slate-900 border border-slate-800 text-slate-100 shadow-2xl p-0 overflow-hidden rounded-xl">
-        <div className="flex h-[550px]">
+      <DialogContent className="max-w-5xl bg-slate-900 border border-slate-800 text-slate-100 shadow-2xl p-0 overflow-auto rounded-xl w-[1500px] max-h-[90vh]">
+        <DialogTitle className="sr-only">Settings Hub</DialogTitle>
+        <DialogDescription className="sr-only">Configure settings for Universal Object Mapping</DialogDescription>
+        <div className="flex h-full w-full custom-scrollbar">
           {/* Sidebar Nav */}
           <div className="w-1/4 bg-slate-950 border-r border-slate-800/60 p-4 flex flex-col justify-between">
             <div className="space-y-1">
-              <div className="flex items-center gap-2 px-2 py-3 mb-2">
-                <div className="size-6 rounded-lg bg-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow-lg shadow-indigo-600/30">
-                  UOM
-                </div>
-                <span className="font-semibold text-sm tracking-wide text-indigo-400">Settings Hub</span>
+              <div className="text-center flex items-center justify-center px-2 py-4 mb-4 border-b border-slate-800/40">
+                <span className="font-bold text-sm tracking-tight bg-linear-to-r from-slate-100 to-indigo-200 bg-clip-text text-transparent">UOM Assistant</span>
               </div>
               
               <button
@@ -111,7 +104,7 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
                     : "text-slate-400 hover:bg-slate-900 hover:text-slate-200 border border-transparent"
                 }`}
               >
-                <BookOpen className="size-4" />
+                {/* <BookOpen className="size-6" /> */}
                 <span>Onboarding Guide</span>
               </button>
 
@@ -124,7 +117,7 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
                     : "text-slate-400 hover:bg-slate-900 hover:text-slate-200 border border-transparent"
                 }`}
               >
-                <Cpu className="size-4" />
+                {/* <Cpu className="size-6" /> */}
                 <span>LLM Settings</span>
               </button>
 
@@ -137,7 +130,7 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
                     : "text-slate-400 hover:bg-slate-900 hover:text-slate-200 border border-transparent"
                 }`}
               >
-                <Database className="size-4" />
+                {/* <Database className="size-6" /> */}
                 <span>Database URIs</span>
               </button>
 
@@ -150,7 +143,7 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
                     : "text-slate-400 hover:bg-slate-900 hover:text-slate-200 border border-transparent"
                 }`}
               >
-                <Terminal className="size-4" />
+                {/* <Terminal className="size-4" /> */}
                 <span>Daytona Sandbox</span>
               </button>
             </div>
@@ -171,10 +164,10 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
                 <div className="space-y-5">
                   <div>
                     <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
-                      <span>🚀 Getting Started with UOM</span>
+                      <span>Getting Started with UOM</span>
                     </h2>
                     <p className="text-slate-400 text-xs mt-1">
-                      Migrate Relational schema/queries to Spring Data MongoDB &amp; Neo4j.
+                      Migrate .NET ORM schema/queries to Java Spring Data ODM/OGM.
                     </p>
                   </div>
 
@@ -184,7 +177,7 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
                       <span>CRITICAL PREREQUISITE</span>
                     </div>
                     <p className="text-[11px] text-slate-300 leading-relaxed">
-                      Your database environments <strong>MUST be set up and running</strong> before the orchestrator can execute translations. The orchestrator connects directly to them to inspect schemas, build mapping rules, and run live query verification tests.
+                      Your database environments <strong>MUST be set up and running</strong> before the assistant can execute translations. The assistant connects directly to them to inspect schemas, build mapping rules, and run live queries.
                     </p>
                   </div>
 
@@ -205,6 +198,33 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
                         >
                           Repo <ExternalLink className="size-3" />
                         </a>
+                      </div>
+
+                      <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800/50 space-y-2">
+                        <span className="font-medium text-slate-200 block">MongoDB Relational Migrator</span>
+                        <span className="text-[10px] text-slate-400 block leading-relaxed">
+                          We utilize the official <strong>MongoDB Relational Migrator</strong>. Follow the documentation below to map and migrate between relational and MongoDB databases.
+                        </span>
+                        <a 
+                          href="https://www.mongodb.com/docs/relational-migrator/" 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold"
+                        >
+                          MongoDB Relational Migrator Docs <ExternalLink className="size-3" />
+                        </a>
+                        {/* TODO: Check the API healthcheck endpoint and render this dynamically */}
+                        <span className="text-[10px] text-slate-400 block leading-relaxed">
+                          <span className="font-bold">NOTE:</span> The relational migrator instance is already running at:
+                          <a 
+                            href="http://localhost:8091" 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold"
+                          >
+                            http://localhost:8091
+                          </a>
+                        </span>
                       </div>
 
                       <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800/50 space-y-2">
