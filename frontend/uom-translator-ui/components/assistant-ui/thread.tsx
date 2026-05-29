@@ -11,12 +11,12 @@ import {
   ReasoningText,
   ReasoningTrigger,
 } from "@/components/assistant-ui/reasoning";
+import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import {
   ToolGroupContent,
   ToolGroupRoot,
   ToolGroupTrigger,
 } from "@/components/assistant-ui/tool-group";
-import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -45,7 +45,7 @@ import {
   RefreshCwIcon,
   SquareIcon,
 } from "lucide-react";
-import { type FC, useState, useEffect } from "react";
+import { type FC, useEffect, useState } from "react";
 
 export const Thread: FC = () => {
   return (
@@ -86,11 +86,71 @@ export const Thread: FC = () => {
   );
 };
 
+const isStructuredLlmOutput = (text: string): boolean => {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (
+        (parsed.decision !== undefined && parsed.explanation !== undefined) ||
+        (parsed.source_schema_code !== undefined && parsed.source_target !== undefined) ||
+        (parsed.translated_schema_code !== undefined && parsed.translated_query_code !== undefined)
+      ) {
+        return true;
+      }
+    } catch (_) {}
+  }
+  return false;
+};
+
 const ThreadMessage: FC = () => {
   const role = useAuiState((s) => s.message.role);
   const isEditing = useAuiState((s) => s.message.composer.isEditing);
+  const content = useAuiState((s) => s.message.content);
+
+  const fullText = content
+    .filter((part) => part.type === "text")
+    .map((part) => (part as any).text || "")
+    .join("\n");
 
   if (isEditing) return <EditComposer />;
+
+  if (isStructuredLlmOutput(fullText)) {
+    return null; // Skip rendering raw JSON output message blocks entirely
+  }
+
+  const isIntermediate = isIntermediatePrompt(fullText);
+  if (isIntermediate) {
+    let promptTitle = "System Prompt";
+    const lowerText = fullText.toLowerCase();
+    if (lowerText.includes("commencing validation")) {
+      promptTitle = "Validation Stage Trigger";
+    } else if (lowerText.includes("commencing parallel validation")) {
+      promptTitle = "Parallel Query Validation Trigger";
+    } else if (lowerText.includes("commencing query equivalence")) {
+      promptTitle = "Query Equivalence Stage Trigger";
+    } else if (lowerText.includes("inspect the database schemas")) {
+      promptTitle = "Database Schema Inspector Prompt";
+    } else if (lowerText.includes("evaluate the following validation results")) {
+      promptTitle = "LLM Evaluation Prompt";
+    } else if (lowerText.includes("translate the following source code")) {
+      promptTitle = "Code Translation Prompt";
+    } else if (lowerText.includes("successfully extracted inputs")) {
+      promptTitle = "Extraction Stage Output";
+    } else if (lowerText.includes("analyze the following conversation")) {
+      promptTitle = "Extraction Prompt";
+    }
+
+    return (
+      <div className="px-2">
+        <CollapsiblePrompt title={promptTitle}>
+          {role === "user" ? <UserMessageContent /> : <AssistantMessageContent />}
+        </CollapsiblePrompt>
+      </div>
+    );
+  }
+
   if (role === "user") return <UserMessage />;
   return <AssistantMessage />;
 };
@@ -231,7 +291,7 @@ const isIntermediatePrompt = (text: string): boolean => {
     lower.includes("commencing query equivalence") ||
     lower.includes("inspect the database schemas") ||
     lower.includes("evaluate the following validation results") ||
-    lower.includes("analyze the following conversation and extract") ||
+    lower.includes("analyze the following conversation") ||
     lower.includes("database schema context") ||
     lower.includes("successfully extracted inputs") ||
     lower.includes("generated translation. commencing deterministic validation")
@@ -264,41 +324,16 @@ const CollapsiblePrompt: FC<{ title: string; children: React.ReactNode }> = ({ t
   );
 };
 
-const AssistantMessage: FC = () => {
-  // reserves space for action bar and compensates with `-mb` for consistent msg spacing
-  // keeps hovered action bar from shifting layout (autohide doesn't support absolute positioning well)
-  // for pt-[n] use -mb-[n + 6] & min-h-[n + 6] to preserve compensation
-  const ACTION_BAR_PT = "pt-1.5";
-  const ACTION_BAR_HEIGHT = `-mb-7.5 min-h-7.5 ${ACTION_BAR_PT}`;
+const UserMessageContent: FC = () => {
+  return (
+    <div className="aui-user-message-content wrap-break-word rounded-2xl bg-muted/40 px-4 py-2.5 text-foreground">
+      <MessagePrimitive.Parts />
+    </div>
+  );
+};
 
-  // Get message state content to check if it's an intermediate prompt
-  const content = useAuiState((s) => s.message.content);
-  const fullText = content
-    .filter((part) => part.type === "text")
-    .map((part) => (part as any).text || "")
-    .join("\n");
-
-  const isIntermediate = isIntermediatePrompt(fullText);
-
-  // Determine a clean title based on full text content
-  let promptTitle = "System Prompt";
-  if (fullText.toLowerCase().includes("commencing validation")) {
-    promptTitle = "Validation Stage Trigger";
-  } else if (fullText.toLowerCase().includes("commencing parallel validation")) {
-    promptTitle = "Parallel Query Validation Trigger";
-  } else if (fullText.toLowerCase().includes("commencing query equivalence")) {
-    promptTitle = "Query Equivalence Stage Trigger";
-  } else if (fullText.toLowerCase().includes("inspect the database schemas")) {
-    promptTitle = "Database Schema Inspector Prompt";
-  } else if (fullText.toLowerCase().includes("evaluate the following validation results")) {
-    promptTitle = "LLM Evaluation Prompt";
-  } else if (fullText.toLowerCase().includes("translate the following source code")) {
-    promptTitle = "Code Translation Prompt";
-  } else if (fullText.toLowerCase().includes("successfully extracted inputs")) {
-    promptTitle = "Extraction Stage Output";
-  }
-
-  const messageContent = (
+const AssistantMessageContent: FC = () => {
+  return (
     <div
       data-slot="aui_assistant-message-content"
       className="wrap-break-word px-2 text-foreground leading-relaxed"
@@ -348,6 +383,11 @@ const AssistantMessage: FC = () => {
       <MessageError />
     </div>
   );
+};
+
+const AssistantMessage: FC = () => {
+  const ACTION_BAR_PT = "pt-1.5";
+  const ACTION_BAR_HEIGHT = `-mb-7.5 min-h-7.5 ${ACTION_BAR_PT}`;
 
   return (
     <MessagePrimitive.Root
@@ -355,15 +395,7 @@ const AssistantMessage: FC = () => {
       data-role="assistant"
       className="fade-in slide-in-from-bottom-1 relative animate-in duration-150 [contain-intrinsic-size:auto_300px] [content-visibility:auto]"
     >
-      {isIntermediate ? (
-        <div className="px-2">
-          <CollapsiblePrompt title={promptTitle}>
-            {messageContent}
-          </CollapsiblePrompt>
-        </div>
-      ) : (
-        messageContent
-      )}
+      <AssistantMessageContent />
 
       <div
         data-slot="aui_assistant-message-footer"
