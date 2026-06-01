@@ -1,52 +1,21 @@
 "use client";
 
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import {
-  unstable_createLangGraphStream,
-  useLangGraphRuntime,
-  type LangChainMessage,
-} from "@assistant-ui/react-langgraph";
-import { useMemo } from "react";
-
+import { AssistantRuntimeProviderWrapper } from "@/components/assistant-ui/runtime/assistant-runtime-provider";
 import { Thread } from "@/components/assistant-ui/thread";
-import { createClient } from "@/lib/chatApi";
+import { ThreadListSidebar } from "@/components/assistant-ui/thread-list-sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 
-const ASSISTANT_ID = process.env.NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID || "universal-object-mapping-translator";
-
-export function Assistant() {
-  const client = useMemo(() => createClient(), []);
-  const stream = useMemo(
-    () =>
-      unstable_createLangGraphStream({
-        client,
-        assistantId: ASSISTANT_ID,
-        streamMode: ["messages", "updates", "tools", "custom"]
-      }),
-    [client],
-  );
-
-  const runtime = useLangGraphRuntime({
-    unstable_allowCancellation: true,
-    stream,
-    create: async () => {
-      const { thread_id } = await client.threads.create();
-      return { externalId: thread_id };
-    },
-    load: async (externalId) => {
-      const state = await client.threads.getState<{
-        messages: LangChainMessage[];
-      }>(externalId);
-      return {
-        messages: state.values.messages,
-        interrupts: state.tasks[0]?.interrupts,
-      };
-    },
-  });
-
+export function Assistant({ inputData }: { inputData: { inputSuggestions: any } }) {
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      {/* <DevToolsModal /> */}
-      <Thread />
-    </AssistantRuntimeProvider>
+    <AssistantRuntimeProviderWrapper inputSuggestions={inputData.inputSuggestions}>
+      <SidebarProvider defaultOpen>
+        <div className="flex h-dvh w-full">
+          <ThreadListSidebar />
+          <div className="flex-1 flex flex-col min-w-0">
+            <Thread />
+          </div>
+        </div>
+      </SidebarProvider>
+    </AssistantRuntimeProviderWrapper>
   );
 }
