@@ -12,9 +12,10 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { MessagesSquare, Settings } from "lucide-react";
+import { FolderGit, Settings } from "lucide-react";
 import type * as React from "react";
 import { useState } from "react";
+import { ConfigModal } from "../config-modal";
 import { IdeLink } from "../ide-link";
 
 export function ThreadListSidebar({
@@ -35,11 +36,11 @@ export function ThreadListSidebar({
                   rel="noopener noreferrer"
                 >
                   <div className="aui-sidebar-header-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                    <MessagesSquare className="aui-sidebar-header-icon size-4" />
+                    <FolderGit className="aui-sidebar-header-icon size-5" />
                   </div>
                   <div className="aui-sidebar-header-heading me-6 flex flex-col gap-0.5 leading-none">
                     <span className="aui-sidebar-header-title font-semibold">
-                      Universal Object Mapping Assistant
+                      UOM Assistant
                     </span>
                   </div>
                 </a>
@@ -55,7 +56,7 @@ export function ThreadListSidebar({
       <SidebarFooter className="aui-sidebar-footer border-t">
         <SidebarMenu>
           <SidebarMenuItem>
-            <IdeLink graphState={{}} />
+            <IdeLink />
           </SidebarMenuItem>
           {/* <SidebarMenuItem>
             <DropdownMenu>
@@ -73,9 +74,17 @@ export function ThreadListSidebar({
             </DropdownMenu>
           </SidebarMenuItem> */}
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild variant="outline" onClick={() => setIsConfigOpen(true)}>
-              <Settings className="size-3.5" />
-              Settings
+            <SidebarMenuButton size="lg" asChild onClick={() => setIsConfigOpen(true)}>
+              <div>
+                <div className="aui-sidebar-footer-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+                  <Settings className="aui-sidebar-footer-icon size-4" />
+                </div>
+                <div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none">
+                  <span className="aui-sidebar-footer-title font-semibold">
+                    Settings
+                  </span>
+                </div>
+              </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
@@ -99,6 +108,11 @@ export function ThreadListSidebar({
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+      <ConfigModal
+        isOpen={isConfigOpen}
+        onClose={() => setIsConfigOpen(false)}
+        onSave={() => setIsConfigOpen(false)}
+      />
     </Sidebar>
   );
 }

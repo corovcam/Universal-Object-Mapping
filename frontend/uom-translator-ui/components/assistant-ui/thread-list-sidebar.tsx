@@ -1,12 +1,12 @@
 "use client";
 
-import type { FC } from "react";
-import { ThreadList } from "./thread-list";
 import { ConfigModal } from "@/components/config-modal";
 import { IdeLink } from "@/components/ide-link";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Settings, FolderGit } from "lucide-react";
+import { FolderGit, Settings } from "lucide-react";
+import type { FC } from "react";
+import { useState } from "react";
+import { ThreadList } from "./thread-list";
 
 export const ThreadListSidebar: FC = () => {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -28,7 +28,7 @@ export const ThreadListSidebar: FC = () => {
 
       {/* Footer: Settings + IDE Link */}
       <div className="flex flex-col gap-2 border-t p-3">
-        <IdeLink graphState={{}} />
+        <IdeLink />
         <Button
           variant="outline"
           size="sm"
