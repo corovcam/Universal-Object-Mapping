@@ -32,11 +32,11 @@ dependencies = [
     "redis>=7.4.0",
     "langchain-redis>=0.2.5",
     "langchain-community>=0.4.1",
-    "langgraphics>=0.1.0b3",
-    "langgraph-api>=0.8.7",
+    "langgraph-api>=0.9.0",
     "structlog>=25.5.0",
     "deepagents-acp>=0.0.6",
     "langchain-daytona>=0.0.6",
+    "langgraphics>=0.1.0b3",
 ]
 # external-dependencies = [
 #     "pkg:generic/node@24",
@@ -62,6 +62,9 @@ test = [
     "aimock-pytest>=0.4.0",
     "langgraph-sdk>=0.3.14",
 ]
+
+[tool.uv.sources]
+langgraphics = { path = "../../external/langgraphics", editable = true }
 
 [build-system]
 requires = ["setuptools>=73.0.0", "wheel"]

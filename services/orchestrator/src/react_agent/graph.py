@@ -3,7 +3,6 @@
 # ty:ignore[invalid-type-form]
 
 """Define the Universal Object Mapping orchestrator graph."""
-
 import asyncio
 import json
 import logging
@@ -12,7 +11,6 @@ from typing import Any, Awaitable, Callable, Literal, Union, cast
 
 import logfire
 import orjson
-import structlog
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
@@ -31,6 +29,9 @@ from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
 from langgraph.types import CachePolicy, Command, RetryPolicy, interrupt
+from langgraphics import connect_server
+from langgraphics.server import connect_server_sync, connect_to_langgraphics_server
+from langgraphics.watch import create_langgraphics_watcher
 from pydantic import BaseModel, Field, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
@@ -1370,5 +1371,13 @@ graph = builder.compile(
     cache=node_cache,
     # debug=True if os.getenv("DEVELOPMENT") else False,
 )
+
+# if (os.getenv("LANGGRAPHICS_ENABLED", False)):
+#     server = connect_server_sync()
+#     langgraphics_watcher = create_langgraphics_watcher(builder, server=server)
+#     if server is not None and langgraphics_watcher is not None:
+#         graph = graph.with_config({ "callbacks": [langgraphics_watcher] })
+#     else:
+#         logger.warning("Failed to connect to LangGraphics server. Running without callbacks.")
 
 # logger.info(graph.get_graph().draw_mermaid())

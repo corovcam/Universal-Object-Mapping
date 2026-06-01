@@ -25,11 +25,14 @@ install:
 	./scripts/install_logdy.sh
 
 dev:
-	langgraph dev --allow-blocking --n-jobs-per-worker 20
+	uv run langgraph dev --allow-blocking --n-jobs-per-worker 20
 
 debug:
-	langgraph dev --debug-port 5678 --wait-for-client --allow-blocking --n-jobs-per-worker 20
+	uv run langgraph dev --debug-port 5678 --wait-for-client --allow-blocking --n-jobs-per-worker 20
 endif
+
+langgraphics:
+	uv run langgraphics-server
 
 mock_server:
 	npx -p @copilotkit/aimock --config aimock.json --port 4010
