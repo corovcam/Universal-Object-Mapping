@@ -121,6 +121,8 @@ FRAMEWORK_TO_NORMALIZED_NAME = {
     FrameworkEnum.JAVA_SPRING_DATA_MONGODB: "java_spring_data_mongodb",
     FrameworkEnum.JAVA_SPRING_DATA_NEO4J: "java_spring_data_neo4j",
 }
+"""Mapping used to normalize enum representations into simple snake_case strings
+suitable for LLM prompt injections and JSON keys."""
 
 NORMALIZED_FRAMEWORK_TO_FRAMEWORK = {
     "dotnet_efcore": FrameworkEnum.DOTNET_EFCORE,
@@ -129,6 +131,7 @@ NORMALIZED_FRAMEWORK_TO_FRAMEWORK = {
     "java_spring_data_mongodb": FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
     "java_spring_data_neo4j": FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
 }
+"""Mapping from normalized snake_case strings back to the original FrameworkEnum representations."""
 
 FRAMEWORK_TO_SNIPPET_FILES = {
     FrameworkEnum.DOTNET_EFCORE: (
@@ -152,6 +155,7 @@ FRAMEWORK_TO_SNIPPET_FILES = {
         "Neo4jQueryEntrypoint.java",
     ),
 }
+"""Mapping of framework types to their corresponding schema and query snippet file names."""
 
 FRAMEWORK_TO_CONFIG_FILES = {
     FrameworkEnum.DOTNET_EFCORE: "efcore-sandbox.csproj",
@@ -160,12 +164,20 @@ FRAMEWORK_TO_CONFIG_FILES = {
     FrameworkEnum.JAVA_SPRING_DATA_MONGODB: "mongo-pom.xml",
     FrameworkEnum.JAVA_SPRING_DATA_NEO4J: "neo4j-pom.xml",
 }
+"""Mapping of framework types to their respective project configuration file names (e.g., .csproj, pom.xml)."""
 
 MODEL_PROFILE_CACHE: dict[str, dict] = {}
+"""A global, static cache used to store LLM ModelProfile capabilities (like max token counts)
+to avoid repetitively querying the AI Gateway or specific LLM endpoints."""
 
 MAX_EXTRACTION_LOOPS = 3
+"""The maximum number of retry loops the graph will allow when the LLM fails to 
+correctly extract schema or query code from the user's initial prompt."""
 
 MAX_TRANSLATION_LOOPS = 3
+"""The maximum number of retry loops the graph will allow for compiling/validating
+the translated code in the sandboxes before finally failing."""
+
 
 GENERAL_SANDBOX_README = """# Universal Object Mapping - Sandbox Environment
 
@@ -191,6 +203,8 @@ Navigate to the specific folder to see the generated code, configuration, and ex
 - [Daytona Documentation](https://www.daytona.io/docs)
 - [Universal Object Mapping Overview](https://github.com/corovcam/Universal-Object-Mapping)
 """
+"""The generic README file injected into all generated Validation Sandboxes.
+It provides connection strings and URLs dynamically substituted via str.format()."""
 
 DOTNET_EFCORE_SANDBOX_README = """# .NET Entity Framework Core Sandbox
 

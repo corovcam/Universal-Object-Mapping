@@ -62,6 +62,8 @@ def _extract_mongodb_property_mappings(fields_payload: Any) -> list[dict[str, An
         target = field_payload_dict.get("target")
         if not isinstance(source, dict) or not isinstance(target, dict):
             continue
+        
+        # If the target field explicitly signals that it's excluded from translation, skip it.
         if target.get("included") is False:
             continue
 
@@ -220,11 +222,13 @@ def _extract_column_names_in_order(column_payload: Any) -> list[str]:
             seen_names.add(column_name)
             extracted_names.append(column_name)
 
+        # Walk through the base columns and recursively walk into nested JSON or linked columns.
         nested_columns = column.get("columns")
         if isinstance(nested_columns, list):
             for nested_column in nested_columns:
                 _walk_column(nested_column)
 
+        # Cross-reference traversal (e.g., following a foreign key).
         referenced_column = column.get("referenced-column")
         if isinstance(referenced_column, dict):
             _walk_column(referenced_column)
@@ -578,10 +582,15 @@ def _extract_neo4j_standalone_mapping(
                 ),
             )
 
+        # We map Node labels strictly by scanning for 'Id' fields that specify an `id-space` inside Neo4j mappings.
+        # This acts as an alternative identifier if the Neo4j Node label isn't directly the table name.
         node_id_space = _extract_node_id_space(mapping_entries)
         if node_id_space:
             id_space_to_entity[node_id_space.lower()] = node_label
 
+    # Secondary pass over Relationships (edges).
+    # We do this in a second loop because Relationship mappings need to reference 
+    # the nodes that we just resolved via `id_space_to_entity`.
     relationships: dict[str, list[dict[str, Any]]] = {}
 
     for graph_object in mapping_payload:

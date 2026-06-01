@@ -27,8 +27,13 @@ async def search(query: str) -> dict[str, Any] | None:
     to provide comprehensive, accurate, and trusted results. It's particularly useful
     for answering questions about current events.
     """
+    # We inject the LangGraph runtime to dynamically fetch configuration settings, 
+    # such as the max_search_results parameter set by the user or the environment.
     runtime = get_runtime(Context)
     wrapped = TavilySearch(max_results=runtime.context.max_search_results)
+    
+    # We cast to dict[str, Any] to explicitly satisfy the type-checker, as Tavily's
+    # ainvoke can theoretically return arbitrary structures depending on the LangChain version.
     return cast(dict[str, Any], await wrapped.ainvoke({"query": query}))
 
 
