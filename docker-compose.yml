@@ -4,6 +4,20 @@ include:
       - ./services/orchestrator/docker-compose.yml
       - ./docker-compose.langgraph.override.yml
 services:
+  frontend:
+    build:
+      context: ./frontend/uom-translator-ui
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      LANGGRAPH_API_URL: "http://langgraph-api:8000"
+    ports:
+      - "${FRONTEND_PORT}:3000"
+    restart: unless-stopped
+    networks:
+      - default
+      - uom
+
   ollama-autossh-tunnel:
     image: jnovack/autossh:2.1.0
     environment:
@@ -179,15 +193,15 @@ services:
       - default
       - uom
 
-  portainer:
-    container_name: portainer
-    image: portainer/portainer-ce:lts
-    restart: always
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    ports:
-      - 9443:9443
+  # portainer:
+  #   container_name: portainer
+  #   image: portainer/portainer-ce:lts
+  #   restart: always
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - portainer_data:/data
+  #   ports:
+  #     - 9443:9443
   
   # code-server:
   #   image: lscr.io/linuxserver/code-server:latest

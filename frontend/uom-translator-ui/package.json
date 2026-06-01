@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently --names frontend,backend,aimock 'pnpm run dev:frontend' 'cd ../../services/orchestrator && make dev' 'cd ../../services/orchestrator && make record_requests'",
+    "dev": "concurrently --names frontend,backend,aimock 'pnpm run dev:frontend' 'cd ../../services/orchestrator && bash .envrc && make dev' 'cd ../../services/orchestrator && make record_requests'",
     "dev:frontend": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
