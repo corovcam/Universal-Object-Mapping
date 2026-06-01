@@ -51,9 +51,10 @@ dev = [
     "anyio>=4.13.0",
     "debugpy>=1.8.20",
     "langgraph-cli[inmem]>=0.4.24",
+    "pdoc>=16.0.0",
     "ruff>=0.15.13",
     "ty>=0.0.34",
-    {include-group = "test"}
+    {include-group = "test"},
 ]
 test = [
     "pytest>=9.0.3",
@@ -102,14 +103,8 @@ lint.ignore = [
     "UP007",
     # We actually do want to import from typing_extensions
     "UP035",
-    # Relax the convention by _not_ requiring documentation for every function parameter.
-    "D417",
     "E501",
     "D401",
-    "D106",
-    "D107",
-    "D101",
-    "D102",
     "F841",
 ]
 [tool.ruff.lint.per-file-ignores]

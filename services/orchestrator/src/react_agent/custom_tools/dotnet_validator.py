@@ -42,6 +42,13 @@ logger = logging.getLogger(__name__)
 
 
 class DotnetValidationInput(BaseModel):
+    """Pydantic input model for specifying .NET validation parameters.
+
+    Attributes:
+        source_code: The C# source code (either schema mapping or query) to compile and run.
+        framework: The specific .NET target framework (e.g., EF Core, Dapper, NHibernate).
+    """
+
     source_code: str = Field(description="The C# code to validate.")
     framework: DotnetFramework = Field(description="The target .NET framework.")
 

@@ -119,6 +119,18 @@ async def configurable_model(
     request: ModelRequest[Context],
     handler: Callable[[ModelRequest[Context]], ModelResponse],
 ) -> ModelResponse:
+    """A wrapper middleware for deepagents model calls that dynamically configures the target ChatModel.
+
+    It extracts the provider/model string from the runtime context, configures OpenAI/Ollama settings,
+    loads the correct chat model, and forwards the overridden request.
+
+    Args:
+        request: The dynamic model invocation request containing context.
+        handler: The downstream handler callable to execute the model call.
+
+    Returns:
+        ModelResponse: The generated response from the configured model.
+    """
     logger.debug(f"request: {request.__dict__}")
     model_name = request.runtime.context.model
     config = {
@@ -181,6 +193,19 @@ def build_deep_agent(
     checkpointer: Checkpointer | None = None,
     context: AgentSessionContext | None = None
 ):
+    """Build and assemble the DeepAgent workspace graph, wrapping it with specialized sub-agents and tools.
+
+    Args:
+        model: The base language model to use for core agent reasoning.
+        dotnet_sandbox: Pre-allocated Daytona sandbox instance for C# compilation.
+        java_sandbox: Pre-allocated Daytona sandbox instance for Java Maven compilation.
+        extra_middleware: Optional list of additional middleware handlers to register.
+        checkpointer: Optional persistence checkpointer for the graph's execution state.
+        context: Optional agent session context containing custom rules and current mode.
+
+    Returns:
+        DeepAgent: The constructed and compiled DeepAgent workspace graph instance.
+    """
     load_dotenv(find_dotenv(".env.dev" if os.getenv("DEVELOPMENT") else ".env"))
     logger.debug(f"ENV: {os.environ}")
     

@@ -34,10 +34,20 @@ logger = logging.getLogger(__name__)
 
 
 def get_context_dir() -> str:
+    """Retrieve the absolute path to the local context directory.
+
+    Returns:
+        str: Absolute folder path.
+    """
     return os.path.join(os.path.dirname(__file__), "..", "..", "context")
 
 
 def get_config_dir() -> str:
+    """Retrieve the absolute path to the local configuration directory.
+
+    Returns:
+        str: Absolute folder path.
+    """
     return os.path.join(os.path.dirname(__file__), "..", "..", "config")
 
 

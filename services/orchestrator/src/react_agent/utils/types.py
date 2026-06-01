@@ -1,3 +1,5 @@
+"""Type definitions and aliases used across the UOM orchestrator service."""
+
 from typing import Any, Literal
 
 from react_agent.constants import (

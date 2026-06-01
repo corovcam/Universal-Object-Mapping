@@ -56,6 +56,8 @@ app = FastAPI(lifespan=lifespan)
 
 
 class NormalizedFramework(StrEnum):
+    """Enumeration of standardized framework identifier strings used in HTTP requests/responses."""
+
     DOTNET_EFCORE = "dotnet_efcore"
     DOTNET_DAPPER = "dotnet_dapper"
     DOTNET_NHIBERNATE = "dotnet_nhibernate"
@@ -64,6 +66,14 @@ class NormalizedFramework(StrEnum):
 
 
 class SshAccessResponse(BaseModel):
+    """Pydantic model representing connection details for SSH access to an active Daytona sandbox.
+
+    Attributes:
+        sandbox_id: The unique identifier of the sandbox container.
+        token: Access token for authenticating with the Daytona API/CLI.
+        ssh_command: Pre-formatted SSH connection command for direct shell access.
+    """
+
     sandbox_id: str
     token: str
     ssh_command: str

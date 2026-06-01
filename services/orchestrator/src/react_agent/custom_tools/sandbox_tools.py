@@ -119,6 +119,7 @@ async def download_file_from_sandbox(
     Args:
         sandbox_type: The target service name (e.g., 'dotnet-service' or 'java-service').
         remote_path: The absolute path to the remote file to read.
+        runtime: The LangChain tool runtime injected into the tool execution context.
 
     Returns:
         The content of the file as a string.

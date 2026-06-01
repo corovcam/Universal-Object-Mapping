@@ -110,6 +110,11 @@ class ExtractionOutput(BaseModel):
 
     @model_validator(mode="after")
     def join_lists(self):
+        """Clean and normalize the fields after validation by joining list inputs into single strings.
+
+        Returns:
+            BaseExtractionOutput: The validated and normalized model instance.
+        """
         if isinstance(self.source_schema_code, list):
             self.source_schema_code = "\n".join(self.source_schema_code)
         if isinstance(self.source_query_code, list):
@@ -167,6 +172,14 @@ class BaseTranslationOutput(BaseModel):
 
     @model_validator(mode="after")
     def check_entrypoint_names(self):
+        """Clean, normalize, and validate that the entrypoint class names exist in the generated harness code.
+
+        Returns:
+            BaseTranslationOutput: The validated and normalized model instance.
+
+        Raises:
+            ValueError: If the entrypoint type name is missing from the harness/schema code.
+        """
         # First, join any list fields into strings
         if isinstance(self.translated_schema_code, list):
             self.translated_schema_code = "\n".join(self.translated_schema_code)
@@ -767,6 +780,13 @@ Source Code:
 
 
 class HumanInterventionResponse(BaseModel):
+    """Pydantic model representing the feedback and decision from a human-in-the-loop intervention.
+
+    Attributes:
+        decision: The logical decision, either "accept" to commit the translation or "reject" to loop back with feedback.
+        feedback: Text description or critique describing necessary adjustments.
+    """
+
     decision: Literal["accept", "reject"]
     feedback: str
 
@@ -1071,6 +1091,13 @@ def route_post_query_validation(
 
 
 class EvaluationOutput(BaseModel):
+    """Pydantic model representing the LLM evaluation outcome for translation acceptance.
+
+    Attributes:
+        decision: The logical decision, either ACCEPT to complete the process or REJECT to loop back for correction.
+        explanation: Detailed textual reasoning explaining the decision, citing specific equivalence or compiler errors.
+    """
+
     decision: Literal["ACCEPT", "REJECT"] = Field(
         description="Decision whether to accept or reject the translation."
     )

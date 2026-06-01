@@ -20,6 +20,8 @@ logger = structlog.stdlib.get_logger()
 
 
 class ValidationSandbox:
+    """Manager class for Daytona validation sandboxes, tracking active containers and building runtime environment snapshots."""
+
     SANDBOXES: dict[SandboxType, AsyncSandbox] = {}
     
     DAYTONA_SANDBOX_IMAGES: dict[SandboxType, Image] = {
@@ -38,6 +40,17 @@ class ValidationSandbox:
     
     @staticmethod
     async def get_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, stream_writer: Callable[[Any], None], env_vars: dict[str, Any] | None = None) -> AsyncSandbox:
+        """Retrieve or create an active validation sandbox, ensuring that the base environment snapshot is loaded.
+
+        Args:
+            daytona: The AsyncDaytona API client instance.
+            sandbox_type: The type of sandbox runtime container needed (.NET or Java).
+            stream_writer: Callback to stream snapshot compilation and startup progress events back to client.
+            env_vars: Optional dictionary of environment variables to inject into the sandbox.
+
+        Returns:
+            AsyncSandbox: The active, fully initialized AsyncSandbox container.
+        """
         await ValidationSandbox.create_snapshot(daytona, sandbox_type, stream_writer)
         await ValidationSandbox.create_validation_sandbox(daytona, sandbox_type, env_vars)
         return ValidationSandbox.SANDBOXES[sandbox_type]

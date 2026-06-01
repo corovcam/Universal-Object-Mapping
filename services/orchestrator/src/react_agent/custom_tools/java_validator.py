@@ -41,6 +41,14 @@ logger = logging.getLogger(__name__)
 
 
 class JavaValidationInput(BaseModel):
+    """Pydantic input model for specifying Java validation parameters.
+
+    Attributes:
+        source_code: The Java source code (either schema mapping or query) to compile and run.
+        framework: The specific Java target framework (e.g., Spring Data MongoDB, Spring Data Neo4j).
+        entry_type_name: The public class name of the entry point declared in the source code.
+    """
+
     source_code: str = Field(
         min_length=1, description="The Java source code to compile and validate."
     )

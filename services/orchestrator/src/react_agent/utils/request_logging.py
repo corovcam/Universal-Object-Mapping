@@ -252,10 +252,17 @@ class LoggingCallbackHandler(BaseCallbackHandler):
 
 
 class LLMRequestLogger:
+    """Logger utility to capture and store detailed HTTP requests and responses to/from LLMs.
+
+    It creates structured JSON log files containing full request/response headers, bodies,
+    methods, and status codes for analysis and troubleshooting.
+    """
+
     timestamp = TIMESTAMP
     logger = logging.getLogger("LLMRequestLogger")
 
     def __init__(self):
+        """Initialize the logger, create the log directory, and register a file handler with JSON formatting."""
         os.makedirs(f"logs/{self.timestamp}", exist_ok=True)
         handler = logging.FileHandler(
             f"logs/{self.timestamp}/request_logging_{self.timestamp}.log"
@@ -268,6 +275,11 @@ class LLMRequestLogger:
         self.logger.debug(f"Initialized {self.logger.name}.")
 
     def log_request(self, request: httpx.Request):
+        """Log structured details of an outgoing HTTP request.
+
+        Args:
+            request: The outgoing httpx.Request instance.
+        """
         self.logger.debug(
             f"Request: {request.method} {request.url}",
             extra={
@@ -281,6 +293,11 @@ class LLMRequestLogger:
         )
 
     def log_response(self, response: httpx.Response):
+        """Log structured details of an incoming HTTP response along with its original request.
+
+        Args:
+            response: The incoming httpx.Response instance.
+        """
         request = response.request
         self.logger.debug(
             f"Response: {request.method} {request.url} - {response.status_code}",
@@ -301,28 +318,58 @@ class LLMRequestLogger:
         )
 
     class LogRequest(httpx.Request):
+        """Custom wrapper for httpx.Request that hooks initialization to log request details immediately."""
+
         def __init__(self, *args, **kwargs):
+            """Initialize the request wrapper and log request method, URL, headers, and body."""
             super().__init__(*args, **kwargs)
             LLMRequestLogger.logger.debug(
                 f"Request: {self.method} {self.url} - Headers: {self.headers} - Body: {self.content}"
             )
 
     class LogResponse(httpx.Response):
+        """Custom wrapper for httpx.Response to intercept and optionally log streamed bytes."""
+
         def iter_bytes(self, *args, **kwargs):
+            """Iterate over response bytes synchronously, yielding each chunk.
+
+            Yields:
+                bytes: Chunks of the response body.
+            """
             for chunk in super().iter_bytes(*args, **kwargs):  # noqa: UP028
                 # LLMRequestLogger.logger.debug(chunk)
                 yield chunk
 
         async def aiter_bytes(self, *args, **kwargs):
+            """Iterate over response bytes asynchronously, yielding each chunk.
+
+            Yields:
+                bytes: Chunks of the response body.
+            """
             async for chunk in super().aiter_bytes(*args, **kwargs):
                 # LLMRequestLogger.logger.debug(chunk)
                 yield chunk
 
     class LogTransport(httpx.BaseTransport):
+        """Custom synchronous HTTP transport wrapper to intercept and wrap responses in LogResponse."""
+
         def __init__(self, transport: httpx.BaseTransport):
+            """Initialize the synchronous transport wrapper.
+
+            Args:
+                transport: The underlying httpx.BaseTransport instance to wrap.
+            """
             self.transport = transport
 
         def handle_request(self, request: httpx.Request) -> httpx.Response:
+            """Synchronously handle an HTTP request and wrap the resulting response in LogResponse.
+
+            Args:
+                request: The outgoing HTTP request.
+
+            Returns:
+                httpx.Response: The logged HTTP response.
+            """
             response = self.transport.handle_request(request)
 
             return LLMRequestLogger.LogResponse(
@@ -333,10 +380,25 @@ class LLMRequestLogger:
             )
 
     class AsyncLogTransport(httpx.AsyncBaseTransport):
+        """Custom asynchronous HTTP transport wrapper to intercept and wrap responses in LogResponse."""
+
         def __init__(self, transport: httpx.AsyncBaseTransport):
+            """Initialize the asynchronous transport wrapper.
+
+            Args:
+                transport: The underlying httpx.AsyncBaseTransport instance to wrap.
+            """
             self.transport = transport
 
         async def handle_async_request(self, request: httpx.Request):
+            """Asynchronously handle an HTTP request and wrap the resulting response in LogResponse.
+
+            Args:
+                request: The outgoing HTTP request.
+
+            Returns:
+                httpx.Response: The logged HTTP response.
+            """
             response = await self.transport.handle_async_request(request)
 
             return LLMRequestLogger.LogResponse(

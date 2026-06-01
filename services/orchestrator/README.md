@@ -39,3 +39,13 @@ The workflow consists of:
 - Formatting & Linting: `make format` and `make lint`
 
 See `GEMINI.md` for AI agent instructions and conventions.
+
+## Documentation
+
+The UOM Orchestrator is fully documented using high-quality Google-style docstrings for all modules, classes, and functions. A modern documentation server is integrated out-of-the-box.
+
+To run the interactive documentation server with live-reloading and client-side search:
+```bash
+uv run pdoc src
+```
+Once running, navigate your web browser to `http://localhost:8080` to search and browse the detailed module documentation automatically compiled from docstrings.

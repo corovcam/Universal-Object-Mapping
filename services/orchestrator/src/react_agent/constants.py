@@ -48,6 +48,8 @@ class AvailableModel(str, Enum):
 
 
 class TranslationType(str, Enum):
+    """The type of translation being requested (schema only, query only, or both)."""
+
     SCHEMA = "schema"
     QUERY = "query"
     BOTH = "both"
@@ -64,33 +66,45 @@ class FrameworkEnum(str, Enum):
 
 
 class DotnetFramework(str, Enum):
+    """Supported C#/.NET database frameworks for translation source."""
+
     DOTNET_EFCORE = FrameworkEnum.DOTNET_EFCORE.value
     DOTNET_DAPPER = FrameworkEnum.DOTNET_DAPPER.value
     DOTNET_NHIBERNATE = FrameworkEnum.DOTNET_NHIBERNATE.value
 
 
 class JavaFramework(str, Enum):
+    """Supported Java database frameworks for translation targets."""
+
     JAVA_SPRING_DATA_MONGODB = FrameworkEnum.JAVA_SPRING_DATA_MONGODB.value
     JAVA_SPRING_DATA_NEO4J = FrameworkEnum.JAVA_SPRING_DATA_NEO4J.value
 
 
 class SourceFramework(str, Enum):
+    """Supported source frameworks for translating queries/schemas (relational C#/.NET)."""
+
     DOTNET_EFCORE = FrameworkEnum.DOTNET_EFCORE.value
     DOTNET_DAPPER = FrameworkEnum.DOTNET_DAPPER.value
     DOTNET_NHIBERNATE = FrameworkEnum.DOTNET_NHIBERNATE.value
 
 
 class TargetFramework(str, Enum):
+    """Supported target database frameworks for migration (Java MongoDB/Neo4j)."""
+
     JAVA_SPRING_DATA_MONGODB = FrameworkEnum.JAVA_SPRING_DATA_MONGODB.value
     JAVA_SPRING_DATA_NEO4J = FrameworkEnum.JAVA_SPRING_DATA_NEO4J.value
 
 
 class SandboxType(str, Enum):
+    """Supported Daytona validation sandbox types representing isolated runtime environments."""
+
     DOTNET_10_SANDBOX = "dotnet-10-sandbox"
     JAVA_25_SANDBOX = "java-25-sandbox"
-    
+
 
 class LanggraphCustomEventKeys(str, Enum):
+    """Keys representing custom execution events sent to the LangGraph client for UI streaming."""
+
     DOTNET_SANDBOX_SNAPSHOT_CREATION = "dotnet_sandbox_snapshot_creation"
     JAVA_SANDBOX_SNAPSHOT_CREATION = "java_sandbox_snapshot_creation"
     DOTNET_SANDBOX_COMMAND_EXECUTION_STDOUT = "dotnet_sandbox_command_execution_stdout"
