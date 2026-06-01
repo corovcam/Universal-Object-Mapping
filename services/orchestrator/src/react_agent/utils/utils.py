@@ -69,6 +69,8 @@ def extract_mssql_connection_info(
         ValueError: If the connection string format is invalid or cannot be parsed.
     """
     # e.g. "Server=host.docker.internal,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
+    # We use a strict regex grouping because different connection strings might omit the trailing semicolon, 
+    # or include additional arbitrary parameters (like TrustServerCertificate) that we don't need for the toolbox payload.
     pattern = re.compile(
         r"Server=(?P<host>[^,;]+),(?P<port>\d+);Database=(?P<database>[^;]+);User Id=(?P<user>[^;]+);Password=(?P<password>[^;]+);?"
     )
@@ -344,6 +346,8 @@ async def load_chat_model(
         # Check static cache
         cache_file = os.path.join(get_config_dir(), "model_profiles.json")
 
+        # Because probing the AI Gateway or specific LLM endpoints for capability profiles (like max context window)
+        # introduces severe startup latency, we cache the profiles locally as JSON on the first successful hit.
         if not MODEL_PROFILE_CACHE:
             try:
                 async with aiofiles.open(cache_file, "rb") as f:

@@ -94,6 +94,7 @@ async def compile_and_run_dotnet(
 
     configurable = runtime.config.get("configurable", {}) if runtime.config else {}
 
+    # We generate a unique sandbox directory per invocation to avoid collisions if validations run concurrently.
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     normalized_name = FRAMEWORK_TO_NORMALIZED_NAME[framework_type]
     thread_id = (
@@ -222,6 +223,8 @@ cd "{sandbox_dir}"
         logger.error("Dotnet sandbox execution failed", exc_info=True)
         raise RuntimeError(f"[Error] Dotnet sandbox execution failed: {e}") from e
 
+    # Parse the sandbox shell output in reverse to find the very last JSON_PATH variable exported.
+    # This ensures we get the most recently generated results file, bypassing any previous leftover logs.
     json_path_line = next(
         (
             line
@@ -302,6 +305,9 @@ async def validate_dotnet_code(
         ):
             side = "target"
 
+        # We determine whether these results belong to the source or target framework
+        # either by strictly comparing the executed code payload against the state strings,
+        # or by checking the specific `tool_call_id` injected during `prep_query_validation`.
         tool_call_id = (
             getattr(runtime, "tool_call_id", None)
             or (

@@ -123,13 +123,55 @@ class State(InputState, OutputState):
 
     # Core variables
     source_validation_entry_type_name: str | None = field(default=None)
+    """
+    The entrypoint class name for running source validation, extracted from `source_validation_schema_code`.
+    This name is used by the sandbox execution tool to locate the correct class to instantiate and run.
+    """
     target_validation_entry_type_name: str | None = field(default=None)
+    """
+    The entrypoint class name for running target validation, extracted from `target_validation_schema_code`.
+    This name is used by the sandbox execution tool to locate the correct class to instantiate and run.
+    """
     source_query_validation_results: QueryValidationResults | None = field(default=None)
+    """
+    The raw JSON results from executing the source framework's query harness in the sandbox.
+    Contains entity data and raw outputs.
+    """
     target_query_validation_results: QueryValidationResults | None = field(default=None)
+    """
+    The raw JSON results from executing the target framework's query harness in the sandbox.
+    Contains entity data and raw outputs.
+    """
     query_equivalence_deep_diffs: dict[str, QueryEquivalenceDeepDiff] | None = field(default=None)
+    """
+    Stores the differential analysis between source and target query outputs.
+    If the graph detects semantic drift, it stores entity-level diffs here to help the LLM debug and subsequent auto/manual evaluation.
+    """
+
     schema_context: str = field(default="")
+    """
+    Used to hold large schema metadata extracted from the database via MCP tools.
+    We store this outside of 'messages' to prevent the main chat history from blowing up context windows.
+    """
+    
     translation_messages: Annotated[Sequence[AnyMessage], add_messages] = field(
         default_factory=list
     )
+    """
+    An isolated sub-graph message list. 
+    The LangGraph translation cycle can get very noisy with sandbox compile errors and retries.
+    By separating this from `messages`, the core reasoning loop doesn't get distracted by iterative trial-and-error logs.
+    """
+    
+
     extraction_loop_count: int = field(default=0)
+    """
+    Track the number of times we've looped through the extraction node 
+    to prevent infinite recursion if the LLM fundamentally fails to parse user intent.
+    """
+    
     translation_loop_count: int = field(default=0)
+    """
+    Track the number of times we've retried a translation after sandbox failures or deepdiff failures.
+    The graph uses this to branch to `human_intervention_node` if it exceeds the limit (e.g., > 3).
+    """

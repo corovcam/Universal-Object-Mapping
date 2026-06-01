@@ -278,8 +278,13 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
         type[BaseModel]: A customized Pydantic model class for structured LLM output generation.
     """
     assert state.source_target is not None and state.destination_target is not None
+    
+    # We dynamically construct the Pydantic schema using the base model's fields as a template.
     base_model_fields = BaseTranslationOutput.model_fields
     output_schema_overrides = {}
+    
+    # If the user only wants to translate the schema, we strip out query-related fields.
+    # This prevents the LLM from hallucinating queries or validation harnesses it doesn't need to write, saving tokens.
     if state.translation_type == TranslationType.SCHEMA:
         output_schema_overrides = {
             "translated_query_code": {
@@ -368,6 +373,9 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
                 },
             },
         }
+    
+    # Use Pydantic's `create_model` to generate a completely new class dynamically at runtime.
+    # We pass the __base__ class to inherit standard fields, and override specific ones with `MISSING` to exclude them from the LLM JSON schema.
     return override_pydantic_model_schema(
         BaseTranslationOutput, output_schema_overrides, model_name="TranslationOutput"
     )
@@ -456,6 +464,9 @@ async def extract_input(
         ],
         # debug=True if os.getenv("DEVELOPMENT") else False,
     )
+    
+    # We prepopulate a dictionary of already extracted fields so the LLM doesn't redundantly extract 
+    # things we already know, speeding up generation and reducing errors in multi-turn conversations.
     already_extracted = {
         "source_schema_code": state.source_schema_code,
         "source_query_code": state.source_query_code,
@@ -498,6 +509,9 @@ Conversation:
             },
             goto=END,
         )
+    
+    # Verification gate: ensure the extracted output contains the absolute minimum requirements
+    # (framework targets and source code) to actually perform a translation.
     if is_input_extracted(extraction):
         msg = ToolMessage(
             content="Successfully extracted inputs.",
@@ -597,6 +611,9 @@ async def schema_inspection(
                 # ),
                 ContextEditingMiddleware(
                     edits=[
+                        # This clear-tool-uses edit prevents the chat context from bloating if the agent
+                        # executes hundreds of database inspection queries (common in complex schemas).
+                        # It keeps only the last 3 tool invocations in context if the token trigger is exceeded.
                         ClearToolUsesEdit(
                             trigger=100000,
                             keep=3,
@@ -1130,6 +1147,8 @@ async def custom_tool_node_wrapper(
 
     for attempt in range(1, max_retries + 1):
         try:
+            # We await the underlying ToolNode execution.
+            # If a transient infrastructure error occurs (e.g. Docker timeout), it will raise here.
             res = await execute(request)
             if isinstance(res, ToolMessage):
                 return Command(
@@ -1156,6 +1175,9 @@ async def custom_tool_node_wrapper(
                 logger.error(
                     f"Tool {request.tool_call['name']} failed after {max_retries} attempts: {e}"
                 )
+                # Instead of crashing the whole graph (which would lose state), we gracefully capture
+                # the exception as a structured ToolMessage. The graph will evaluate this string output
+                # and loop back to the generation node with the error context so the LLM can try to fix it.
                 if request.tool_call["name"] in [
                     "validate_dotnet_code",
                     "validate_java_code",
@@ -1237,6 +1259,10 @@ def route_post_query_validation(
     ]:
         src_str = str(last_msgs[0].content)
         tgt_str = str(last_msgs[1].content)
+        
+        # We strictly require both validators to report "Validation Passed]". 
+        # If one fails (e.g., C# compiled but Java threw an exception), we must route to 'evaluation_node'
+        # so the LLM can read the compiler output and fix the syntax errors.
         if "Validation Passed]" in src_str and "Validation Passed]" in tgt_str:
             return "prep_query_equivalence"
     return "evaluation_node"
@@ -1378,6 +1404,8 @@ def route_post_evaluation(
         or "[Evaluation Failed]" in last_msg
         or "[Evaluation Error]" in last_msg
     ):
+        # We check the translation_loop_count to prevent infinite loops of failing compilation.
+        # If it exceeds the maximum (typically 3), we route to 'human_intervention_node' to let the user fix the issue manually.
         if state.translation_loop_count >= MAX_TRANSLATION_LOOPS:
             return "human_intervention_node"
         return "generate_translation_node"

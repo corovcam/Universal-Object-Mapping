@@ -45,6 +45,9 @@ async def execute_in_sandbox(
     Raises:
         DaytonaError: If communicating with the Daytona daemon fails.
     """
+    # This callback intercepts chunked streams coming from Daytona's stdout/stderr buffers
+    # and re-broadcasts them onto the LangGraph event stream using proprietary event keys.
+    # The frontend client listens for these keys to render a real-time console log UI.
     def custom_event_stream_writer(chunk, channel):
         if sandbox_type == SandboxType.JAVA_25_SANDBOX:
             if channel == "stdout":
@@ -74,7 +77,8 @@ async def execute_in_sandbox(
                 ),
                 timeout=timeout, # TODO: Make this configurable by user or by env
             )
-            # Stream logs with separate callbacks
+            # Stream logs with separate callbacks running concurrently in a background task.
+            # This ensures we don't drop logs if the execution is producing them rapidly.
             logs_task = asyncio.create_task(
                 sandbox.process.get_session_command_logs_async(
                     session_id,

@@ -45,6 +45,10 @@ async def modify_toolbox_sources(context: Context) -> None:
         Exception: If writing the configuration file fails.
     """
     db_toolbox_path = os.path.join(get_config_dir(), "db_toolbox", "custom_config.yaml")
+    
+    # We must translate 'localhost' connection strings into the Docker host gateway 
+    # (e.g. 'host.docker.internal' or '172.17.0.1') because the MCP toolbox runs inside 
+    # its own Docker container. Otherwise, 'localhost' would just point to the toolbox container itself.
     mssql_conn_info = extract_mssql_connection_info(
         translate_localhost_to_host_gateway(context.ms_sql_connection_string)
     )
@@ -103,6 +107,10 @@ async def load_toolbox_tools() -> AsyncGenerator[list[BaseTool], None]:
             )
             yield cast(list[BaseTool], toolbox_tools)
     except* (BrokenResourceError, CancelledError, RuntimeError, Exception):
+        # NOTE: Bug in: https://github.com/mongodb-js/mongodb-mcp-server/issues/974#event-26088651847
+        # We catch a broad range of exceptions (including AnyIO BrokenResourceError) and yield an empty list 
+        # instead of failing. This is a critical fallback mechanism: if the database is down, the agent 
+        # will simply operate without schema inspection tools, relying purely on its training data.
         logger.warning(
             "Failed to load database tools from toolbox server at %s.",
             toolbox_uri,

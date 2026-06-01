@@ -146,9 +146,15 @@ class Context:
 
     def __post_init__(self) -> None:
         """Fetch env vars for attributes that were not passed as args."""
+        # Iterate over all dataclass fields using reflection.
         for f in fields(self):
+            # Skip fields that are explicitly marked as not intended for initialization.
             if not f.init:
                 continue
 
+            # If the field value currently equals the default value defined in the class,
+            # it means the user did not explicitly override it during instantiation.
+            # In this case, we eagerly check the environment variables (e.g. 'OPENAI_API_KEY').
+            # This ensures that even if instantiated empty, the context binds securely to the deployment environment.
             if getattr(self, f.name) == f.default:
                 setattr(self, f.name, os.environ.get(f.name.upper(), f.default))

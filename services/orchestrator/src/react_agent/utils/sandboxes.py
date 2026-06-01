@@ -107,6 +107,8 @@ class ValidationSandbox:
                 break
             except Exception as e:
                 logger.error(f"Failed to create snapshot for sandbox '{sandbox_type.value}': {e}")
+                # We implement exponential backoff here. If pulling the base image from Docker Hub 
+                # temporarily fails due to rate limits or network issues, we wait 1s, 2s, 4s, 8s, etc.
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2 ** attempt)  # Exponential backoff
                 else:
@@ -163,6 +165,8 @@ class ValidationSandbox:
                 
                 if state in (SandboxState.ERROR, SandboxState.BUILD_FAILED, SandboxState.ARCHIVED):
                     logger.warning(f"Sandbox '{params.name}' is in state '{state}'. Deleting and recreating...")
+                    # If the Daytona engine crashed leaving a zombie container in ERROR state, 
+                    # we proactively delete it here so the next loop iteration can cleanly rebuild it.
                     try:
                         await daytona.delete(sandbox_instance)
                         await asyncio.sleep(5)
