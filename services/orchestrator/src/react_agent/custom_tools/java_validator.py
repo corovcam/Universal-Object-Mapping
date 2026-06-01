@@ -67,7 +67,29 @@ async def compile_and_run_java(
     entry_type_name: str,
     runtime: ToolRuntime[Context, State],
 ) -> tuple[str, str | None]:
-    """Helper to compile and run Java source code, returning (output, json_part)."""
+    """Compile and execute Java code within an isolated Daytona Sandbox container.
+
+    This utility handles the complex orchestration of validating Java code:
+    1. Fetches the required `pom.xml` configurations for Spring Data.
+    2. Builds a bash script (`run.sh`) to compile via Maven and execute the specified entry point class.
+    3. Provisions environment variables and database connection strings.
+    4. Base64 encodes all payload files to safely transfer them over to the sandbox.
+    5. Invokes the `execute_in_sandbox` tool.
+    6. If a query output JSON was produced, it downloads it via `download_file_from_sandbox`.
+
+    Args:
+        source_code (str): The raw Java source code to compile and run.
+        framework (JavaFramework): The target Java framework (Spring Data MongoDB, Spring Data Neo4j).
+        entry_type_name (str): The name of the main class containing the public static void main method.
+        runtime (ToolRuntime[Context, State]): The LangGraph tool runtime containing context and state.
+
+    Returns:
+        tuple[str, str | None]: A tuple containing the standard output/error log of the execution,
+        and the raw JSON string of the query results (if applicable and successful).
+
+    Raises:
+        RuntimeError: If fetching the framework config fails or the sandbox execution throws an exception.
+    """
     framework_type = FrameworkEnum(framework.value)
     try:
         pom_content = await get_framework_config_content(framework_type)
@@ -257,7 +279,24 @@ async def validate_java_code(
     entry_type_name: str,
     runtime: ToolRuntime[Context, State],
 ) -> Command | str:
-    """Compile and validate Java source code through java-service CLI."""
+    """LangChain Tool wrapper to execute and evaluate Java code inside a Sandbox.
+
+    This tool acts as a bridge between the LangGraph state machine and the low-level sandbox
+    execution. It calls `compile_and_run_java` and then parses the returned JSON results.
+    Crucially, it determines whether it is currently validating the "source" query or the
+    "target" query based on the tool call ID or state comparison, and dynamically issues a
+    LangGraph `Command` to update the global state with the parsed `QueryValidationResults`.
+
+    Args:
+        source_code (str): The Java source code to validate.
+        framework (JavaFramework): The target Java framework.
+        entry_type_name (str): The entrypoint class name declared in the Java code.
+        runtime (ToolRuntime[Context, State]): Automatically injected runtime context.
+
+    Returns:
+        Command | str: A LangGraph state update command containing parsed results and the
+        execution log, or just the error string if validation fails.
+    """
     output, json_part = await compile_and_run_java(
         source_code, framework, entry_type_name, runtime
     )

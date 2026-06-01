@@ -32,7 +32,18 @@ logger = logging.getLogger(__name__)
 
 
 async def modify_toolbox_sources(context: Context) -> None:
-    """Modify the MCP Toolbox for Databases configuration file to set up data sources based on the current runtime context."""
+    """Dynamically write database connection configurations to the MCP Toolbox settings file.
+
+    Extracts connection strings (MSSQL, Neo4j, MongoDB) from the provided runtime Context,
+    translates localhost URIs to Docker host gateway IPs (since the toolbox runs in Docker),
+    and overwrites the `custom_config.yaml` used by the external MCP Database Toolbox.
+
+    Args:
+        context (Context): The agent's runtime context containing database connection strings.
+
+    Raises:
+        Exception: If writing the configuration file fails.
+    """
     db_toolbox_path = os.path.join(get_config_dir(), "db_toolbox", "custom_config.yaml")
     mssql_conn_info = extract_mssql_connection_info(
         translate_localhost_to_host_gateway(context.ms_sql_connection_string)
@@ -69,11 +80,14 @@ async def modify_toolbox_sources(context: Context) -> None:
 
 @asynccontextmanager
 async def load_toolbox_tools() -> AsyncGenerator[list[BaseTool], None]:
-    """Load database tools from the MCP Toolbox for Databases server.
+    """Asynchronously connect to the MCP Toolbox for Databases and expose its tools.
 
-    Returns:
-        A list of LangChain-compatible tool objects.
-        Returns an empty list if the toolbox server is unreachable.
+    This context manager connects to the generic database MCP server (which provides schema
+    inspection tools for SQL and Graph databases) and converts them into LangChain-compatible
+    Tool objects for the ReAct agent. If the connection fails, it gracefully yields an empty list.
+
+    Yields:
+        list[BaseTool]: A list of LangChain-compatible tool objects ready to be bound to an LLM.
     """
     runtime = get_runtime(Context)
     toolbox_uri = runtime.context.db_toolbox_uri
@@ -99,11 +113,14 @@ async def load_toolbox_tools() -> AsyncGenerator[list[BaseTool], None]:
 
 @asynccontextmanager
 async def load_mongodb_tools() -> AsyncGenerator[list[BaseTool], None]:
-    """Load database tools from the MongoDB MCP server.
+    """Asynchronously connect to the MongoDB MCP server and expose its tools.
 
-    Returns:
-        A list of LangChain-compatible tool objects.
-        Returns an empty list if the MongoDB MCP server is unreachable.
+    This context manager establishes an SSE connection to a dedicated MongoDB MCP server.
+    It registers the custom tools prefix to avoid naming collisions and converts the remote
+    capabilities into LangChain Tool objects. Fails gracefully by yielding an empty list.
+
+    Yields:
+        list[BaseTool]: A list of LangChain-compatible tool objects for MongoDB interactions.
     """
     runtime = get_runtime(Context)
     mongodb_mcp_uri = runtime.context.mongodb_mcp_uri

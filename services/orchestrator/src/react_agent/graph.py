@@ -80,7 +80,12 @@ logger = logging.getLogger(__name__)
 
 
 class ExtractionOutput(BaseModel):
-    """Structured output for identifying user intent from messages."""
+    """Structured output for identifying user intent from messages.
+
+    This model is used by the initial extraction agent to parse unstructured conversation
+    history into a structured representation. It identifies the origin/target frameworks,
+    versions, and the raw code blocks intended for translation.
+    """
 
     source_schema_code: Union[list[str], str, None] = Field(
         description="The source schema code. Return as a list of strings (one string per line) to preserve all original newlines and indentation.",
@@ -123,7 +128,13 @@ class ExtractionOutput(BaseModel):
 
 
 class BaseTranslationOutput(BaseModel):
-    """Structured output for the translated schema and/or queries."""
+    """Structured output for the translated schema and/or queries.
+
+    This acts as the base Pydantic schema for the primary translation LLM node. It dynamically
+    expands based on whether the `translation_type` is SCHEMA, QUERY, or BOTH. It mandates that
+    the agent provide both the translated raw code and fully functional execution harnesses
+    (with explicitly declared entry points) for downstream sandbox validation.
+    """
 
     translated_schema_code: Union[list[str], str] = Field(
         min_length=1,
@@ -253,7 +264,19 @@ class BaseTranslationOutput(BaseModel):
 
 
 async def _create_translation_output_model(state: State) -> type[BaseModel]:
-    """Dynamically create a Pydantic model for the translation output based on the input model."""
+    """Dynamically create a Pydantic model for the translation output based on the input state.
+
+    Since the LLM should not waste tokens generating query code or validation harnesses when
+    only schema translation is requested (and vice versa), this function modifies the schema
+    of `BaseTranslationOutput` at runtime to exclude irrelevant fields based on the current
+    `translation_type` in the state.
+
+    Args:
+        state (State): The current graph state containing the `translation_type`.
+
+    Returns:
+        type[BaseModel]: A customized Pydantic model class for structured LLM output generation.
+    """
     assert state.source_target is not None and state.destination_target is not None
     base_model_fields = BaseTranslationOutput.model_fields
     output_schema_overrides = {}
@@ -351,7 +374,17 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
 
 
 def is_input_extracted(state: State | ExtractionOutput) -> bool:
-    """Check if the input has been extracted."""
+    """Check if the necessary structured input has been successfully extracted from conversation.
+
+    Validates that based on the `translation_type`, the corresponding source code fields
+    (schema, query, or both) and the framework targets are present.
+
+    Args:
+        state (State | ExtractionOutput): The current graph state or extraction output model.
+
+    Returns:
+        bool: True if all required fields are present, False otherwise.
+    """
     if state.translation_type == TranslationType.SCHEMA:
         is_code_extracted = state.source_schema_code is not None
     elif state.translation_type == TranslationType.QUERY:
@@ -372,7 +405,22 @@ def is_input_extracted(state: State | ExtractionOutput) -> bool:
 async def extract_input(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ):
-    """Extract raw source code and targets from recent messages if missing from structured input."""
+    """Extract raw source code and targets from recent messages if missing from structured input.
+
+    This node uses a specialized ReAct agent to analyze the conversation history and extract
+    the necessary parameters (origin framework, destination framework, and the raw source code
+    snippets) needed to begin the translation process. If it fails, it updates the extraction
+    loop counter and may terminate the graph if the maximum retry limit is reached.
+
+    Args:
+        state (State): The current state of the graph.
+        config (RunnableConfig): Configuration parameters for the run.
+        runtime (Runtime[Context]): The execution runtime containing context.
+
+    Returns:
+        dict[str, Any] | Command: State updates with extracted parameters or a Command to
+        terminate the graph on failure.
+    """
     # model = await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B)
     # structured_llm = model.with_structured_output(ExtractionOutput)
 
@@ -485,8 +533,17 @@ async def schema_inspection(
 ) -> dict[str, Any]:
     """Inspect source and target database schemas using database tools.
 
-    Runs a lightweight ReAct agent with only database tools to examine
-    the relevant database schemas before translation begins.
+    Runs a lightweight ReAct agent equipped with database inspection tools (MCP) to examine
+    the relevant database schemas before translation begins. This gathers contextual data
+    that is then injected into the main translation prompt to ensure accuracy.
+
+    Args:
+        state (State): The current state of the graph.
+        config (RunnableConfig): Configuration parameters for the run.
+        runtime (Runtime[Context]): The execution runtime containing context.
+
+    Returns:
+        dict[str, Any]: State updates containing the extracted `schema_context` string.
     """
     async with (
         load_toolbox_tools() as toolbox_tools,
@@ -597,7 +654,18 @@ async def translation_agent(
     Combines static tools (validators, fallback docs) with dynamically loaded
     database and documentation MCP tools.
 
-    !! DEPRECATED
+    Warning:
+        This node is DEPRECATED in favor of `generate_translation_node` coupled with
+        explicit state machine nodes for validation and evaluation, which provides
+        better determinism and observability.
+
+    Args:
+        state (State): The current state of the graph.
+        config (RunnableConfig): Configuration parameters for the run.
+        runtime (Runtime[Context]): The execution runtime containing context.
+
+    Returns:
+        dict[str, Any]: State updates containing the translation output.
     """
     model = await get_model(config, runtime, temperature=0, reasoning=False)
 
@@ -708,7 +776,21 @@ Source Code:
 async def generate_translation_node(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ) -> dict[str, Any]:
-    """Deterministically generate the translation using structured LLM output via a React Agent without tools."""
+    """Deterministically generate the translation using structured LLM output via a React Agent without tools.
+
+    This node acts as the core "Generation" step in the iterative translation loop.
+    It takes the extracted source code, the schema context, and the previous translation
+    attempts/feedback (if any) and generates the translated code and execution harnesses
+    using a strongly-typed Pydantic model (`TranslationOutput`).
+
+    Args:
+        state (State): The current state of the graph.
+        config (RunnableConfig): Configuration parameters for the run.
+        runtime (Runtime[Context]): The execution runtime containing context.
+
+    Returns:
+        dict[str, Any]: State updates containing the generated translation outputs.
+    """
     TranslationOutput = await _create_translation_output_model(state)
 
     model = await get_model(config, runtime, temperature=0)
@@ -792,7 +874,20 @@ class HumanInterventionResponse(BaseModel):
 
 
 async def human_intervention_node(state: State):
-    """Pause the graph and ask for human feedback on the generated translation and validation results before proceeding to next steps."""
+    """Pause the graph execution to request human-in-the-loop (HITL) feedback.
+
+    This node interrupts the state machine, surfacing the current translation code and validation
+    results (including deep diffs) to the user via the `interrupt` LangGraph API. The user can
+    either 'accept' the translation to terminate successfully, or 'reject' it with feedback to
+    trigger another generation loop.
+
+    Args:
+        state (State): The current state of the graph.
+
+    Returns:
+        dict[str, Any] | Command: State updates appending the user's feedback to messages,
+        or a Command to end the graph if accepted.
+    """
     response = interrupt(
         {
             "instruction": "Review the current state, generated translation and validation results. Decide if the translation is correct or if another translation attempt is needed and provide feedback on what needs to be improved in the next attempt.",
@@ -831,7 +926,18 @@ async def human_intervention_node(state: State):
 
 
 def prep_schema_validation(state: State) -> dict[str, Any]:
-    """Inject ToolCalls into state for schema validation."""
+    """Inject ToolCalls into the message history to trigger schema compilation validation.
+
+    Prepares the state for the `validate_schema_node` by appending an AIMessage with explicitly
+    defined tool calls (`validate_dotnet_code` or `validate_java_code`) containing the target
+    schema harness code.
+
+    Args:
+        state (State): The current state of the graph.
+
+    Returns:
+        dict[str, Any]: State updates with the injected validation tool calls.
+    """
     tool_calls = []
     target = state.destination_target
     if target and target.value in DotnetFramework:
@@ -875,7 +981,18 @@ def prep_schema_validation(state: State) -> dict[str, Any]:
 
 
 def prep_query_validation(state: State) -> dict[str, Any]:
-    """Inject ToolCalls into state for parallel query validation."""
+    """Inject ToolCalls into the message history for parallel source and target query validation.
+
+    Prepares the state for the `validate_query_node` by appending an AIMessage with multiple
+    tool calls to run both the source validation harness and the target validation harness in
+    sandbox environments concurrently.
+
+    Args:
+        state (State): The current state of the graph.
+
+    Returns:
+        dict[str, Any]: State updates with the injected validation tool calls.
+    """
     tool_calls = []
     assert state.source_target is not None and state.destination_target is not None
 
@@ -955,7 +1072,18 @@ def prep_query_validation(state: State) -> dict[str, Any]:
 
 
 def prep_query_equivalence(state: State) -> dict[str, Any]:
-    """Inject ToolCall for check_query_equivalence if both validations passed."""
+    """Inject a ToolCall into the message history to run the query equivalence checker.
+
+    Prepares the state for the `check_query_equivalence_node`. It parses the JSON validation
+    outputs from the previous query validation step and issues a tool call for `DeepDiff`
+    equivalence testing.
+
+    Args:
+        state (State): The current state of the graph.
+
+    Returns:
+        dict[str, Any]: State updates with the injected equivalence tool call.
+    """
     last_msgs = (
         state.translation_messages[-2:] if len(state.translation_messages) >= 2 else []
     )
@@ -984,7 +1112,19 @@ async def custom_tool_node_wrapper(
     request: ToolCallRequest,
     execute: Callable[[ToolCallRequest], Awaitable[Union[ToolMessage, Command]]],
 ) -> Union[ToolMessage, Command]:
-    """Modify state and retry tool execution up to 4 times on Daytona/infrastructure errors."""
+    """Wrap tool execution to provide robust retries against transient infrastructure errors.
+
+    Used by `ToolNode` to intercept and retry tool calls (like Daytona sandbox provisioning)
+    with an exponential backoff. If max retries are exceeded, it gracefully injects an error
+    ToolMessage into the state rather than crashing the graph.
+
+    Args:
+        request (ToolCallRequest): The requested tool call payload.
+        execute (Callable): The underlying ToolNode execution function.
+
+    Returns:
+        Union[ToolMessage, Command]: The result of the tool execution or an error ToolMessage.
+    """
     max_retries = 4
     base_delay = 1.0
 
@@ -1075,7 +1215,19 @@ check_query_equivalence_node = ToolNode(
 def route_post_query_validation(
     state: State,
 ) -> Literal["prep_query_equivalence", "evaluation_node"]:
-    """Route to equivalence check if validations passed, else skip to evaluation."""
+    """Determine the next state transition after parallel query validation.
+
+    If both the source and target query validations completed successfully (indicated by
+    '[Validation Passed]' in their tool output), it routes to `prep_query_equivalence`.
+    Otherwise, it skips equivalence checking and routes directly to the `evaluation_node`
+    to analyze the validation failures.
+
+    Args:
+        state (State): The current state of the graph.
+
+    Returns:
+        Literal["prep_query_equivalence", "evaluation_node"]: The name of the next node.
+    """
     last_msgs = (
         state.translation_messages[-2:] if len(state.translation_messages) >= 2 else []
     )
@@ -1107,7 +1259,21 @@ class EvaluationOutput(BaseModel):
 async def evaluation_node(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ) -> dict[str, Any]:
-    """Evaluate validation outputs and deepdiff results to decide on translation acceptance."""
+    """Evaluate validation and equivalence testing results to decide on translation acceptance.
+
+    This node uses a specialized evaluation LLM to act as a judge. It reviews the compiler
+    outputs from the sandboxes and the JSON DeepDiff equivalence results. Based on this, it
+    generates a structured `EvaluationOutput` deciding whether to 'ACCEPT' the translation
+    or 'REJECT' it (which triggers another generation iteration with feedback).
+
+    Args:
+        state (State): The current state of the graph.
+        config (RunnableConfig): Configuration parameters for the run.
+        runtime (Runtime[Context]): The execution runtime containing context.
+
+    Returns:
+        dict[str, Any]: State updates containing the evaluation decision and explanation.
+    """
     model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6)
 
     last_msgs = [str(msg) for msg in state.translation_messages[-4:]]
@@ -1192,7 +1358,18 @@ Evaluation:
 def route_post_evaluation(
     state: State,
 ) -> Literal["generate_translation_node", "human_intervention_node", "__end__"]:
-    """Route from evaluation to the next node."""
+    """Determine the next state transition after evaluation.
+
+    If the evaluation was rejected or failed, it routes back to `generate_translation_node`
+    to retry. If the maximum translation loop count is reached, it routes to
+    `human_intervention_node` instead. If accepted, it routes to `__end__`.
+
+    Args:
+        state (State): The current state of the graph.
+
+    Returns:
+        Literal["generate_translation_node", "human_intervention_node", "__end__"]: The next node.
+    """
     last_msg = (
         state.translation_messages[-1].content if state.translation_messages else ""
     )
@@ -1208,7 +1385,18 @@ def route_post_evaluation(
 
 
 def should_extract_input(state: State) -> Literal["schema_inspection", "extract_input", "__end__"]:
-    """Route execution to extraction until mandatory input fields are present."""
+    """Determine the next state transition during the initial extraction phase.
+
+    Checks if all required structured inputs have been successfully parsed. If so, it routes
+    to `schema_inspection`. If not, it routes back to `extract_input` up to a maximum
+    retry limit, after which it routes to `__end__` to terminate the graph gracefully.
+
+    Args:
+        state (State): The current state of the graph.
+
+    Returns:
+        Literal["schema_inspection", "extract_input", "__end__"]: The next node.
+    """
     if is_input_extracted(state):
         return "schema_inspection"
     elif state.extraction_loop_count < MAX_EXTRACTION_LOOPS:
@@ -1221,7 +1409,17 @@ def should_extract_input(state: State) -> Literal["schema_inspection", "extract_
 def route_post_translation(
     state: State,
 ) -> Literal["prep_schema_validation", "prep_query_validation"]:
-    """Route from translation generator to the first applicable validation prep node."""
+    """Determine the next validation state transition after code generation.
+
+    Routes to `prep_schema_validation` if the translation type is SCHEMA. For QUERY or BOTH
+    translation types, it routes to `prep_query_validation`.
+
+    Args:
+        state (State): The current state of the graph.
+
+    Returns:
+        Literal["prep_schema_validation", "prep_query_validation"]: The next node.
+    """
     if state.translation_type == TranslationType.SCHEMA:
         return "prep_schema_validation"
     return "prep_query_validation"
@@ -1235,7 +1433,19 @@ def route_post_schema_validation(
     "human_intervention_node",
     "__end__",
 ]:
-    """Route from validate_schema to validate_query prep or handle validation failure."""
+    """Determine the next state transition after schema validation.
+
+    If schema compilation failed, it routes back to `generate_translation_node` (or
+    `human_intervention_node` if max retries exceeded) without proceeding further.
+    If it passed and the translation type is BOTH, it routes to `prep_query_validation`.
+    Otherwise, it terminates execution (`__end__`).
+
+    Args:
+        state (State): The current state of the graph.
+
+    Returns:
+        Literal["prep_query_validation", "generate_translation_node", "human_intervention_node", "__end__"]: The next node.
+    """
     last_msg = (
         state.translation_messages[-1].content if state.translation_messages else ""
     )

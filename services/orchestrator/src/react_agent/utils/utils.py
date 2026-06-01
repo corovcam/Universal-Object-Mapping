@@ -54,7 +54,20 @@ def get_config_dir() -> str:
 def extract_mssql_connection_info(
     connection_string: str,
 ) -> dict[Literal["host", "port", "database", "user", "password"], str | int]:
-    """Extract host, port, database, user, and password from a MSSQL connection string."""
+    """Extract host, port, database, user, and password from a MSSQL connection string.
+
+    Parses standard format connection strings (e.g., 'Server=host,1333;Database=db;User Id=sa;Password=pw')
+    using regex to extract the individual components needed to configure the MCP Database Toolbox.
+
+    Args:
+        connection_string (str): The raw MSSQL connection string.
+
+    Returns:
+        dict[Literal["host", "port", "database", "user", "password"], str | int]: A dictionary of the extracted values.
+
+    Raises:
+        ValueError: If the connection string format is invalid or cannot be parsed.
+    """
     # e.g. "Server=host.docker.internal,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
     pattern = re.compile(
         r"Server=(?P<host>[^,;]+),(?P<port>\d+);Database=(?P<database>[^;]+);User Id=(?P<user>[^;]+);Password=(?P<password>[^;]+);?"
@@ -73,7 +86,19 @@ def extract_mssql_connection_info(
 
 
 def translate_localhost_to_host_gateway(uri: str) -> str:
-    """Translate localhost in a URI to host gateway for sandbox compatibility."""
+    """Translate localhost in a URI to the Docker host gateway for sandbox compatibility.
+
+    When running tools inside Daytona sandboxes (which are Docker containers), 'localhost'
+    refers to the container itself. This function replaces 'localhost' or '127.0.0.1' with
+    the host gateway IP (usually 'host.docker.internal' or an env-provided IP) so the sandbox
+    can reach services running on the host machine.
+
+    Args:
+        uri (str): The original connection URI or string.
+
+    Returns:
+        str: The translated URI.
+    """
     host_gateway_ip = os.getenv("OUTER_HOST_GATEWAY_IP", "host.docker.internal")
     uri = uri.replace("localhost", host_gateway_ip)
     uri = uri.replace("127.0.0.1", host_gateway_ip)
@@ -162,11 +187,21 @@ async def load_chat_model(
     fully_specified_name: str,
     config: dict[str, Any] | None = None,
 ) -> BaseChatModel:
-    """Load a chat model from a fully specified name.
+    """Instantiate and configure a BaseChatModel given a fully specified model string.
+
+    This complex factory function handles initialization for various LLM providers (OpenAI,
+    Ollama, EINFRA, etc.). It applies standard configurations like API endpoints, keys, and
+    timeouts. Importantly, it dynamically fetches the model's capabilities (context size,
+    tool calling support, structured output support) from the provider or an AI Gateway proxy
+    and caches this `ModelProfile`. This prevents LangChain from crashing when it doesn't
+    statically know if a remote model supports tools.
 
     Args:
         fully_specified_name (str): String in the format 'provider/model'.
-        config (dict): Optional configuration passed from the context to initialize remote parameters like API keys.
+        config (dict | None): Optional configuration passed from the context to initialize remote parameters like API keys.
+
+    Returns:
+        BaseChatModel: An initialized, ready-to-use LangChain chat model instance.
     """
     config = config or {}
     provider, model = fully_specified_name.split("/", maxsplit=1)
@@ -603,7 +638,19 @@ def override_pydantic_model_schema(
     overrides: dict[str, dict[str, Any]],
     model_name: str | None = None,
 ) -> type[BaseModel]:
-    """Override the schema of a Pydantic model's fields."""
+    """Dynamically modify the schema of a Pydantic model's fields at runtime.
+
+    Used by the graph to tailor the `BaseTranslationOutput` schema so the LLM doesn't waste
+    tokens generating irrelevant fields (like query validations when only doing a schema translation).
+
+    Args:
+        model_cls (type[BaseModel]): The base Pydantic model class.
+        overrides (dict[str, dict[str, Any]]): A dictionary of field names mapped to their new schema annotations and metadata.
+        model_name (str | None): Optional name for the new dynamically generated model class.
+
+    Returns:
+        type[BaseModel]: A new Pydantic model class with the applied schema overrides.
+    """
     new_fields = {}
     for f_name, f_info in model_cls.model_fields.items():
         f_dct = f_info.asdict()
@@ -631,7 +678,16 @@ def override_pydantic_model_schema(
 def process_streaming_chunks(
     chunk: Any, writer: Callable[[Any], None], log_buffer: list | None = None
 ):
-    """Process streaming chunks from nested tools/graphs by writing them in LangGraph custom stream (by key) and optionally buffering them."""
+    """Process and dispatch streaming chunks from nested tools or graphs.
+
+    Writes the chunk to a designated `writer` callback (usually `runtime.stream_writer` for
+    custom LangGraph UI events) and optionally buffers it for logging or later aggregation.
+
+    Args:
+        chunk (Any): The streamed data chunk (e.g., stdout line).
+        writer (Callable[[Any], None]): The callback function to route the chunk.
+        log_buffer (list | None): Optional list to append the chunk to for later inspection.
+    """
     writer(chunk)
     if log_buffer is not None:
         log_buffer.append(chunk)

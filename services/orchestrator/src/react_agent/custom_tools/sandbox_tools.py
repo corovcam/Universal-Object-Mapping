@@ -25,21 +25,25 @@ logger = structlog.stdlib.get_logger()
 async def execute_in_sandbox(
     sandbox_type: SandboxType, command: str, timeout: int, env_vars: dict[str, Any] | None, runtime: Annotated[ToolRuntime, InjectedToolArg]
 ) -> tuple[str, int]:
-    """Executes a shell command directly inside the target Daytona sandbox container (e.g. 'dotnet-service' or 'java-service').
+    """Execute a shell command directly inside the target Daytona sandbox container asynchronously.
 
-    This is used as a fallback to interact with the environment or compile code manually when the HTTP API is insufficient.
+    This tool interfaces with the Daytona process manager to run arbitrary commands (like Maven
+    or Dotnet CLI) within an isolated workspace. It seamlessly pipes stdout and stderr via
+    `runtime.stream_writer` back to the LangGraph execution environment so the user can observe
+    real-time compiler output via `LanggraphCustomEventKeys`.
 
     Args:
-        sandbox_type: The target service name (e.g., 'dotnet-service' or 'java-service').
-        command: The shell command to run.
-        timeout: The timeout for the command execution.
-        env_vars: Environment variables for the command execution.
-        runtime: The tool runtime, used for accessing context and streaming output.
-    
+        sandbox_type (SandboxType): The target service architecture enum (e.g., DOTNET_10_SANDBOX).
+        command (str): The raw shell command or script to run.
+        timeout (int): The execution timeout in seconds.
+        env_vars (dict[str, Any] | None): Dictionary of environment variables to inject.
+        runtime (Annotated[ToolRuntime, InjectedToolArg]): Injected tool runtime context.
+
     Returns:
-        A tuple containing:
-        - The standard output and standard error from the executed command, or an error message if it failed.
-        - The exit code from the command.
+        tuple[str, int]: A tuple of the combined output (stdout/stderr) and the exit code.
+
+    Raises:
+        DaytonaError: If communicating with the Daytona daemon fails.
     """
     def custom_event_stream_writer(chunk, channel):
         if sandbox_type == SandboxType.JAVA_25_SANDBOX:
@@ -114,15 +118,21 @@ async def execute_in_sandbox(
 async def download_file_from_sandbox(
     sandbox_type: SandboxType, remote_path: str, runtime: Annotated[ToolRuntime, InjectedToolArg]
 ) -> str:
-    """Retrieve the content of a file from a specified service container using Daytona FS.
+    """Retrieve the contents of a file from a specified service container using the Daytona FS API.
+
+    Used primarily to extract the generated JSON execution results after a query validation
+    harness finishes running in the sandbox.
 
     Args:
-        sandbox_type: The target service name (e.g., 'dotnet-service' or 'java-service').
-        remote_path: The absolute path to the remote file to read.
-        runtime: The LangChain tool runtime injected into the tool execution context.
+        sandbox_type (SandboxType): The target service architecture enum.
+        remote_path (str): The absolute path to the file on the remote container's filesystem.
+        runtime (Annotated[ToolRuntime, InjectedToolArg]): Injected tool runtime context.
 
     Returns:
-        The content of the file as a string.
+        str: The UTF-8 decoded string content of the requested file.
+
+    Raises:
+        DaytonaError: If the file does not exist or Daytona communication fails.
     """
     try:
         async with AsyncDaytona() as daytona:

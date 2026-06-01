@@ -58,7 +58,28 @@ async def compile_and_run_dotnet(
     framework: DotnetFramework,
     runtime: ToolRuntime[Context, State],
 ) -> tuple[str, str | None]:
-    """Helper to compile and run C# source code, returning (output, json_part)."""
+    """Compile and execute C# code within an isolated Daytona Sandbox container.
+
+    This complex utility performs several steps to validate .NET code:
+    1. Generates the appropriate .csproj file based on the target framework.
+    2. Builds a comprehensive bash script (`run.sh`) to compile and execute the code.
+    3. Provisions environment variables and database connection strings.
+    4. Base64 encodes all payload files to safely transfer them over to the sandbox.
+    5. Invokes the `execute_in_sandbox` tool.
+    6. If a query output JSON was produced, it downloads it via `download_file_from_sandbox`.
+
+    Args:
+        source_code (str): The raw C# source code to compile and run.
+        framework (DotnetFramework): The target .NET framework (EF Core, Dapper, etc.).
+        runtime (ToolRuntime[Context, State]): The LangGraph tool runtime containing context and state.
+
+    Returns:
+        tuple[str, str | None]: A tuple containing the standard output/error log of the execution,
+        and the raw JSON string of the query results (if applicable and successful).
+
+    Raises:
+        RuntimeError: If fetching the framework config fails or the sandbox execution throws an exception.
+    """
     if "class " not in source_code and "record " not in source_code:
         return "Compilation Error: No class or record defined in C# source code.", None
 
@@ -241,7 +262,23 @@ async def validate_dotnet_code(
     framework: DotnetFramework,
     runtime: ToolRuntime[Context, State],
 ) -> Command | str:
-    """Compile and validate C# source code through dotnet-service CLI."""
+    """LangChain Tool wrapper to execute and evaluate .NET code inside a Sandbox.
+
+    This tool acts as a bridge between the LangGraph state machine and the low-level sandbox
+    execution. It calls `compile_and_run_dotnet` and then parses the returned JSON results.
+    Crucially, it determines whether it is currently validating the "source" query or the
+    "target" query based on the tool call ID or state comparison, and dynamically issues a
+    LangGraph `Command` to update the global state with the parsed `QueryValidationResults`.
+
+    Args:
+        source_code (str): The C# source code to validate.
+        framework (DotnetFramework): The target .NET framework.
+        runtime (ToolRuntime[Context, State]): Automatically injected runtime context.
+
+    Returns:
+        Command | str: A LangGraph state update command containing parsed results and the
+        execution log, or just the error string if validation fails.
+    """
     output, json_part = await compile_and_run_dotnet(source_code, framework, runtime)
 
     if json_part:

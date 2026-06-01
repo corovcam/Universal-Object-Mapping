@@ -11,7 +11,12 @@ from react_agent.constants import AvailableModel
 
 @dataclass(kw_only=True)
 class Context:
-    """The context for the agent."""
+    """The runtime context and configuration parameters for the orchestrator agent.
+
+    This dataclass holds all environment-specific configurations, such as connection strings,
+    API keys, URLs, model preferences, and timeouts needed by the LangGraph application.
+    Fields are automatically populated from environment variables if not explicitly provided.
+    """
 
     system_prompt: str = field(
         default="",

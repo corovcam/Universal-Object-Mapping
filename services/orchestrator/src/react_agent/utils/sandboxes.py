@@ -20,7 +20,13 @@ logger = structlog.stdlib.get_logger()
 
 
 class ValidationSandbox:
-    """Manager class for Daytona validation sandboxes, tracking active containers and building runtime environment snapshots."""
+    """Manager class for Daytona validation sandboxes.
+
+    This class tracks active container instances and handles the lifecycle of building and 
+    restoring runtime environment snapshots (e.g., pulling Docker images and installing dependencies).
+    It ensures that validation steps execute in a clean, consistent sandbox environment, while
+    minimizing startup latency via snapshot caching.
+    """
 
     SANDBOXES: dict[SandboxType, AsyncSandbox] = {}
     
@@ -57,7 +63,21 @@ class ValidationSandbox:
     
     @staticmethod
     async def create_snapshot(daytona: AsyncDaytona, sandbox_type: SandboxType, stream_writer: Callable[[Any], None]) -> None:
-        """Create a snapshot for the specified sandbox type."""
+        """Create and cache a Daytona snapshot for the specified sandbox architecture.
+
+    A snapshot acts as a baseline environment (e.g., pre-installing Maven or downloading the
+    .NET SDK). This function checks if a snapshot named `validation-snapshot-<type>` already
+    exists. If not, it instructs the Daytona daemon to build one based on the configuration in
+    `DAYTONA_SANDBOX_IMAGES`, streaming the build logs back to the LangGraph UI.
+
+    Args:
+        daytona (AsyncDaytona): The asynchronous Daytona API client.
+        sandbox_type (SandboxType): The target architecture.
+        stream_writer (Callable[[Any], None]): Callback to stream logs to the UI.
+
+    Raises:
+        Exception: If snapshot creation fails after multiple exponential backoff retries.
+    """
         params = CreateSnapshotParams(
             name=f"validation-snapshot-{sandbox_type.value.lower()}",
             image=ValidationSandbox.DAYTONA_SANDBOX_IMAGES[sandbox_type],
@@ -97,7 +117,24 @@ class ValidationSandbox:
   
     @staticmethod
     async def create_validation_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, env_vars: dict[str, Any] | None = None) -> AsyncSandbox:
-        """Initialize a validation sandbox."""
+        """Provision and start a Daytona sandbox container based on the cached snapshot.
+
+    This complex lifecycle manager ensures that a sandbox container named
+    `validation-sandbox-<type>` is actively running. It robustly handles Daytona state machine
+    transitions (e.g., cleaning up stuck ERROR/DESTROYING states, waiting for PENDING_BUILD,
+    or waking up a STOPPED container).
+
+    Args:
+        daytona (AsyncDaytona): The asynchronous Daytona API client.
+        sandbox_type (SandboxType): The target architecture.
+        env_vars (dict[str, Any] | None, optional): Optional environment variables to inject.
+
+    Returns:
+        AsyncSandbox: The verified running sandbox instance.
+
+    Raises:
+        RuntimeError: If the sandbox cannot be transitioned to a STARTED state after max retries.
+    """
         params = CreateSandboxFromSnapshotParams(
             snapshot=f"validation-snapshot-{sandbox_type.value.lower()}",
             auto_stop_interval=60, # TODO: make this configurable: Sandbox will be stopped after 60 minutes
