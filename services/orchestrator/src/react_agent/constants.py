@@ -102,6 +102,13 @@ class SandboxType(str, Enum):
     JAVA_25_SANDBOX = "java-25-sandbox"
 
 
+class LanguageType(str, Enum):
+    """Supported programming language types for code generation and validation."""
+
+    CSHARP = "csharp"
+    JAVA = "java"
+
+
 class LanggraphCustomEventKeys(str, Enum):
     """Keys representing custom execution events sent to the LangGraph client for UI streaming."""
 
@@ -132,6 +139,15 @@ NORMALIZED_FRAMEWORK_TO_FRAMEWORK = {
     "java_spring_data_neo4j": FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
 }
 """Mapping from normalized snake_case strings back to the original FrameworkEnum representations."""
+
+FRAMEWORK_TO_LANGUAGE_TYPE = {
+    FrameworkEnum.DOTNET_EFCORE: LanguageType.CSHARP,
+    FrameworkEnum.DOTNET_DAPPER: LanguageType.CSHARP,
+    FrameworkEnum.DOTNET_NHIBERNATE: LanguageType.CSHARP,
+    FrameworkEnum.JAVA_SPRING_DATA_MONGODB: LanguageType.JAVA,
+    FrameworkEnum.JAVA_SPRING_DATA_NEO4J: LanguageType.JAVA,
+}
+"""Mapping of each framework type to its corresponding programming language type for code generation and validation logic."""
 
 FRAMEWORK_TO_SNIPPET_FILES = {
     FrameworkEnum.DOTNET_EFCORE: (
@@ -185,7 +201,7 @@ Welcome to the Sandbox Environment!
 This directory (`/sandbox`) contains dynamically generated projects created by the AI assistant during the database schema and query translation process.
 
 ## Navigation
-Each validation execution is isolated in its own folder named with the pattern: `sandbox-<thread_id>-<timestamp>`.
+Each validation execution is isolated in its own folder named with the pattern: `sandbox-<thread_title_or_id>-<timestamp>`.
 Navigate to the specific folder to see the generated code, configuration, and execution results.
 
 ## Environment Details
@@ -202,6 +218,8 @@ Navigate to the specific folder to see the generated code, configuration, and ex
 ## Documentation
 - [Daytona Documentation](https://www.daytona.io/docs)
 - [Universal Object Mapping Overview](https://github.com/corovcam/Universal-Object-Mapping)
+
+## [Open Universal Object Mapping Assistant in your IDE]({frontend_url})
 """
 """The generic README file injected into all generated Validation Sandboxes.
 It provides connection strings and URLs dynamically substituted via str.format()."""
@@ -232,6 +250,8 @@ The execution script is provided in `run.sh`. You can execute it by running:
 
 ## Next Steps
 Check the `results/` folder (if applicable) for the JSON output of the execution, or look at `Program.cs` for the generated source code.
+
+## [Open Universal Object Mapping Assistant in your IDE]({frontend_url})
 """
 
 DOTNET_DAPPER_SANDBOX_README = """# .NET Dapper Sandbox
@@ -260,6 +280,8 @@ The execution script is provided in `run.sh`. You can execute it by running:
 
 ## Next Steps
 Check the `results/` folder (if applicable) for the JSON output of the execution, or look at `Program.cs` for the generated source code.
+
+## [Open Universal Object Mapping Assistant in your IDE]({frontend_url})
 """
 
 DOTNET_NHIBERNATE_SANDBOX_README = """# .NET NHibernate Sandbox
@@ -288,6 +310,8 @@ The execution script is provided in `run.sh`. You can execute it by running:
 
 ## Next Steps
 Check the `results/` folder (if applicable) for the JSON output of the execution, or look at `Program.cs` for the generated source code.
+
+## [Open Universal Object Mapping Assistant in your IDE]({frontend_url})
 """
 
 JAVA_SPRING_DATA_MONGODB_SANDBOX_README = """# Java Spring Data MongoDB Sandbox
@@ -317,6 +341,8 @@ The execution script is provided in `run.sh`. You can execute it by running:
 
 ## Next Steps
 Check the `results/` folder (if applicable) for the JSON output of the execution, or look at `src/main/java/uom/services/` for the generated source code.
+
+## [Open Universal Object Mapping Assistant in your IDE]({frontend_url})
 """
 
 JAVA_SPRING_DATA_NEO4J_SANDBOX_README = """# Java Spring Data Neo4j Sandbox
@@ -346,6 +372,8 @@ The execution script is provided in `run.sh`. You can execute it by running:
 
 ## Next Steps
 Check the `results/` folder (if applicable) for the JSON output of the execution, or look at `src/main/java/uom/services/` for the generated source code.
+
+## [Open Universal Object Mapping Assistant in your IDE]({frontend_url})
 """
 
 DOTNET_VSCODE_EXTENSIONS = """{

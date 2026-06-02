@@ -50,7 +50,6 @@ dev = [
     "anyio>=4.13.0",
     "debugpy>=1.8.20",
     "langgraph-cli[inmem]>=0.4.24",
-    "pdoc>=16.0.0",
     "ruff>=0.15.13",
     "ty>=0.0.34",
     {include-group = "test"},

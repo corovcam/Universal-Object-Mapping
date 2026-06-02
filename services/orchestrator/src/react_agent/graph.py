@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from react_agent.constants import (
+    FRAMEWORK_TO_LANGUAGE_TYPE,
     MAX_EXTRACTION_LOOPS,
     MAX_TRANSLATION_LOOPS,
     AvailableModel,
@@ -457,6 +458,7 @@ async def extract_input(
                     temperature=0,
                     reasoning=False,
                 ),
+                await get_model(config, runtime),
             ),
         ],
         # debug=True if os.getenv("DEVELOPMENT") else False,
@@ -510,11 +512,14 @@ Conversation:
     # Verification gate: ensure the extracted output contains the absolute minimum requirements
     # (framework targets and source code) to actually perform a translation.
     if is_input_extracted(extraction):
-        msg = ToolMessage(
-            content="Successfully extracted inputs.",
-            tool_call_id="call_extract_input",
-            name="extract_input",
-        )
+        msg = [AIMessage(
+            content=f"""Successfully extracted inputs:
+
+```json
+{orjson.dumps(extraction.model_dump(mode="json", exclude_unset=True, exclude={"error"}), option=orjson.OPT_INDENT_2).decode('utf-8')}
+```
+"""
+        )]
     else:
         if state.extraction_loop_count >= MAX_EXTRACTION_LOOPS - 1:
             return Command(
@@ -526,12 +531,11 @@ Conversation:
                 },
                 goto=END,
             )
-        msg = ToolMessage(content="Extraction agent could not extract inputs.", tool_call_id="call_extract_input", name="extract_input")
+        msg = [*response["messages"], AIMessage(content="Extraction agent could not extract inputs.")]
     
     updates = {
         "messages": [
-            *response["messages"],
-            msg
+            *msg
         ],
         "extraction_loop_count": state.extraction_loop_count + 1,
         **extraction.model_dump(warnings="error", exclude_unset=True, exclude={"error"}),
@@ -591,11 +595,12 @@ async def schema_inspection(
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
                     await get_model(
-                        config, runtime, AvailableModel.EINFRA_KIMI_K2_6, temperature=0
-                    ),
-                    await get_model(
                         config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0
                     ),
+                    await get_model(
+                        config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0
+                    ),
+                    await get_model(config, runtime),
                     # await get_model(
                     #     config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B, temperature=0
                     # ),
@@ -1318,6 +1323,7 @@ Is the translation logically equivalent and syntactically valid? Provide your re
             ModelFallbackMiddleware(
                 await get_model(config, runtime, AvailableModel.EINFRA_THINKER),
                 await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B),
+                await get_model(config, runtime)
             ),
             ToolRetryMiddleware(),
         ],
@@ -1339,23 +1345,25 @@ Is the translation logically equivalent and syntactically valid? Provide your re
                 "translation_messages": messages,
             }
 
+        assert state.translation_type is not None and state.destination_target is not None
         output: EvaluationOutput = response["structured_response"]
         if (output.decision == "ACCEPT"):
+            markdown_lang = FRAMEWORK_TO_LANGUAGE_TYPE[state.destination_target].value
             messages = [
-                *messages,
                 AIMessage(content=f"""The translation is accepted. Here is the final translated code:
 
 Translated schema:
+```{markdown_lang}
 {state.translated_schema_code if state.translation_type in [TranslationType.SCHEMA, TranslationType.BOTH] else ""}
+```
 
-{f"Translated query:\n{state.translated_query_code}\n" if state.translation_type in [TranslationType.QUERY, TranslationType.BOTH] else ""}
+{f"Translated query:\n```{markdown_lang}\n{state.translated_query_code}\n```\n" if state.translation_type in [TranslationType.QUERY, TranslationType.BOTH] else ""}
 Evaluation:
 {output.explanation}
 """)
             ]
         else:
             messages = [
-                *messages,
                 AIMessage(content=f"[{output.decision}] {output.explanation}"),
             ]
             

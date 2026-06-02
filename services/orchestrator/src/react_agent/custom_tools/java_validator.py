@@ -157,6 +157,7 @@ async def compile_and_run_java(
         mongodb_uri=translate_localhost_to_host_gateway(mongodb_uri),
         neo4j_uri=translate_localhost_to_host_gateway(neo4j_uri),
         neo4j_browser_uri=translate_localhost_to_host_gateway(neo4j_browser_uri),
+        frontend_url=os.getenv("FRONTEND_URL", "http://localhost:3000"),
     )
     general_readme_b64 = base64.b64encode(general_readme.encode()).decode()
 
@@ -171,6 +172,7 @@ async def compile_and_run_java(
         framework=framework.value,
         mongodb_uri=translate_localhost_to_host_gateway(mongodb_uri),
         neo4j_uri=translate_localhost_to_host_gateway(neo4j_uri),
+        frontend_url=os.getenv("FRONTEND_URL", "http://localhost:3000"),
     )
     specific_readme_b64 = base64.b64encode(specific_readme.encode()).decode()
 
@@ -263,16 +265,16 @@ cd "{sandbox_dir}"
             json_part = json_content
 
             return (
-                f"[Java Validation Passed] Validation successful. Framework targeted: {framework.value}\n{output}",
+                f"[Java Validation Passed] Validation successful. Framework targeted: {framework.value}\n```\n{output}\n```",
                 json_part,
             )
         else:
             return (
-                f"[Java Validation Failed] No JSON path found in output.\n{output}",
+                f"[Java Validation Failed] No JSON path found in output.\n```\n{output}\n```",
                 None,
             )
     else:
-        return f"[Java Validation Failed]\n{output}", None
+        return f"[Java Validation Failed]\n```\n{output}\n```", None
 
 
 @tool("validate_java_code", args_schema=JavaValidationInput)
@@ -306,11 +308,11 @@ async def validate_java_code(
 
     if json_part:
         if "===JSON ERROR===" in json_part:
-            return f"{output}\n\n[JSON Results]\n{json_part}"
+            return f"```\n{output}\n```\n\n[JSON Results]\n```\n{json_part}\n```"
         try:
             parsed = orjson.loads(json_part)
         except orjson.JSONDecodeError:
-            return f"[Java Validation Failed] Could not parse JSON output.\n{output}\n{json_part}"
+            return f"[Java Validation Failed] Could not parse JSON output.\n```\n{output}\n```\n```\n{json_part}\n```"
 
         # Determine side (source or target)
         side = None

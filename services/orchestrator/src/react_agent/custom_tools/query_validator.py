@@ -289,7 +289,7 @@ async def check_query_equivalence(
             "query_equivalence_deep_diffs": diff_results,
             "messages": [
                 ToolMessage(
-                    content=f"[Query Equivalence Results]\n{orjson.dumps(diff_results).decode('utf-8')}",
+                    content=f"[Query Equivalence Results]\n```json\n{orjson.dumps(diff_results, option=orjson.OPT_INDENT_2).decode('utf-8')}\n```",
                     tool_call_id=tool_call_id,
                     name=check_query_equivalence.name
                 )
