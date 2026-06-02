@@ -84,12 +84,12 @@ export function ThreadListSidebar({
           </SidebarMenuItem> */}
 				</SidebarGroupContent>
 			</SidebarGroup>
-			<SidebarGroup>
+			<SidebarGroup className="aui-sidebar-group border-t">
+				<SidebarGroupLabel>Configuration</SidebarGroupLabel>
 				<SidebarGroupContent>
 					<SidebarMenuButton
 						onClick={() => setIsConfigOpen(true)}
-						variant="outline"
-						className="aui-thread-list-new hover:bg-muted data-active:bg-muted h-9 justify-start gap-2 rounded-lg px-3 text-sm"
+						className="aui-thread-list-new h-9 justify-start gap-2 rounded-lg px-3 text-sm"
 					>
 						<Settings className="aui-sidebar-footer-icon size-4" />
 						Settings
@@ -97,45 +97,41 @@ export function ThreadListSidebar({
 				</SidebarGroupContent>
 			</SidebarGroup>
 			<SidebarFooter className="aui-sidebar-footer border-t">
-				<SidebarGroup>
-					<SidebarGroupLabel>Links</SidebarGroupLabel>
-					<SidebarMenu>
-						<SidebarMenuItem>
-							<SidebarMenuButton size="lg" asChild>
-								<a
-									href="https://github.com/corovcam/Universal-Object-Mapping"
-									target="_blank"
-									rel="noopener noreferrer"
-								>
-									<div className="aui-sidebar-footer-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-										<BookOpen className="aui-sidebar-footer-icon size-4" />
-									</div>
-									<div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none">
-										<span className="aui-sidebar-footer-title font-semibold">
-											Docs
-										</span>
-									</div>
-								</a>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-						<SidebarMenuItem>
-							<SidebarMenuButton size="lg" asChild>
-								<a
-									href="https://github.com/corovcam/Universal-Object-Mapping"
-									target="_blank"
-									rel="noopener noreferrer"
-								>
-									<div className="aui-sidebar-footer-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-										<GitHubIcon className="aui-sidebar-footer-icon size-4" />
-									</div>
-									<span className="aui-sidebar-footer-heading aui-sidebar-footer-title font-semibold">
-										GitHub
-									</span>
-								</a>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-					</SidebarMenu>
-				</SidebarGroup>
+				<SidebarGroupLabel>Links</SidebarGroupLabel>
+				<SidebarMenu>
+					<SidebarMenuItem>
+						<SidebarMenuButton asChild className="rounded-lg px-3 text-sm">
+							<a
+								href="https://github.com/corovcam/Universal-Object-Mapping"
+								target="_blank"
+								rel="noopener noreferrer"
+							>
+								<div className="text-sidebar-primary-foreground flex aspect-square items-center justify-center">
+									<BookOpen className="aui-sidebar-footer-icon size-4" />
+								</div>
+								<span className="aui-sidebar-footer-title font-semibold">
+									Docs
+								</span>
+							</a>
+						</SidebarMenuButton>
+					</SidebarMenuItem>
+					<SidebarMenuItem>
+						<SidebarMenuButton asChild className="rounded-lg px-3 text-sm">
+							<a
+								href="https://github.com/corovcam/Universal-Object-Mapping"
+								target="_blank"
+								rel="noopener noreferrer"
+							>
+								<div className="text-sidebar-primary-foreground flex aspect-square items-center justify-center">
+									<GitHubIcon className="aui-sidebar-footer-icon size-4" />
+								</div>
+								<span className="aui-sidebar-footer-title font-semibold">
+									GitHub
+								</span>
+							</a>
+						</SidebarMenuButton>
+					</SidebarMenuItem>
+				</SidebarMenu>
 			</SidebarFooter>
 			<ConfigModal
 				isOpen={isConfigOpen}

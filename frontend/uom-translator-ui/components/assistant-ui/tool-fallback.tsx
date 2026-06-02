@@ -1,6 +1,17 @@
 "use client";
 
-import { memo, useCallback, useRef, useState } from "react";
+import { JsonViewer } from "@/components/json-viewer";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
+import {
+  type ToolCallMessagePartComponent,
+  type ToolCallMessagePartStatus,
+  useScrollLock,
+} from "@assistant-ui/react";
 import {
   AlertCircleIcon,
   CheckIcon,
@@ -8,18 +19,7 @@ import {
   LoaderIcon,
   XCircleIcon,
 } from "lucide-react";
-import { JsonViewer } from "@/components/json-viewer";
-import {
-  useScrollLock,
-  type ToolCallMessagePartStatus,
-  type ToolCallMessagePartComponent,
-} from "@assistant-ui/react";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { cn } from "@/lib/utils";
+import { memo, useCallback, useRef, useState } from "react";
 
 const ANIMATION_DURATION = 200;
 
@@ -331,10 +331,11 @@ ToolFallback.Error = ToolFallbackError;
 
 export {
   ToolFallback,
-  ToolFallbackRoot,
-  ToolFallbackTrigger,
-  ToolFallbackContent,
   ToolFallbackArgs,
-  ToolFallbackResult,
+  ToolFallbackContent,
   ToolFallbackError,
+  ToolFallbackResult,
+  ToolFallbackRoot,
+  ToolFallbackTrigger
 };
+
