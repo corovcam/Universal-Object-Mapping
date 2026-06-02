@@ -17,7 +17,7 @@ services:
       - uom
       - ollama
     environment:
-      - FF_PROFILE_IMPORTS=true
+      # - FF_PROFILE_IMPORTS=true
       - OUTER_HOST_GATEWAY_IP=${OUTER_HOST_GATEWAY_IP:-host-gateway}
     #   - REDIS_URI=redis://langgraph-redis:6379
     #   - POSTGRES_URI=postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable

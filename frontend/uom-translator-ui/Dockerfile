@@ -103,6 +103,11 @@ COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 # cached responses are available immediately on startup, uncomment this line:
 COPY --from=builder --chown=node:node /app/.next/cache ./.next/cache
 
+# Install additional dependencies using apt
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
 # Switch to non-root user for security best practices
 USER node
 

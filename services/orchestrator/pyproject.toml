@@ -36,7 +36,6 @@ dependencies = [
     "structlog>=25.5.0",
     "deepagents-acp>=0.0.6",
     "langchain-daytona>=0.0.6",
-    "langgraphics>=0.1.0b3",
 ]
 # external-dependencies = [
 #     "pkg:generic/node@24",
@@ -64,8 +63,8 @@ test = [
     "langgraph-sdk>=0.3.14",
 ]
 
-[tool.uv.sources]
-langgraphics = { path = "../../external/langgraphics", editable = true }
+# [tool.uv.sources]
+# langgraphics = { path = "../../external/langgraphics", editable = true }
 
 [build-system]
 requires = ["setuptools>=73.0.0", "wheel"]
