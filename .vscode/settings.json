@@ -24,9 +24,9 @@
     "${workspaceFolder}/services/orchestrator/tests"
   ],
   "python.analysis.inlayHints.pytestParameters": true,
-  // "python.languageServer": "Pylance",
+  "python.languageServer": "Pylance",
   // if using Pylance in VSCode
-  // "ty.disableLanguageServices": true,
+  "ty.disableLanguageServices": true,
   "remote.autoForwardPorts": false,
   "sqltools.connections": [
     {
@@ -63,24 +63,22 @@
   },
   "maven.view": "flat",
   "java.sources.organizeImports.staticStarThreshold": 1,
-  "ruff.exclude": [
-    "external"
-  ],
+  "ruff.exclude": ["external"],
   "omnisharp.projectFilesExcludePattern": "**/node_modules/**,**/.git/**,**/bower_components/**,**/orchestrator/**,**/external/**",
   "csharp.debug.symbolOptions.moduleFilter.excludedModules": [
     "**/orchestrator/**,**/external/**"
   ],
   "acp.agents": {
     "Universal Object Mapping Translator": {
-			"command": "services/orchestrator/run_acp_agent.sh",
-			"args": [],
-			"env": {
-				"OPENAI_API_URL": "http://localhost:4010/v1",
-				"OPENAI_API_KEY": "sk-326a0e49f0eb408b9b2c553fa9129ff7",
+      "command": "services/orchestrator/run_acp_agent.sh",
+      "args": [],
+      "env": {
+        "OPENAI_API_URL": "http://localhost:4010/v1",
+        "OPENAI_API_KEY": "sk-326a0e49f0eb408b9b2c553fa9129ff7",
         "OLLAMA_HOST": "http://localhost:11434",
         "DEVELOPMENT": true
-			}
-		}
+      }
+    }
   },
   "editor.formatOnSave": false,
   "files.associations": {
@@ -88,5 +86,8 @@
   },
   "editor.quickSuggestions": {
     "strings": "on"
-  }
+  },
+  "js/ts.preferGoToSourceDefinition": true,
+  "js/ts.preferences.importModuleSpecifier": "non-relative",
+  "biome.configurationPath": "./frontend/uom-translator-ui/biome.json",
 }

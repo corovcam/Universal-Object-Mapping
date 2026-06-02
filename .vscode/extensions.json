@@ -1,12 +1,12 @@
 {
     "recommendations": [
         "formulahendry.acp-client",
-        "dbaeumer.vscode-eslint",
         "charliermarsh.ruff",
         "ms-python.python",
         "ms-python.debugpy",
         "ms-python.vscode-pylance",
         "astral-sh.ty",
-        "vscjava.vscode-java-pack"
+        "vscjava.vscode-java-pack",
+        "biomejs.biome"
     ]
 }

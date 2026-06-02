@@ -3,62 +3,71 @@
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { GitHubIcon } from "@/components/icons/github";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarRail,
+	Sidebar,
+	SidebarContent,
+	SidebarFooter,
+	SidebarGroup,
+	SidebarGroupContent,
+	SidebarGroupLabel,
+	SidebarHeader,
+	SidebarMenu,
+	SidebarMenuButton,
+	SidebarMenuItem,
+	SidebarRail,
 } from "@/components/ui/sidebar";
-import { FolderGit, Settings } from "lucide-react";
+import { BookOpen, FolderGit, Settings } from "lucide-react";
 import type * as React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ConfigModal } from "../config-modal";
 import { IdeLink } from "../ide-link";
 
 export function ThreadListSidebar({
-  ...props
+	...props
 }: React.ComponentProps<typeof Sidebar>) {
-  const [isConfigOpen, setIsConfigOpen] = useState(false);
+	const [isConfigOpen, setIsConfigOpen] = useState(false);
 
-  return (
-    <Sidebar {...props}>
-      <SidebarHeader className="aui-sidebar-header mb-2 border-b">
-        <div className="aui-sidebar-header-content flex items-center justify-between">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton size="lg" asChild>
-                <a
-                  href="https://assistant-ui.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <div className="aui-sidebar-header-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                    <FolderGit className="aui-sidebar-header-icon size-5" />
-                  </div>
-                  <div className="aui-sidebar-header-heading me-6 flex flex-col gap-0.5 leading-none">
-                    <span className="aui-sidebar-header-title font-semibold">
-                      UOM Assistant
-                    </span>
-                  </div>
-                </a>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </div>
-      </SidebarHeader>
-      <SidebarContent className="aui-sidebar-content px-2">
-        <ThreadList />
-      </SidebarContent>
-      <SidebarRail />
-      <SidebarFooter className="aui-sidebar-footer border-t">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <IdeLink />
-          </SidebarMenuItem>
-          {/* <SidebarMenuItem>
+	useEffect(() => {
+		if (typeof window !== "undefined") {
+			const is_onboarded = localStorage.getItem("uom_config_onboarded");
+			setIsConfigOpen(is_onboarded === null || is_onboarded !== "true");
+		}
+	}, []);
+
+	return (
+		<Sidebar {...props}>
+			<SidebarHeader className="aui-sidebar-header mb-2 border-b">
+				<div className="aui-sidebar-header-content flex items-center justify-between">
+					<SidebarMenu>
+						<SidebarMenuItem>
+							<SidebarMenuButton size="lg" asChild>
+								<a
+									href="https://assistant-ui.com"
+									target="_blank"
+									rel="noopener noreferrer"
+								>
+									<div className="aui-sidebar-header-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+										<FolderGit className="aui-sidebar-header-icon size-5" />
+									</div>
+									<div className="aui-sidebar-header-heading me-6 flex flex-col gap-0.5 leading-none">
+										<span className="aui-sidebar-header-title font-semibold">
+											UOM Assistant
+										</span>
+									</div>
+								</a>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					</SidebarMenu>
+				</div>
+			</SidebarHeader>
+			<SidebarContent className="aui-sidebar-content px-2">
+				<ThreadList />
+			</SidebarContent>
+			<SidebarRail />
+			<SidebarGroup className="aui-sidebar-group border-t mt-auto">
+				<SidebarGroupLabel>Connect your IDE</SidebarGroupLabel>
+				<SidebarGroupContent>
+					<IdeLink />
+					{/* <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton>
@@ -73,46 +82,66 @@ export function ThreadListSidebar({
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem> */}
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild onClick={() => setIsConfigOpen(true)}>
-              <div>
-                <div className="aui-sidebar-footer-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                  <Settings className="aui-sidebar-footer-icon size-4" />
-                </div>
-                <div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none">
-                  <span className="aui-sidebar-footer-title font-semibold">
-                    Settings
-                  </span>
-                </div>
-              </div>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <a
-                href="https://github.com/corovcam/Universal-Object-Mapping"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <div className="aui-sidebar-footer-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                  <GitHubIcon className="aui-sidebar-footer-icon size-4" />
-                </div>
-                <div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none">
-                  <span className="aui-sidebar-footer-title font-semibold">
-                    GitHub
-                  </span>
-                  <span>View Source</span>
-                </div>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
-      <ConfigModal
-        isOpen={isConfigOpen}
-        onClose={() => setIsConfigOpen(false)}
-        onSave={() => setIsConfigOpen(false)}
-      />
-    </Sidebar>
-  );
+				</SidebarGroupContent>
+			</SidebarGroup>
+			<SidebarGroup>
+				<SidebarGroupContent>
+					<SidebarMenuButton
+						onClick={() => setIsConfigOpen(true)}
+						variant="outline"
+						className="aui-thread-list-new hover:bg-muted data-active:bg-muted h-9 justify-start gap-2 rounded-lg px-3 text-sm"
+					>
+						<Settings className="aui-sidebar-footer-icon size-4" />
+						Settings
+					</SidebarMenuButton>
+				</SidebarGroupContent>
+			</SidebarGroup>
+			<SidebarFooter className="aui-sidebar-footer border-t">
+				<SidebarGroup>
+					<SidebarGroupLabel>Links</SidebarGroupLabel>
+					<SidebarMenu>
+						<SidebarMenuItem>
+							<SidebarMenuButton size="lg" asChild>
+								<a
+									href="https://github.com/corovcam/Universal-Object-Mapping"
+									target="_blank"
+									rel="noopener noreferrer"
+								>
+									<div className="aui-sidebar-footer-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+										<BookOpen className="aui-sidebar-footer-icon size-4" />
+									</div>
+									<div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none">
+										<span className="aui-sidebar-footer-title font-semibold">
+											Docs
+										</span>
+									</div>
+								</a>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+						<SidebarMenuItem>
+							<SidebarMenuButton size="lg" asChild>
+								<a
+									href="https://github.com/corovcam/Universal-Object-Mapping"
+									target="_blank"
+									rel="noopener noreferrer"
+								>
+									<div className="aui-sidebar-footer-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+										<GitHubIcon className="aui-sidebar-footer-icon size-4" />
+									</div>
+									<span className="aui-sidebar-footer-heading aui-sidebar-footer-title font-semibold">
+										GitHub
+									</span>
+								</a>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					</SidebarMenu>
+				</SidebarGroup>
+			</SidebarFooter>
+			<ConfigModal
+				isOpen={isConfigOpen}
+				onClose={() => setIsConfigOpen(false)}
+				onSave={() => setIsConfigOpen(false)}
+			/>
+		</Sidebar>
+	);
 }

@@ -62,7 +62,7 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
         }
       }
     }
-  }, [isOpen]);
+  }, []);
 
   const handleChange = (key: keyof UomConfig, value: any) => {
     setConfig(prev => ({

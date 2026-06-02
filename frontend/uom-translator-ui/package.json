@@ -7,7 +7,7 @@
     "pnpm": ">=11"
   },
   "scripts": {
-    "dev": "concurrently -k --kill-timeout 10000 --names frontend,backend,aimock 'dev:frontend' 'cd ../../services/orchestrator && bash .envrc && make dev' 'cd ../../services/orchestrator && make record_requests'",
+    "dev": "concurrently -k --kill-timeout 10000 --names frontend,backend,aimock 'pnpm run dev:frontend' 'cd ../../services/orchestrator && bash .envrc && make dev' 'cd ../../services/orchestrator && make record_requests'",
     "dev:frontend": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
