@@ -1,21 +1,21 @@
 "use client";
 
-import { memo, useCallback, useRef, useState } from "react";
-import { cva, type VariantProps } from "class-variance-authority";
-import { BrainIcon, ChevronDownIcon } from "lucide-react";
-import {
-  useScrollLock,
-  useAuiState,
-  type ReasoningMessagePartComponent,
-  type ReasoningGroupComponent,
-} from "@assistant-ui/react";
-import { MarkdownText } from "@/components/assistant-ui/markdown-text";
+import { StreamdownText } from "@/components/streamdown-text";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import {
+  type ReasoningGroupComponent,
+  type ReasoningMessagePartComponent,
+  useAuiState,
+  useScrollLock,
+} from "@assistant-ui/react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { BrainIcon, ChevronDownIcon } from "lucide-react";
+import { memo, useCallback, useRef, useState } from "react";
 
 const ANIMATION_DURATION = 200;
 
@@ -217,7 +217,7 @@ function ReasoningText({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-const ReasoningImpl: ReasoningMessagePartComponent = () => <MarkdownText />;
+const ReasoningImpl: ReasoningMessagePartComponent = () => <StreamdownText />;
 
 const ReasoningGroupImpl: ReasoningGroupComponent = ({
   children,
@@ -272,11 +272,12 @@ ReasoningGroup.displayName = "ReasoningGroup";
 
 export {
   Reasoning,
+  ReasoningContent,
+  ReasoningFade,
   ReasoningGroup,
   ReasoningRoot,
-  ReasoningTrigger,
-  ReasoningContent,
   ReasoningText,
-  ReasoningFade,
-  reasoningVariants,
+  ReasoningTrigger,
+  reasoningVariants
 };
+
