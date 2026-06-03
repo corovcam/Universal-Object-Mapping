@@ -5,6 +5,7 @@ import {
 	type ToolCallMessagePartStatus,
 	useScrollLock,
 } from "@assistant-ui/react";
+import JsonView from "@uiw/react-json-view";
 import { githubDarkTheme } from "@uiw/react-json-view/githubDark";
 import { githubLightTheme } from "@uiw/react-json-view/githubLight";
 import {
@@ -14,8 +15,9 @@ import {
 	LoaderIcon,
 	XCircleIcon,
 } from "lucide-react";
-import dynamic from "next/dynamic";
 import { memo, Suspense, useCallback, useRef, useState } from "react";
+import { JsonViewer } from "@/components/json-viewer";
+import { StaticStreamdownWrapper } from "@/components/streamdown-text";
 import { useTheme } from "@/components/theme-provider";
 import {
 	Collapsible,
@@ -24,8 +26,6 @@ import {
 } from "@/components/ui/collapsible";
 import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-
-const JsonView = dynamic(() => import("@uiw/react-json-view"), { ssr: false });
 
 const ANIMATION_DURATION = 200;
 
@@ -199,15 +199,27 @@ function ToolFallbackArgs({
 }) {
 	if (!argsText) return null;
 
+	let parsedJson: any = null;
+	try {
+		parsedJson = JSON.parse(argsText);
+	} catch (_) {}
+
 	return (
 		<div
 			data-slot="tool-fallback-args"
 			className={cn("aui-tool-fallback-args px-4", className)}
 			{...props}
 		>
-			<pre className="aui-tool-fallback-args-value whitespace-pre-wrap">
-				{argsText}
-			</pre>
+			<p className="aui-tool-fallback-result-header font-semibold">Input:</p>
+			{parsedJson ? (
+				<div className="border-t pt-2 mt-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+					<JsonViewer value={parsedJson} />
+				</div>
+			) : (
+				<pre className="aui-tool-fallback-args-value border-t mt-2 whitespace-pre-wrap">
+					{argsText}
+				</pre>
+			)}
 		</div>
 	);
 }
@@ -219,8 +231,6 @@ function ToolFallbackResult({
 }: React.ComponentProps<"div"> & {
 	result?: unknown;
 }) {
-	const { theme } = useTheme();
-
 	if (result === undefined) return null;
 
 	let parsedJson: any = null;
@@ -244,23 +254,15 @@ function ToolFallbackResult({
 			<p className="aui-tool-fallback-result-header font-semibold">Result:</p>
 			{parsedJson ? (
 				<div className="border-t pt-2 mt-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-					<div className="custom-scrollbar">
-						<Suspense
-							fallback={<SkeletonText count={4} className="h-48 w-full" />}
-						>
-							<JsonView
-								value={parsedJson}
-								style={theme === "dark" ? githubDarkTheme : githubLightTheme}
-								collapsed={2}
-							/>
-						</Suspense>
-					</div>
+					<JsonViewer value={parsedJson} />
+				</div>
+			) : typeof result === "string" ? (
+				<div className="border-t pt-2 mt-2">
+					<StaticStreamdownWrapper markdownText={result} />
 				</div>
 			) : (
-				<pre className="aui-tool-fallback-result-content whitespace-pre-wrap">
-					{typeof result === "string"
-						? result
-						: JSON.stringify(result, null, 2)}
+				<pre className="aui-tool-fallback-result-content border-t mt-2 whitespace-pre-wrap">
+					{JSON.stringify(result, null, 2)}
 				</pre>
 			)}
 		</div>

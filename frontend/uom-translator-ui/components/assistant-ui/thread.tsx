@@ -1,3 +1,36 @@
+"use-client";
+
+import {
+	ActionBarMorePrimitive,
+	ActionBarPrimitive,
+	AuiIf,
+	ComposerPrimitive,
+	ErrorPrimitive,
+	groupPartByType,
+	MessagePrimitive,
+	SuggestionPrimitive,
+	ThreadPrimitive,
+	useAuiState,
+} from "@assistant-ui/react";
+import {
+	ArrowDownIcon,
+	ArrowUpIcon,
+	BotIcon,
+	CheckIcon,
+	ChevronRightIcon,
+	CopyIcon,
+	DownloadIcon,
+	LoaderIcon,
+	Maximize2,
+	Minimize2,
+	MoreHorizontalIcon,
+	RefreshCwIcon,
+	SquareIcon,
+	UserIcon,
+} from "lucide-react";
+import { Allow, parse as parsePartialJson } from "partial-json";
+import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
+import { type FC, useEffect, useState } from "react";
 import {
 	ComposerAddAttachment,
 	ComposerAttachments,
@@ -18,123 +51,137 @@ import {
 	ToolGroupTrigger,
 } from "@/components/assistant-ui/tool-group";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { JsonViewer } from "@/components/json-viewer";
 import { StreamdownText } from "@/components/streamdown-text";
 import { Button } from "@/components/ui/button";
+import { ScrollBar } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import {
-	ActionBarMorePrimitive,
-	ActionBarPrimitive,
-	AuiIf,
-	ComposerPrimitive,
-	ErrorPrimitive,
-	groupPartByType,
-	MessagePrimitive,
-	SuggestionPrimitive,
-	ThreadPrimitive,
-	useAuiState
-} from "@assistant-ui/react";
-import {
-	ArrowDownIcon,
-	ArrowUpIcon,
-	CheckIcon,
-	ChevronRightIcon,
-	CopyIcon,
-	DownloadIcon,
-	LoaderIcon,
-	Maximize2,
-	Minimize2,
-	MoreHorizontalIcon,
-	RefreshCwIcon,
-	SquareIcon
-} from "lucide-react";
-import { type FC, useEffect, useState } from "react";
 
 export const Thread: FC = () => {
 	return (
-		<ThreadPrimitive.Root
-			className="aui-root aui-thread-root @container flex h-full flex-col bg-background"
-			style={{
-				["--thread-max-width" as string]: "44rem",
-				["--composer-radius" as string]: "24px",
-				["--composer-padding" as string]: "10px",
-			}}
-		>
-			<ThreadPrimitive.Viewport
-				autoScroll
-				data-slot="aui_thread-viewport"
-				className="relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth"
+		<ScrollAreaPrimitive.Root asChild>
+			<ThreadPrimitive.Root
+				className="aui-root aui-thread-root @container flex h-full flex-col bg-background"
+				style={{
+					["--thread-max-width" as string]: "44rem",
+					["--composer-radius" as string]: "24px",
+					["--composer-padding" as string]: "10px",
+				}}
 			>
-				<div className="mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-4">
-					<AuiIf condition={(s) => s.thread.isEmpty}>
-						<ThreadWelcome />
-					</AuiIf>
-
-					<div
-						data-slot="aui_message-group"
-						className="mb-10 flex flex-col gap-y-8 empty:hidden"
+				<ScrollAreaPrimitive.Viewport
+					className="thread-viewport h-full"
+					asChild
+				>
+					<ThreadPrimitive.Viewport
+						autoScroll
+						turnAnchor="bottom"
+						data-slot="aui_thread-viewport"
+						className="relative flex flex-1 flex-col overflow-x-auto overflow-y-auto scroll-smooth h-full"
 					>
-						<ThreadPrimitive.Messages>
-							{() => <ThreadMessage />}
-						</ThreadPrimitive.Messages>
-					</div>
+						<div className="mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-4">
+							<AuiIf condition={(s) => s.thread.isEmpty}>
+								<ThreadWelcome />
+							</AuiIf>
 
-					<InterruptHandler />
+							<div
+								data-slot="aui_message-group"
+								className="mb-10 flex flex-col gap-y-8 empty:hidden"
+							>
+								<ThreadPrimitive.Messages>
+									{() => <ThreadMessage />}
+								</ThreadPrimitive.Messages>
+							</div>
 
-					<ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mt-auto flex flex-col gap-4 overflow-visible rounded-t-(--composer-radius) bg-background pb-4 md:pb-6">
-						<ThreadScrollToBottom />
-						<Composer />
-					</ThreadPrimitive.ViewportFooter>
-				</div>
-			</ThreadPrimitive.Viewport>
-		</ThreadPrimitive.Root>
+							<InterruptHandler />
+
+							<ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mt-auto flex flex-col gap-4 overflow-visible rounded-t-(--composer-radius) bg-background pb-4 md:pb-6">
+								<ThreadScrollToBottom />
+								<Composer />
+							</ThreadPrimitive.ViewportFooter>
+						</div>
+					</ThreadPrimitive.Viewport>
+				</ScrollAreaPrimitive.Viewport>
+				<ScrollBar />
+			</ThreadPrimitive.Root>
+		</ScrollAreaPrimitive.Root>
 	);
 };
 
-const isStructuredLlmOutput = (text: string): boolean => {
-  if (!text) return false;
-  const trimmed = text.trim();
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (
-        (parsed.decision !== undefined && parsed.explanation !== undefined) ||
-        (parsed.source_schema_code !== undefined && parsed.source_target !== undefined) ||
-        (parsed.translated_schema_code !== undefined && parsed.translated_query_code !== undefined)
-      ) {
-        return true;
-      }
-    } catch (_) {}
-  }
-  return false;
+const parseStructuredOutput = (text: string): any => {
+	if (!text) return null;
+	const trimmed = text.trim();
+	if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+		try {
+			const parsed = parsePartialJson(trimmed, Allow.ALL);
+			return parsed;
+		} catch (_) {}
+	}
+	return null;
+};
+
+const parsePartialStructuredOutput = (text: string): any => {
+	if (!text) return null;
+	const trimmed = text.trim();
+	if (trimmed.startsWith("{")) {
+		try {
+			const parsed = parsePartialJson(trimmed, Allow.ALL);
+			return parsed;
+		} catch (_) {}
+	}
+	return null;
+};
+
+const isIntermediatePrompt = (text: string): boolean => {
+	if (!text) return false;
+	const lower = text.toLowerCase();
+	return (
+		// lower.includes("commencing validation") ||
+		// lower.includes("commencing parallel validation") ||
+		// lower.includes("commencing query equivalence") ||
+		// lower.includes("successfully extracted inputs") ||
+		// lower.includes("generated translation. commencing deterministic validation") ||
+		lower.includes("inspect the database schemas") ||
+		lower.includes("evaluate the following validation results") ||
+		lower.includes("analyze the following conversation") ||
+		lower.includes("translate the following source code")
+	);
 };
 
 const ThreadMessage = () => {
-	const role = useAuiState((s) => s.message.role);
 	const isEditing = useAuiState((s) => s.message.composer.isEditing);
+	const role = useAuiState((s) => s.message.role);
 	const content = useAuiState((s) => s.message.content);
+
+	if (isEditing) return <EditComposer />;
 
 	const fullText = content
 		.filter((part) => part.type === "text")
 		.map((part) => (part as any).text || "")
 		.join("\n");
 
-	if (isEditing) return <EditComposer />;
-
-	// if (isStructuredLlmOutput(fullText)) {
-	//   return null; // Skip rendering raw JSON output message blocks entirely
-	// }
+	const partialStructuredOutput = parsePartialStructuredOutput(fullText);
+	if (partialStructuredOutput) {
+		return (
+			<div className="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar">
+				<JsonViewer value={partialStructuredOutput} />
+			</div>
+		);
+	}
 
 	const isIntermediate = isIntermediatePrompt(fullText);
 	if (isIntermediate) {
 		let promptTitle = "System Prompt";
 		const lowerText = fullText.toLowerCase();
-		if (lowerText.includes("commencing validation")) {
-			promptTitle = "Validation Stage Trigger";
-		} else if (lowerText.includes("commencing parallel validation")) {
-			promptTitle = "Parallel Query Validation Trigger";
-		} else if (lowerText.includes("commencing query equivalence")) {
-			promptTitle = "Query Equivalence Stage Trigger";
-		} else if (lowerText.includes("inspect the database schemas")) {
+		// if (lowerText.includes("commencing validation")) {
+		// 	promptTitle = "Validation Stage Trigger";
+		// } else if (lowerText.includes("successfully extracted inputs")) {
+		// 	promptTitle = "Input Extraction Success";
+		// } else if (lowerText.includes("commencing parallel validation")) {
+		// 	promptTitle = "Parallel Query Validation Trigger";
+		// } else if (lowerText.includes("commencing query equivalence")) {
+		// 	promptTitle = "Query Equivalence Stage Trigger";
+		// }
+		if (lowerText.includes("inspect the database schemas")) {
 			promptTitle = "Database Schema Inspector Prompt";
 		} else if (
 			lowerText.includes("evaluate the following validation results")
@@ -142,8 +189,6 @@ const ThreadMessage = () => {
 			promptTitle = "LLM Evaluation Prompt";
 		} else if (lowerText.includes("translate the following source code")) {
 			promptTitle = "Code Translation Prompt";
-		} else if (lowerText.includes("successfully extracted inputs")) {
-			promptTitle = "Extraction Stage Output";
 		} else if (lowerText.includes("analyze the following conversation")) {
 			promptTitle = "Extraction Prompt";
 		}
@@ -184,9 +229,9 @@ const ThreadWelcome: FC = () => {
 		<div className="aui-thread-welcome-root my-auto flex grow flex-col">
 			<div className="aui-thread-welcome-center flex w-full grow flex-col items-center justify-center">
 				<div className="aui-thread-welcome-message flex size-full flex-col justify-center px-4">
-					<h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both font-semibold text-2xl duration-200">
+					<h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both font-semibold text-2xl duration-200 text-primary">
 						Welcome to{" "}
-						<span className="font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
+						<span className="font-bold bg-clip-text">
 							Universal Object Mapping
 						</span>{" "}
 						Assistant!
@@ -202,36 +247,36 @@ const ThreadWelcome: FC = () => {
 };
 
 const ThreadSuggestions: FC = () => {
-  return (
-    <div className="aui-thread-welcome-suggestions grid w-full @md:grid-cols-2 gap-2 pb-4">
-      <ThreadPrimitive.Suggestions>
-        {() => <ThreadSuggestionItem />}
-      </ThreadPrimitive.Suggestions>
-    </div>
-  );
+	return (
+		<div className="aui-thread-welcome-suggestions grid w-full @md:grid-cols-2 gap-2 pb-4">
+			<ThreadPrimitive.Suggestions>
+				{() => <ThreadSuggestionItem />}
+			</ThreadPrimitive.Suggestions>
+		</div>
+	);
 };
 
 const ThreadSuggestionItem: FC = () => {
-  return (
-    <div className="aui-thread-welcome-suggestion-display fade-in slide-in-from-bottom-2 @md:nth-[n+3]:block nth-[n+3]:hidden animate-in fill-mode-both duration-200">
-      <SuggestionPrimitive.Trigger send={false} asChild>
-        <Button
-          variant="ghost"
-          className="aui-thread-welcome-suggestion h-auto w-full @md:flex-col flex-wrap items-start justify-start gap-1 rounded-3xl border bg-background px-4 py-3 text-start text-sm transition-colors hover:bg-muted"
-        >
-          <SuggestionPrimitive.Title className="aui-thread-welcome-suggestion-text-1 font-medium" />
-          <SuggestionPrimitive.Description className="aui-thread-welcome-suggestion-text-2 text-muted-foreground empty:hidden text-wrap" />
-        </Button>
-      </SuggestionPrimitive.Trigger>
-    </div>
-  );
+	return (
+		<div className="aui-thread-welcome-suggestion-display fade-in slide-in-from-bottom-2 @md:nth-[n+3]:block nth-[n+3]:hidden animate-in fill-mode-both duration-200">
+			<SuggestionPrimitive.Trigger send={false} asChild>
+				<Button
+					variant="ghost"
+					className="aui-thread-welcome-suggestion h-auto w-full @md:flex-col flex-wrap items-start justify-start gap-1 rounded-3xl border bg-background px-4 py-3 text-start text-sm transition-colors hover:bg-muted text-primary"
+				>
+					<SuggestionPrimitive.Title className="aui-thread-welcome-suggestion-text-1 font-medium" />
+					<SuggestionPrimitive.Description className="aui-thread-welcome-suggestion-text-2 text-muted-foreground empty:hidden text-wrap" />
+				</Button>
+			</SuggestionPrimitive.Trigger>
+		</div>
+	);
 };
 
 const Composer: FC = () => {
 	const [expanded, setExpanded] = useState(false);
 
 	return (
-		<ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
+		<ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col text-primary">
 			<ComposerPrimitive.AttachmentDropzone asChild>
 				<div
 					data-slot="aui_composer-shell"
@@ -249,13 +294,17 @@ const Composer: FC = () => {
 							aria-label={expanded ? "Collapse input" : "Expand input"}
 							onClick={() => setExpanded((e) => !e)}
 						>
-							{expanded ? <Minimize2 className="size-4 stroke-[1.5px]" /> : <Maximize2 className="size-4 stroke-[1.5px]" />}
+							{expanded ? (
+								<Minimize2 className="size-4 stroke-[1.5px]" />
+							) : (
+								<Maximize2 className="size-4 stroke-[1.5px]" />
+							)}
 						</TooltipIconButton>
 					</div>
 
 					<ComposerPrimitive.Input
 						placeholder="Send a message..."
-						className={`aui-composer-input w-full resize-none bg-transparent px-1.75 py-1 text-sm outline-none placeholder:text-muted-foreground/80 ${expanded ? "min-h-40 max-h-70" : "min-h-10 max-h-32"}`}
+						className={`aui-composer-input custom-scrollbar w-full resize-none bg-transparent px-1.75 py-1 text-sm outline-none placeholder:text-muted-foreground/80 ${expanded ? "min-h-40 max-h-70" : "min-h-10 max-h-32"}`}
 						rows={1}
 						autoFocus
 						aria-label="Message input"
@@ -313,46 +362,33 @@ const MessageError: FC = () => {
 	);
 };
 
-const isIntermediatePrompt = (text: string): boolean => {
-	if (!text) return false;
-	const lower = text.toLowerCase();
-	return (
-		lower.includes("commencing validation") ||
-		lower.includes("commencing parallel validation") ||
-		lower.includes("commencing query equivalence") ||
-		lower.includes("inspect the database schemas") ||
-		lower.includes("evaluate the following validation results") ||
-		lower.includes("analyze the following conversation") ||
-		lower.includes("database schema context") ||
-		lower.includes("successfully extracted inputs") ||
-		lower.includes("generated translation. commencing deterministic validation")
-	);
-};
-
 const CollapsiblePrompt: FC<{ title: string; children: React.ReactNode }> = ({
 	title,
 	children,
 }) => {
 	const [isOpen, setIsOpen] = useState(false);
 	return (
-		<div className="border border-slate-800/80 rounded-xl bg-slate-900/10 my-2 overflow-hidden">
-			<button
-				type="button"
+		<div className="border rounded-xl bg-accent text-accent-foreground my-2 overflow-hidden">
+			<Button
+				variant="ghost"
 				onClick={() => setIsOpen(!isOpen)}
-				className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-950/40 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
+				aria-label={
+					isOpen ? "Collapse prompt content" : "Expand prompt content"
+				}
+				className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold transition-colors"
 			>
 				<span className="flex items-center gap-2">
 					<ChevronRightIcon
-						className={`size-3.5 transition-transform duration-200 ${isOpen ? "rotate-90 text-indigo-400" : "text-slate-500"}`}
+						className={`size-3.5 transition-transform duration-200 text-primary${isOpen && " rotate-90"}`}
 					/>
 					{title}
 				</span>
-				<span className="text-[10px] text-indigo-455/80 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-550/20 font-mono">
+				<span className="text-[10px] px-2 py-0.5 rounded border font-mono">
 					{isOpen ? "Hide" : "Show block"}
 				</span>
-			</button>
+			</Button>
 			{isOpen && (
-				<div className="p-4 bg-slate-950/20 text-xs text-slate-350 select-text leading-relaxed border-t border-slate-900 max-h-[400px] overflow-y-auto custom-scrollbar">
+				<div className="p-4 text-xs select-text leading-relaxed border-t max-h-[400px] overflow-y-auto custom-scrollbar">
 					{children}
 				</div>
 			)}
@@ -390,8 +426,8 @@ const AssistantMessageContent: FC = () => {
 							const running = part.status.type === "running";
 							return (
 								<ReasoningGroupWrapper running={running}>
-                  {children}
-                </ReasoningGroupWrapper>
+									{children}
+								</ReasoningGroupWrapper>
 							);
 						}
 						case "group-tool":
@@ -422,12 +458,24 @@ const AssistantMessageContent: FC = () => {
 	);
 };
 
-const ThinkingIndicator: FC = (props) => {
+const ThinkingIndicator = ({
+	symbol,
+	...props
+}: { symbol?: string } & React.HTMLAttributes<HTMLSpanElement>) => {
 	return (
-    <span className="flex items-center gap-1 text-muted-foreground font-sans" data-slot="aui_assistant-message-indicator" aria-label="Assistant is working" {...props}>
-			<span className="animate-bounce [animation-delay:-0.2s]">●</span>
-			<span className="animate-bounce [animation-delay:-0.1s]">●</span>
-			<span className="animate-bounce">●</span>
+		<span
+			className="flex items-center gap-1 text-muted-foreground font-sans"
+			data-slot="aui_assistant-message-indicator"
+			aria-label="Assistant is working"
+			{...props}
+		>
+			<span className="animate-bounce [animation-delay:-0.2s] text-[10px]">
+				{symbol || "•"}
+			</span>
+			<span className="animate-bounce [animation-delay:-0.1s] text-[10px]">
+				{symbol || "•"}
+			</span>
+			<span className="animate-bounce text-[10px]">{symbol || "•"}</span>
 		</span>
 	);
 };
@@ -445,15 +493,24 @@ const AssistantMessage: FC = () => {
 			data-role="assistant"
 			className="fade-in slide-in-from-bottom-1 relative animate-in duration-150 [contain-intrinsic-size:auto_300px] [content-visibility:auto]"
 		>
+			<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+				<BotIcon className="size-4" />
+			</div>
+
 			<AssistantMessageContent />
-      
-      <AuiIf condition={(s) => s.thread.isRunning && s.message.content.length === 0}>
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <LoaderIcon className="size-4 animate-spin" />
-          <span className="text-sm">Thinking...</span>
-        </div>
-      </AuiIf>
-      
+
+			<AuiIf
+				condition={(s) => s.thread.isRunning && s.message.content.length === 0}
+			>
+				<div className="flex items-center gap-2 text-muted-foreground">
+					<LoaderIcon className="size-4 animate-spin" />
+					<span className="text-sm">
+						Thinking
+						<ThinkingIndicator symbol="." className="ml-1" />
+					</span>
+				</div>
+			</AuiIf>
+
 			<div
 				data-slot="aui_assistant-message-footer"
 				className={cn("ms-2 flex items-center", ACTION_BAR_HEIGHT)}
@@ -520,6 +577,12 @@ const UserMessage: FC = () => {
 			className="fade-in slide-in-from-bottom-1 grid animate-in auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 px-2 duration-150 [contain-intrinsic-size:auto_60px] [content-visibility:auto] [&:where(>*)]:col-start-2"
 			data-role="user"
 		>
+			<div className="col-span-full col-start-1 row-start-1 flex w-full flex-row justify-end">
+				<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+					<UserIcon className="size-4" />
+				</div>
+			</div>
+
 			<UserMessageAttachments />
 
 			<div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">

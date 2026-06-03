@@ -6,13 +6,11 @@ import {
 } from "@assistant-ui/react-streamdown";
 import { code } from "@streamdown/code";
 import { mermaid } from "@streamdown/mermaid";
-import { githubDarkTheme } from "@uiw/react-json-view/githubDark";
-import { githubLightTheme } from "@uiw/react-json-view/githubLight";
 import dynamic from "next/dynamic";
 import { Allow, parse as parsePartialJson } from "partial-json";
-import { Suspense } from "react";
+import { Streamdown, type StreamdownProps } from "streamdown";
+import { JsonViewer } from "@/components/json-viewer";
 import { useTheme } from "@/components/theme-provider";
-import { SkeletonText } from "@/components/ui/skeleton";
 
 const StreamdownTextPrimitive = dynamic(
 	() =>
@@ -21,7 +19,6 @@ const StreamdownTextPrimitive = dynamic(
 		),
 	{ ssr: false },
 );
-const JsonView = dynamic(() => import("@uiw/react-json-view"), { ssr: false });
 
 export const StreamdownText = ({ ...props }) => (
 	<StreamdownTextPrimitive
@@ -79,18 +76,11 @@ export const JsonCodeComponent = ({
 	language,
 	code,
 }: SyntaxHighlighterProps) => {
-	const { theme } = useTheme();
 	try {
 		const parsed = parsePartialJson(code, Allow.ALL);
 		return (
 			<div className="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar">
-				<Suspense fallback={<SkeletonText count={4} className="h-48 w-full" />}>
-					<JsonView
-						value={parsed}
-						style={theme === "dark" ? githubDarkTheme : githubLightTheme}
-						collapsed={2}
-					/>
-				</Suspense>
+				<JsonViewer value={parsed} />
 			</div>
 		);
 	} catch (e) {
@@ -104,6 +94,28 @@ export const JsonCodeComponent = ({
 		>
 			{code}
 		</CodeComponent>
+	);
+};
+
+export const StaticStreamdownWrapper = ({
+	markdownText,
+	...props
+}: Omit<StreamdownProps, "children"> & { markdownText: string }) => {
+	const processedText = markdownText.replace(/\r\n/g, "\n");
+
+	return (
+		<Streamdown
+			mode="static"
+			caret="circle"
+			linkSafety={{
+				enabled: true,
+			}}
+			plugins={{ code, mermaid }}
+			shikiTheme={["github-light", "github-dark"]}
+			{...props}
+		>
+			{processedText}
+		</Streamdown>
 	);
 };
 
