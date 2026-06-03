@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { AssistantRuntimeProviderWrapper } from "@/components/assistant-ui/runtime/assistant-runtime-provider";
 import { Thread } from "@/components/assistant-ui/thread";
 import { ThreadListSidebar } from "@/components/assistant-ui/threadlist-sidebar";
@@ -14,6 +15,11 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+const DevToolsModal = dynamic(
+	() => import("@assistant-ui/react-devtools").then((mod) => mod.DevToolsModal),
+	{ ssr: false },
+);
+
 export function Assistant({
 	inputData,
 }: {
@@ -23,13 +29,14 @@ export function Assistant({
 		<AssistantRuntimeProviderWrapper
 			inputSuggestions={inputData.inputSuggestions}
 		>
+			{process.env.NODE_ENV === "development" && <DevToolsModal />}
 			<SidebarProvider defaultOpen>
 				<div className="flex h-dvh w-full">
-					<ThreadListSidebar variant="inset" />
+					<ThreadListSidebar />
 					<SidebarInset>
 						<Tooltip>
 							<TooltipTrigger asChild>
-								<SidebarTrigger className="ml-5 mt-5" />
+								<SidebarTrigger className="absolute top-5 left-5 z-20" />
 							</TooltipTrigger>
 							<TooltipContent side="right">
 								<p>Toggle Sidebar</p>
