@@ -1,7 +1,11 @@
 "use-client";
 
+import { BookOpen, FolderGit, Settings } from "lucide-react";
+import type * as React from "react";
+import { useEffect, useState } from "react";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { GitHubIcon } from "@/components/icons/github";
+import { ThemeToggle } from "@/components/theme-provider";
 import {
 	Sidebar,
 	SidebarContent,
@@ -15,9 +19,6 @@ import {
 	SidebarMenuItem,
 	SidebarRail,
 } from "@/components/ui/sidebar";
-import { BookOpen, FolderGit, Settings } from "lucide-react";
-import type * as React from "react";
-import { useEffect, useState } from "react";
 import { ConfigModal } from "../config-modal";
 import { IdeLink } from "../ide-link";
 
@@ -39,12 +40,8 @@ export function ThreadListSidebar({
 				<div className="aui-sidebar-header-content flex items-center justify-between">
 					<SidebarMenu>
 						<SidebarMenuItem>
-							<SidebarMenuButton size="lg" asChild>
-								<a
-									href="https://assistant-ui.com"
-									target="_blank"
-									rel="noopener noreferrer"
-								>
+							<SidebarMenuButton size="lg" asChild tooltip="UOM Assistant Home">
+								<a href="/" aria-label="UOM Assistant Home">
 									<div className="aui-sidebar-header-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
 										<FolderGit className="aui-sidebar-header-icon size-5" />
 									</div>
@@ -62,7 +59,6 @@ export function ThreadListSidebar({
 			<SidebarContent className="aui-sidebar-content px-2">
 				<ThreadList />
 			</SidebarContent>
-			<SidebarRail />
 			<SidebarGroup className="aui-sidebar-group border-t mt-auto">
 				<SidebarGroupLabel>Connect your IDE</SidebarGroupLabel>
 				<SidebarGroupContent>
@@ -89,50 +85,59 @@ export function ThreadListSidebar({
 				<SidebarGroupContent>
 					<SidebarMenuButton
 						onClick={() => setIsConfigOpen(true)}
-						className="aui-thread-list-new h-9 justify-start gap-2 rounded-lg px-3 text-sm"
+						className="h-9 justify-start gap-2 rounded-lg px-3 text-sm"
+						tooltip="Open Settings"
 					>
 						<Settings className="aui-sidebar-footer-icon size-4" />
 						Settings
 					</SidebarMenuButton>
+					<ThemeToggle
+						Component={SidebarMenuButton}
+						className="h-9 justify-start gap-2 rounded-lg px-3 text-sm"
+						tooltip="Toggle Theme"
+					/>
 				</SidebarGroupContent>
 			</SidebarGroup>
 			<SidebarFooter className="aui-sidebar-footer border-t">
 				<SidebarGroupLabel>Links</SidebarGroupLabel>
 				<SidebarMenu>
 					<SidebarMenuItem>
-						<SidebarMenuButton asChild className="rounded-lg px-3 text-sm">
+						<SidebarMenuButton
+							asChild
+							className="rounded-lg px-3 text-sm"
+							tooltip="Open Documentation"
+						>
 							<a
 								href="https://github.com/corovcam/Universal-Object-Mapping"
 								target="_blank"
 								rel="noopener noreferrer"
+								aria-label="Open Documentation"
 							>
-								<div className="text-sidebar-primary-foreground flex aspect-square items-center justify-center">
-									<BookOpen className="aui-sidebar-footer-icon size-4" />
-								</div>
-								<span className="aui-sidebar-footer-title font-semibold">
-									Docs
-								</span>
+								<BookOpen className="aui-sidebar-footer-icon size-4" />
+								Docs
 							</a>
 						</SidebarMenuButton>
 					</SidebarMenuItem>
 					<SidebarMenuItem>
-						<SidebarMenuButton asChild className="rounded-lg px-3 text-sm">
+						<SidebarMenuButton
+							asChild
+							className="rounded-lg px-3 text-sm"
+							tooltip="View on GitHub"
+						>
 							<a
 								href="https://github.com/corovcam/Universal-Object-Mapping"
 								target="_blank"
 								rel="noopener noreferrer"
+								aria-label="View on GitHub"
 							>
-								<div className="text-sidebar-primary-foreground flex aspect-square items-center justify-center">
-									<GitHubIcon className="aui-sidebar-footer-icon size-4" />
-								</div>
-								<span className="aui-sidebar-footer-title font-semibold">
-									GitHub
-								</span>
+								<GitHubIcon className="aui-sidebar-footer-icon size-4" />
+								GitHub
 							</a>
 						</SidebarMenuButton>
 					</SidebarMenuItem>
 				</SidebarMenu>
 			</SidebarFooter>
+			<SidebarRail />
 			<ConfigModal
 				isOpen={isConfigOpen}
 				onClose={() => setIsConfigOpen(false)}
