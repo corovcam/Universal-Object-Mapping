@@ -493,7 +493,7 @@ const AssistantMessage: FC = () => {
 			data-role="assistant"
 			className="fade-in slide-in-from-bottom-1 relative animate-in duration-150 [contain-intrinsic-size:auto_300px] [content-visibility:auto]"
 		>
-			<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+			<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
 				<BotIcon className="size-4" />
 			</div>
 
@@ -578,7 +578,7 @@ const UserMessage: FC = () => {
 			data-role="user"
 		>
 			<div className="col-span-full col-start-1 row-start-1 flex w-full flex-row justify-end">
-				<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+				<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
 					<UserIcon className="size-4" />
 				</div>
 			</div>

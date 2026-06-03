@@ -8,9 +8,15 @@ import { code } from "@streamdown/code";
 import { mermaid } from "@streamdown/mermaid";
 import dynamic from "next/dynamic";
 import { Allow, parse as parsePartialJson } from "partial-json";
-import { Streamdown, type StreamdownProps } from "streamdown";
+import {
+	CodeBlock,
+	CodeBlockContainer,
+	CodeBlockHeader,
+	type CustomRendererProps,
+	Streamdown,
+	type StreamdownProps,
+} from "streamdown";
 import { JsonViewer } from "@/components/json-viewer";
-import { useTheme } from "@/components/theme-provider";
 
 const StreamdownTextPrimitive = dynamic(
 	() =>
@@ -20,24 +26,31 @@ const StreamdownTextPrimitive = dynamic(
 	{ ssr: false },
 );
 
-export const StreamdownText = ({ ...props }) => (
-	<StreamdownTextPrimitive
-		plugins={{ code, mermaid }}
-		shikiTheme={["github-light", "github-dark"]}
-		caret="circle"
-		linkSafety={{
-			enabled: true,
-		}}
-		componentsByLanguage={{
-			json: {
-				SyntaxHighlighter: JsonCodeComponent,
-			},
-		}}
-		containerProps={{
-			suppressHydrationWarning: true,
-		}}
-	/>
-);
+export const StreamdownText = ({ ...props }) => {
+	"use-client";
+
+	const renderers = [{ language: "json", component: JsonRenderer }];
+
+	return (
+		<StreamdownTextPrimitive
+			plugins={{ code, mermaid }}
+			shikiTheme={["github-light", "github-dark"]}
+			caret="circle"
+			linkSafety={{
+				enabled: true,
+			}}
+			componentsByLanguage={{
+				json: {
+					SyntaxHighlighter: JsonCodeComponent,
+				},
+			}}
+			containerProps={{
+				suppressHydrationWarning: true,
+			}}
+			animated
+		/>
+	);
+};
 
 export const CodeComponent = ({
 	components,
@@ -76,7 +89,10 @@ export const JsonCodeComponent = ({
 	language,
 	code,
 }: SyntaxHighlighterProps) => {
+	console.log("Parsing JSON code block:", code);
 	try {
+		code = code.trim().replace(/^"|"$/g, "");
+		console.log("Parsing JSON code block:", code);
 		const parsed = parsePartialJson(code, Allow.ALL);
 		return (
 			<div className="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar">
@@ -119,46 +135,26 @@ export const StaticStreamdownWrapper = ({
 	);
 };
 
-// export const VegaLiteRenderer = ({
-//   code,
-//   language,
-//   isIncomplete,
-// }: CustomRendererProps) => {
-//   const containerRef = useRef<HTMLDivElement>(null);
-//   useEffect(() => {
-//     if (isIncomplete || !containerRef.current) {
-//       return;
-//     }
-//     let cancelled = false;
-//     const render = async () => {
-//       const spec = JSON.parse(code);
-//       const vegaEmbed = (await import("vega-embed")).default;
-//       if (cancelled || !containerRef.current) {
-//         return;
-//       }
-//       containerRef.current.innerHTML = "";
-//       await vegaEmbed(containerRef.current, spec, {
-//         actions: false,
-//         renderer: "svg",
-//       });
-//     };
-//     render();
-//     return () => {
-//       cancelled = true;
-//     };
-//   }, [code, isIncomplete]);
-//   return (
-//     <CodeBlockContainer isIncomplete={isIncomplete} language={language}>
-//       <CodeBlockHeader language={language} />
-//       {isIncomplete ? (
-//         <div className="flex h-48 items-center justify-center rounded-md bg-muted">
-//           <span className="text-muted-foreground text-sm">
-//             Loading chart...
-//           </span>
-//         </div>
-//       ) : (
-//         <div ref={containerRef} className="overflow-hidden rounded-md p-4" />
-//       )}
-//     </CodeBlockContainer>
-//   );
-// };
+export const JsonRenderer = ({
+	code,
+	language,
+	isIncomplete,
+}: CustomRendererProps) => {
+	let parsed: any = null;
+	try {
+		parsed = parsePartialJson(code, Allow.ALL);
+	} catch {
+		// Fall back to default rendering if parsing exception occurs
+	}
+
+	return parsed ? (
+		<CodeBlockContainer isIncomplete={isIncomplete} language={language}>
+			<CodeBlockHeader language={language} />
+			<div className="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar">
+				<JsonViewer value={parsed} />
+			</div>
+		</CodeBlockContainer>
+	) : (
+		<CodeBlock code={code} language={language} isIncomplete={isIncomplete} />
+	);
+};
