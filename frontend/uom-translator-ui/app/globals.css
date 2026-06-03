@@ -191,3 +191,7 @@
 .pulse-dot {
   animation: step-dot-pulse 1.8s infinite ease-in-out;
 }
+
+.thread-viewport > [data-radix-scroll-area-content] {
+  @apply flex flex-col items-center self-stretch bg-inherit;
+}
