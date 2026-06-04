@@ -5,9 +5,6 @@ import {
 	type ToolCallMessagePartStatus,
 	useScrollLock,
 } from "@assistant-ui/react";
-import JsonView from "@uiw/react-json-view";
-import { githubDarkTheme } from "@uiw/react-json-view/githubDark";
-import { githubLightTheme } from "@uiw/react-json-view/githubLight";
 import {
 	AlertCircleIcon,
 	CheckIcon,
@@ -15,16 +12,15 @@ import {
 	LoaderIcon,
 	XCircleIcon,
 } from "lucide-react";
-import { memo, Suspense, useCallback, useRef, useState } from "react";
+import { Allow, parse as parsePartialJson } from "partial-json";
+import { memo, useCallback, useRef, useState } from "react";
 import { JsonViewer } from "@/components/json-viewer";
 import { StaticStreamdownWrapper } from "@/components/streamdown-text";
-import { useTheme } from "@/components/theme-provider";
 import {
 	Collapsible,
 	CollapsibleContent,
 	CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 const ANIMATION_DURATION = 200;
@@ -42,7 +38,7 @@ function ToolFallbackRoot({
 	className,
 	open: controlledOpen,
 	onOpenChange: controlledOnOpenChange,
-	defaultOpen = false,
+	defaultOpen = true,
 	children,
 	...props
 }: ToolFallbackRootProps) {
@@ -236,7 +232,7 @@ function ToolFallbackResult({
 	let parsedJson: any = null;
 	if (typeof result === "string") {
 		try {
-			parsedJson = JSON.parse(result);
+			parsedJson = parsePartialJson(result, Allow.ALL);
 		} catch (_) {}
 	} else if (result !== null && typeof result === "object") {
 		parsedJson = result;

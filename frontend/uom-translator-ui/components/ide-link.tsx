@@ -27,7 +27,7 @@ export interface SandboxInfo {
 }
 
 export function IdeLink() {
-	const graphState = useGraphStateContext();
+	const { graphState } = useGraphStateContext();
 
 	const [copied, setCopied] = useState(false);
 	const [activeIde, setActiveIde] = useState<SupportedIDEs>(

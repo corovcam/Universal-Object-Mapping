@@ -1,5 +1,11 @@
-import { AlertTriangle, Info } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircleIcon, AlertTriangle, Info } from "lucide-react";
+import {
+	Alert,
+	AlertAction,
+	AlertDescription,
+	AlertTitle,
+} from "@/components/ui/alert";
+import { cn } from "@/lib/utils";
 
 // export const CustomAlert = ({
 //   title,
@@ -64,4 +70,33 @@ export const WarningAlert = ({
 	Icon?: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 }) => {
 	return <InfoAlert title={title} description={description} Icon={Icon} />;
+};
+
+export const ErrorAlert = ({
+	title,
+	description,
+	Icon = AlertCircleIcon,
+	action = null,
+	className,
+}: {
+	title: string;
+	description?: string | React.ReactNode;
+	Icon?: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+	action?: React.ReactNode;
+	className?: string;
+}) => {
+	return (
+		<Alert
+			variant="destructive"
+			className={cn(
+				"max-h-50 overflow-y-auto overflow-x-hidden wrap-break-word break-all custom-scrollbar",
+				className,
+			)}
+		>
+			<Icon />
+			<AlertTitle>{title}</AlertTitle>
+			{description && <AlertDescription>{description}</AlertDescription>}
+			{action && <AlertAction>{action}</AlertAction>}
+		</Alert>
+	);
 };

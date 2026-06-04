@@ -27,6 +27,7 @@ import {
 	RefreshCwIcon,
 	SquareIcon,
 	UserIcon,
+	X,
 } from "lucide-react";
 import { Allow, parse as parsePartialJson } from "partial-json";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
@@ -52,10 +53,12 @@ import {
 	ToolGroupTrigger,
 } from "@/components/assistant-ui/tool-group";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { ErrorAlert } from "@/components/custom-alerts";
 import { JsonViewer } from "@/components/json-viewer";
 import { StreamdownText } from "@/components/streamdown-text";
 import { Button } from "@/components/ui/button";
 import { ScrollBar } from "@/components/ui/scroll-area";
+import { useGraphStateContext } from "@/hooks/use-graph-state-context";
 import { cn } from "@/lib/utils";
 
 export const Thread: FC = () => {
@@ -95,6 +98,8 @@ export const Thread: FC = () => {
 
 							<InterruptHandler />
 
+							<GlobalErrorMessage />
+
 							<ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mt-auto flex flex-col gap-4 overflow-visible rounded-t-(--composer-radius) bg-background pb-4 md:pb-6">
 								<ThreadScrollToBottom />
 								<Composer />
@@ -108,16 +113,26 @@ export const Thread: FC = () => {
 	);
 };
 
-const parseStructuredOutput = (text: string): any => {
-	if (!text) return null;
-	const trimmed = text.trim();
-	if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-		try {
-			const parsed = parsePartialJson(trimmed, Allow.ALL);
-			return parsed;
-		} catch (_) {}
-	}
-	return null;
+const GlobalErrorMessage: FC = () => {
+	const { error, setError } = useGraphStateContext();
+	if (!error) return null;
+	return (
+		<ErrorAlert
+			title={error.message || "An error occurred"}
+			description={error.error?.message}
+			className="sticky bottom-0 mt-auto mb-3 rounded-(--composer-radius) no-scrollbar"
+			action={
+				<TooltipIconButton
+					tooltip="Dismiss error"
+					side="top"
+					size="xs"
+					onClick={() => setError(null)}
+				>
+					<X className="size-4" />
+				</TooltipIconButton>
+			}
+		/>
+	);
 };
 
 const parsePartialStructuredOutput = (text: string): any => {
@@ -448,7 +463,7 @@ const AssistantMessageContent: FC = () => {
 						case "tool-call":
 							return part.toolUI ?? <ToolFallback {...part} />;
 						case "indicator":
-							return <ThinkingIndicator />;
+							return <ThinkingIndicator className="mt-2" />;
 						default:
 							return null;
 					}
@@ -464,8 +479,12 @@ const ThinkingIndicator = ({
 	...props
 }: { symbol?: string } & React.HTMLAttributes<HTMLSpanElement>) => {
 	return (
+		// biome-ignore lint/a11y/useAriaPropsSupportedByRole: n
 		<span
-			className="flex items-center gap-1 text-muted-foreground font-sans"
+			className={cn(
+				"flex items-center gap-1 text-muted-foreground font-sans",
+				props?.className,
+			)}
 			data-slot="aui_assistant-message-indicator"
 			aria-label="Assistant is working"
 			{...props}
@@ -599,6 +618,7 @@ const UserMessage: FC = () => {
 				data-slot="aui_user-branch-picker"
 				className="col-span-full col-start-1 row-start-3 -me-1 justify-end"
 			/> */}
+			<MessageError />
 		</MessagePrimitive.Root>
 	);
 };

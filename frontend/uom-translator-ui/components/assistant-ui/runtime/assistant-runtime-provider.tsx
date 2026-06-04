@@ -10,8 +10,8 @@ import {
 	type LangChainMessage,
 	useLangGraphRuntime,
 } from "@assistant-ui/react-langgraph";
-import { useMemo, useState } from "react";
-
+import { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { GraphStateContext } from "@/hooks/use-graph-state-context";
 import { createClient } from "@/lib/chatApi";
 import type { BackendState } from "@/lib/types";
@@ -35,6 +35,10 @@ const NODE_NAME_MAP: Record<string, string> = {
 	human_intervention_node: "Manual Intervention",
 };
 
+const EXCLUDED_ERRORS = [
+	"signal is aborted without reason", // This is a common message when aborting a run, and doesn't indicate an actual error (mostly happens in development environment)
+];
+
 export function AssistantRuntimeProviderWrapper({
 	inputSuggestions,
 	children,
@@ -44,6 +48,14 @@ export function AssistantRuntimeProviderWrapper({
 }) {
 	const client = useMemo(() => createClient(), []);
 	const [graphState, setGraphState] = useState<Partial<BackendState>>({});
+	const [error, setError] = useState<{ message: string; error?: any } | null>(
+		null,
+	);
+	const [runError, setRunError] = useState<{
+		message: string;
+		error?: any;
+	} | null>(null);
+	// const [serverActive, setServerActive] = useState(true);
 
 	// Custom stream callback that works end-to-end with our LangGraph server
 	const stream = useMemo(() => {
@@ -82,6 +94,9 @@ export function AssistantRuntimeProviderWrapper({
 					mongodb_uri: configurable.mongodbUri || undefined,
 					neo4j_uri: configurable.neo4jUri || undefined,
 					neo4j_password: configurable.neo4jPassword || undefined,
+					daytona_api_url: configurable.daytonaUrl || undefined,
+					daytona_api_key: configurable.daytonaApiKey || undefined,
+					daytona_target: configurable.daytonaTarget || undefined,
 					sandbox_execution_timeout: configurable.daytonaTimeout || undefined,
 				},
 			};
@@ -158,6 +173,18 @@ export function AssistantRuntimeProviderWrapper({
 		};
 	}, [client]);
 
+	const handleError = useCallback((message: string, error: any) => {
+		if (EXCLUDED_ERRORS.includes(error?.message)) {
+			console.warn("Excluded error occurred:", error);
+			return;
+		}
+		console.error("[UOM] Runtime error:", error);
+		setError({
+			message,
+			error,
+		});
+	}, []);
+
 	const threadListAdapter = useMemo<RemoteThreadListAdapter>(() => {
 		return {
 			async list() {
@@ -178,15 +205,20 @@ export function AssistantRuntimeProviderWrapper({
 								`Migration ${t.thread_id.slice(0, 4)}`,
 						})),
 					};
-				} catch (e) {
-					console.error("Failed to list threads in adapter:", e);
-					return { threads: [] };
+				} catch (error) {
+					handleError("Failed to list threads", error);
+					throw error;
 				}
 			},
 			async rename(remoteId, newTitle) {
-				await client.threads.update(remoteId, {
-					metadata: { title: newTitle },
-				});
+				try {
+					await client.threads.update(remoteId, {
+						metadata: { title: newTitle },
+					});
+				} catch (error) {
+					handleError("Failed to rename thread", error);
+					throw error;
+				}
 			},
 			async archive() {},
 			async unarchive() {},
@@ -194,14 +226,19 @@ export function AssistantRuntimeProviderWrapper({
 				await client.threads.delete(remoteId);
 			},
 			async initialize() {
-				const defaultTitle = `Migration ${new Date().toLocaleTimeString([], {
-					hour: "2-digit",
-					minute: "2-digit",
-				})}`;
-				const { thread_id } = await client.threads.create({
-					metadata: { title: defaultTitle },
-				});
-				return { remoteId: thread_id, externalId: thread_id };
+				try {
+					const defaultTitle = `Migration ${new Date().toLocaleTimeString([], {
+						hour: "2-digit",
+						minute: "2-digit",
+					})}`;
+					const { thread_id } = await client.threads.create({
+						metadata: { title: defaultTitle },
+					});
+					return { remoteId: thread_id, externalId: thread_id };
+				} catch (error) {
+					handleError("Failed to create thread", error);
+					throw error;
+				}
 			},
 			async fetch(threadId) {
 				try {
@@ -216,14 +253,9 @@ export function AssistantRuntimeProviderWrapper({
 							(t.metadata as { title?: string } | undefined)?.title ||
 							`Migration ${threadId.slice(0, 4)}`,
 					};
-				} catch (e) {
-					console.error("Failed to fetch thread in adapter:", e);
-					return {
-						remoteId: threadId,
-						externalId: threadId,
-						status: "regular" as const,
-						title: "New Migration",
-					};
+				} catch (error) {
+					handleError("Failed to fetch thread", error);
+					throw error;
 				}
 			},
 			async generateTitle() {
@@ -234,21 +266,26 @@ export function AssistantRuntimeProviderWrapper({
 				} as any;
 			},
 		};
-	}, [client]);
+	}, [client, handleError]);
 
 	const runtime = useLangGraphRuntime({
 		unstable_allowCancellation: true,
 		stream,
 		unstable_threadListAdapter: threadListAdapter,
 		create: async () => {
-			const defaultTitle = `Migration ${new Date().toLocaleTimeString([], {
-				hour: "2-digit",
-				minute: "2-digit",
-			})}`;
-			const { thread_id } = await client.threads.create({
-				metadata: { title: defaultTitle },
-			});
-			return { externalId: thread_id };
+			try {
+				const defaultTitle = `Migration ${new Date().toLocaleTimeString([], {
+					hour: "2-digit",
+					minute: "2-digit",
+				})}`;
+				const { thread_id } = await client.threads.create({
+					metadata: { title: defaultTitle },
+				});
+				return { externalId: thread_id };
+			} catch (error) {
+				handleError("Failed to create thread for runtime", error);
+				throw error;
+			}
 		},
 		load: async (externalId, config) => {
 			try {
@@ -263,9 +300,37 @@ export function AssistantRuntimeProviderWrapper({
 					messages: state.values?.messages || [],
 					interrupts: state.tasks?.[0]?.interrupts || [],
 				};
-			} catch (e) {
-				console.error("Failed to load thread state:", e);
+			} catch (error) {
+				handleError("Failed to load thread state", error);
 				return { messages: [], interrupts: [] };
+			}
+		},
+		getCheckpointId: async (threadId, parentMessages) => {
+			try {
+				const history = await client.threads.getHistory<BackendState>(threadId);
+				for (const state of history) {
+					const stateMessages = state.values.messages;
+					if (
+						!stateMessages ||
+						stateMessages.length !== parentMessages.length
+					) {
+						continue;
+					}
+					const hasStableIds =
+						parentMessages.every((m) => typeof m.id === "string") &&
+						stateMessages.every((m) => typeof m.id === "string");
+					if (!hasStableIds) continue;
+					const isMatch = parentMessages.every(
+						(m, i) => m.id === stateMessages[i]?.id,
+					);
+					if (isMatch) {
+						return state.checkpoint.checkpoint_id ?? null;
+					}
+				}
+				return null;
+			} catch (error) {
+				handleError("Failed to get checkpoint ID", error);
+				return null;
 			}
 		},
 		eventHandlers: {
@@ -322,12 +387,19 @@ export function AssistantRuntimeProviderWrapper({
 			},
 			onError: (error: any) => {
 				console.error("[UOM] Runtime error:", error);
+				setRunError({
+					message: "Error occurred while running the assistant",
+					error,
+				});
+				toast.error("An error occurred while running the assistant", {
+					description: error?.message || String(error),
+				});
 			},
 			onSubgraphError: (namespace: string, error: any) => {
 				console.error(`[UOM] Subgraph [${namespace}] error:`, error);
 			},
 			onCustomEvent: (type: string, data: any) => {
-				console.debug(`[UOM] Custom event [${type}]:`, data);
+				console.log(`[UOM] Custom event [${type}]:`, data);
 			},
 		},
 	});
@@ -338,7 +410,9 @@ export function AssistantRuntimeProviderWrapper({
 	});
 
 	return (
-		<GraphStateContext value={graphState}>
+		<GraphStateContext
+			value={{ graphState, error, setError, runError, setRunError }}
+		>
 			<AssistantRuntimeProvider aui={aui} runtime={runtime}>
 				{children}
 			</AssistantRuntimeProvider>

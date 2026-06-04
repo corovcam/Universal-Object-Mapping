@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "streamdown/styles.css";
 import "./globals.css";
+import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
 	variable: "--font-geist-sans",
@@ -40,6 +41,7 @@ export default function RootLayout({
 				<ThemeProvider defaultTheme="dark">
 					<TooltipProvider>{children}</TooltipProvider>
 				</ThemeProvider>
+				<Toaster />
 			</body>
 		</html>
 	);
