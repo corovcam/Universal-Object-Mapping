@@ -299,7 +299,7 @@ const Composer: FC = () => {
 					className="flex w-full flex-col gap-2 rounded-(--composer-radius) border bg-background p-(--composer-padding) transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20 data-[dragging=true]:border-ring data-[dragging=true]:border-dashed data-[dragging=true]:bg-accent/50"
 				>
 					<div className="relative flex items-center justify-between">
-						<ComposerAttachments />
+						{/* <ComposerAttachments /> */}
 						<TooltipIconButton
 							tooltip={expanded ? "Collapse input" : "Expand input"}
 							side="bottom"
@@ -334,8 +334,8 @@ const Composer: FC = () => {
 
 const ComposerAction: FC = () => {
 	return (
-		<div className="aui-composer-action-wrapper relative flex items-center justify-between">
-			<ComposerAddAttachment />
+		<div className="aui-composer-action-wrapper relative flex items-center justify-end">
+			{/* <ComposerAddAttachment /> */}
 			<AuiIf condition={(s) => !s.thread.isRunning}>
 				<ComposerPrimitive.Send asChild>
 					<TooltipIconButton
