@@ -11,7 +11,8 @@
 		}
 	},
 	"files": {
-		"ignoreUnknown": false
+		"includes": ["**", "!**/components/ui"],
+		"ignoreUnknown": true
 	},
 	"formatter": {
 		"enabled": true,

@@ -1,20 +1,40 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import {
+  BookOpen,
+  CheckCircle,
+  Cpu,
+  Database,
+  ExternalLink,
+  Info,
+  Settings,
+  Terminal,
+} from "lucide-react";
+
+import { GitHubIcon } from "@/components/icons/github";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogTitle
+  DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  CheckCircle,
-  ExternalLink,
-  Info,
-  Settings,
-  Terminal
-} from "lucide-react";
-import { useEffect, useState } from "react";
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
+import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { InfoAlert } from "@/components/custom-alerts";
 
 export interface UomConfig {
   ollamaHost: string;
@@ -26,18 +46,23 @@ export interface UomConfig {
   neo4jUri: string;
   neo4jPassword: string;
   daytonaTimeout: number;
+  dbToolboxUri?: string;
+  mongodbMcpUri?: string;
 }
 
 const DEFAULT_CONFIG: UomConfig = {
   ollamaHost: "http://localhost:11434",
   model: "einfra/kimi-k2.6",
-  openaiApiUrl: "http://localhost:4010/v1",
+  openaiApiUrl: "https://llm.ai.e-infra.cz/v1",
   openaiApiKey: "",
-  mssqlConnectionString: "Server=localhost,1333;Database=WideWorldImporters;User Id=uom_readonly;Password=Uomreadonly123;TrustServerCertificate=True",
-  mongodbUri: "mongodb://uom_readonly:uom_readonly@localhost:27027/uom",
+  mssqlConnectionString:
+    "Server=localhost,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True",
+  mongodbUri: "mongodb://localhost:27027",
   neo4jUri: "neo4j://localhost:7697",
   neo4jPassword: "password",
   daytonaTimeout: 480,
+  dbToolboxUri: "http://localhost:5010",
+  mongodbMcpUri: "http://localhost:3010/mcp",
 };
 
 interface ConfigModalProps {
@@ -46,9 +71,134 @@ interface ConfigModalProps {
   onSave: (config: UomConfig) => void;
 }
 
+// Reusable LinkCard Component
+interface LinkCardProps {
+  icon: React.ComponentType<{ className?: string }>;
+  iconClass?: string;
+  title: string;
+  description: string;
+  href: string;
+  tooltip: string;
+}
+
+function LinkItem({
+  icon: Icon,
+  iconClass = "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
+  title,
+  description,
+  href,
+  tooltip,
+}: LinkCardProps) {
+  return (
+    <Item variant="outline">
+      <ItemMedia variant="icon" className={iconClass}>
+        <Icon className="size-4" />
+      </ItemMedia>
+      <ItemContent>
+        <ItemTitle>{title}</ItemTitle>
+        <ItemDescription>
+          {description}
+        </ItemDescription>
+      </ItemContent>
+      <ItemActions>
+        <TooltipIconButton tooltip={tooltip} side="top">
+          <a 
+            href={href}
+            target="_blank" 
+            rel="noreferrer" 
+            className="text-primary font-semibold"
+          >
+            <ExternalLink className="size-4" />
+          </a>
+        </TooltipIconButton>
+      </ItemActions>
+    </Item>
+  );
+}
+
+// Reusable OnboardingStep Component
+interface OnboardingStepProps {
+  number: number;
+  title: string;
+  description: string;
+  codeCommand?: string;
+}
+
+function OnboardingStep({
+  number,
+  title,
+  description,
+  codeCommand,
+}: OnboardingStepProps) {
+  return (
+    <div className="flex gap-3 items-start">
+      <div className="flex items-center justify-center size-5 rounded-full bg-primary/20 text-primary font-bold text-[11px] shrink-0 mt-0.5 select-none">
+        {number}
+      </div>
+      <div className="space-y-1">
+        <h4 className="font-semibold text-foreground">{title}</h4>
+        <p className="text-muted-foreground text-xs leading-relaxed">{description}</p>
+        {codeCommand && (
+          <div className="bg-muted/50 p-2.5 rounded font-mono text-[11px] text-indigo-400 dark:text-indigo-300 border border-border select-all break-all inline-block mt-1.5">
+            {codeCommand}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Reusable ConfigField Component
+interface ConfigFieldProps {
+  id: keyof UomConfig;
+  label: string;
+  value: string | number;
+  onChange: (key: keyof UomConfig, value: any) => void;
+  description: string;
+  type?: "text" | "password" | "number" | "textarea";
+  placeholder?: string;
+}
+
+function ConfigField({
+  id,
+  label,
+  value,
+  onChange,
+  description,
+  type = "text",
+  placeholder,
+}: ConfigFieldProps) {
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      {type === "textarea" ? (
+        <Textarea
+          id={id}
+          value={value as string}
+          onChange={(e) => onChange(id, e.target.value)}
+          className="font-mono text-xs min-h-20"
+          placeholder={placeholder}
+        />
+      ) : (
+        <Input
+          id={id}
+          type={type}
+          value={value}
+          onChange={(e) => {
+            const val = type === "number" ? Number(e.target.value) : e.target.value;
+            onChange(id, val);
+          }}
+          className="font-mono text-xs"
+          placeholder={placeholder}
+        />
+      )}
+      <FieldDescription>{description}</FieldDescription>
+    </Field>
+  );
+}
+
 export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
   const [config, setConfig] = useState<UomConfig>(DEFAULT_CONFIG);
-  const [activeTab, setActiveTab] = useState<"onboarding" | "llm" | "db" | "daytona">("onboarding");
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
@@ -65,9 +215,9 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
   }, []);
 
   const handleChange = (key: keyof UomConfig, value: any) => {
-    setConfig(prev => ({
+    setConfig((prev) => ({
       ...prev,
-      [key]: value
+      [key]: value,
     }));
   };
 
@@ -84,334 +234,309 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-5xl bg-slate-900 border border-slate-800 text-slate-100 shadow-2xl p-0 overflow-auto rounded-xl w-[1500px] max-h-[90vh]">
+      <DialogContent className="sm:max-w-4xl h-[650px] p-0 overflow-hidden bg-background text-foreground border-border shadow-2xl">
         <DialogTitle className="sr-only">Settings Hub</DialogTitle>
-        <DialogDescription className="sr-only">Configure settings for Universal Object Mapping</DialogDescription>
-        <div className="flex h-full w-full custom-scrollbar">
-          {/* Sidebar Nav */}
-          <div className="w-1/4 bg-slate-950 border-r border-slate-800/60 p-4 flex flex-col justify-between">
-            <div className="space-y-1">
-              <div className="text-center flex items-center justify-center px-2 py-4 mb-4 border-b border-slate-800/40">
-                <span className="font-bold text-sm tracking-tight bg-linear-to-r from-slate-100 to-indigo-200 bg-clip-text text-transparent">UOM Assistant</span>
-              </div>
+        <DialogDescription className="sr-only">
+          Configure settings for Universal Object Mapping
+        </DialogDescription>
+        
+        <Tabs defaultValue="onboarding" orientation="vertical" className="flex h-full w-full">
+          {/* Left Navigation Sidebar */}
+          <TabsList variant="line" className="w-64 flex flex-col justify-start items-stretch rounded-none border-r border-border bg-muted/5 p-4 h-full shrink-0 gap-1.5">
+            <div className="px-3 py-4 mb-4 border-b border-border flex items-center gap-2 select-none">
+              <Settings className="size-4 text-primary animate-spin-[spin_3s_linear_infinite]" />
+              <span className="font-bold text-sm tracking-tight">UOM Settings</span>
+            </div>
+            
+            <TabsTrigger
+              value="onboarding"
+              className="justify-start gap-2.5 px-3 py-2 rounded-lg text-left font-medium transition-all"
+            >
+              <BookOpen className="size-4 shrink-0" />
+              <span>Onboarding Guide</span>
+            </TabsTrigger>
+
+            <TabsTrigger
+              value="llm"
+              className="justify-start gap-2.5 px-3 py-2 rounded-lg text-left font-medium transition-all"
+            >
+              <Cpu className="size-4 shrink-0" />
+              <span>LLM Settings</span>
+            </TabsTrigger>
+
+            <TabsTrigger
+              value="db"
+              className="justify-start gap-2.5 px-3 py-2 rounded-lg text-left font-medium transition-all"
+            >
+              <Database className="size-4 shrink-0" />
+              <span>Database URIs</span>
+            </TabsTrigger>
+
+            <TabsTrigger
+              value="daytona"
+              className="justify-start gap-2.5 px-3 py-2 rounded-lg text-left font-medium transition-all"
+            >
+              <Terminal className="size-4 shrink-0" />
+              <span>Daytona Sandbox</span>
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Right Content Pane */}
+          <div className="flex-1 flex flex-col min-w-0 h-full bg-background relative">
+            <div className="flex-1 overflow-hidden relative">
               
-              <button
-                type="button"
-                onClick={() => setActiveTab("onboarding")}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs font-medium transition-all ${
-                  activeTab === "onboarding"
-                    ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/20"
-                    : "text-slate-400 hover:bg-slate-900 hover:text-slate-200 border border-transparent"
-                }`}
+              {/* Onboarding Content */}
+              <TabsContent 
+                value="onboarding" 
+                className="absolute inset-0 overflow-y-auto custom-scrollbar p-6 space-y-6 mt-0"
               >
-                {/* <BookOpen className="size-6" /> */}
-                <span>Onboarding Guide</span>
-              </button>
+                <div className="space-y-2">
+                  <h2 className="font-bold text-foreground">Getting Started with UOM</h2>
+                  <p className="text-muted-foreground leading-relaxed">
+                    Universal Object Mapping (UOM) is an advanced research and engineering platform designed to automate the translation, validation, and performance optimization of database schemas and query code from relational .NET ORM frameworks to NoSQL document/graph-based Java Spring Data paradigms.
+                  </p>
+                </div>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab("llm")}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs font-medium transition-all ${
-                  activeTab === "llm"
-                    ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/20"
-                    : "text-slate-400 hover:bg-slate-900 hover:text-slate-200 border border-transparent"
-                }`}
-              >
-                {/* <Cpu className="size-6" /> */}
-                <span>LLM Settings</span>
-              </button>
+                <InfoAlert title="Critical Setup Prerequisite" 
+                  description={
+                    <div>Your local database stack, MCP services, and Daytona daemon <strong>must be active and configured</strong> before executing migrations. The orchestrator connects directly to them to inspect schemas, build mapping rules, compile validation harnesses, and evaluate query results.</div>
+                  }
+                />
 
-              <button
-                type="button"
-                onClick={() => setActiveTab("db")}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs font-medium transition-all ${
-                  activeTab === "db"
-                    ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/20"
-                    : "text-slate-400 hover:bg-slate-900 hover:text-slate-200 border border-transparent"
-                }`}
-              >
-                {/* <Database className="size-6" /> */}
-                <span>Database URIs</span>
-              </button>
+                <div className="space-y-3">
+                  <h3 className="font-bold text-foreground uppercase tracking-wider select-none">How to Configure UOM</h3>
+                  
+                  <div className="grid gap-4 text-xs">
+                    <OnboardingStep
+                      number={1}
+                      title="Boot the Database Stack"
+                      description="Run the docker-compose services inside the monorepo root directory. This spins up MS SQL Server (source), MongoDB & Neo4j (targets), MongoDB Relational Migrator, and the GenAI DB Toolbox and MongoDB MCP Servers."
+                      codeCommand="docker compose up -d --build"
+                    />
+                    <OnboardingStep
+                      number={2}
+                      title="Configure LLM Orchestration"
+                      description="Specify your LLM provider under the LLM Settings tab. You can use Metacentrum e-INFRA CZ (fill in the API key and URL) or host a local model using Ollama (e.g. running qwen3-coder:30b)."
+                    />
+                    <OnboardingStep
+                      number={3}
+                      title="Set Connection Mappings & Daytona"
+                      description="Verify the MS SQL connection strings and target database URIs under Database URIs. Set compiler timeouts under Daytona Sandbox. The Daytona daemon compiles and builds test packages inside secure containers."
+                    />
+                  </div>
+                </div>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab("daytona")}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs font-medium transition-all ${
-                  activeTab === "daytona"
-                    ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/20"
-                    : "text-slate-400 hover:bg-slate-900 hover:text-slate-200 border border-transparent"
-                }`}
+                <div className="space-y-3 pt-2">
+                  <h3 className="font-bold text-foreground uppercase tracking-wider select-none">Setup Tools &amp; Links</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <LinkItem
+                      icon={BookOpen}
+                      title="GitHub Codebase"
+                      description="Universal Object Mapping GitHub Repository"
+                      href="https://github.com/corovcam/Universal-Object-Mapping"
+                      tooltip="Universal Object Mapping GitHub Repository"
+                    />
+                    <LinkItem
+                      icon={Database}
+                      iconClass="bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                      title="MongoDB Relational Migrator"
+                      description="MongoDB Relational Migrator Dashboard"
+                      href="http://localhost:8091"
+                      tooltip="Open MongoDB Relational Migrator Web UI"
+                    />
+                    <LinkItem
+                      icon={Database}
+                      iconClass="bg-blue-500/10 text-blue-400 border-blue-500/20"
+                      title="Neo4j ETL Tool Docs"
+                      description="Neo4j ETL Tool setup guide"
+                      href="https://neo4j.com/developer/neo4j-etl/"
+                      tooltip="Open Neo4j ETL Tool Documentation"
+                    />
+                    <LinkItem
+                      icon={Terminal}
+                      iconClass="bg-orange-500/10 text-orange-400 border-orange-500/20"
+                      title="Neo4j Console"
+                      description="Browser Cypher Console"
+                      href="http://localhost:7474"
+                      tooltip="Open Neo4j Console"
+                    />
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* LLM Settings Content */}
+              <TabsContent 
+                value="llm" 
+                className="absolute inset-0 overflow-y-auto custom-scrollbar p-6 space-y-6 mt-0"
               >
-                {/* <Terminal className="size-4" /> */}
-                <span>Daytona Sandbox</span>
-              </button>
+                <div>
+                  <h2 className="font-bold text-foreground">LLM Orchestration Settings</h2>
+                  <p className="text-muted-foreground">Specify backend model selectors and API endpoints.</p>
+                </div>
+
+                <FieldGroup>
+                  <ConfigField
+                    id="ollamaHost"
+                    label="Ollama Endpoint URL"
+                    value={config.ollamaHost}
+                    onChange={handleChange}
+                    description="The URI where your local Ollama instance is hosted."
+                    placeholder="e.g. http://localhost:11434"
+                  />
+
+                  <ConfigField
+                    id="model"
+                    label="Target Translation LLM Model"
+                    value={config.model}
+                    onChange={handleChange}
+                    description="Must match the provider/name paradigm (e.g. einfra/kimi-k2.6 or ollama/qwen3-coder:30b)."
+                    placeholder="ollama/qwen3-coder:30b"
+                  />
+
+                  <Separator className="my-2" />
+
+                  <ConfigField
+                    id="openaiApiUrl"
+                    label="E-Infra API Base URL (Optional)"
+                    value={config.openaiApiUrl}
+                    onChange={handleChange}
+                    description="OpenAI-compatible endpoints provided by E-Infra API."
+                    placeholder="https://einfra.net/v1"
+                  />
+
+                  <ConfigField
+                    id="openaiApiKey"
+                    type="password"
+                    label="E-Infra API Secret Token"
+                    value={config.openaiApiKey}
+                    onChange={handleChange}
+                    description="API key used for authenticating with the E-Infra model provider."
+                    placeholder="Enter API key"
+                  />
+                </FieldGroup>
+              </TabsContent>
+
+              {/* Database URIs Content */}
+              <TabsContent 
+                value="db" 
+                className="absolute inset-0 overflow-y-auto custom-scrollbar p-6 space-y-6 mt-0"
+              >
+                <div>
+                  <h2 className="font-bold text-foreground">Database Connection Mappings</h2>
+                  <p className="text-muted-foreground">Define URIs where target databases and caches reside.</p>
+                </div>
+
+                <FieldGroup>
+                  <ConfigField
+                    id="mssqlConnectionString"
+                    type="textarea"
+                    label="MS SQL Server Connection String"
+                    value={config.mssqlConnectionString}
+                    onChange={handleChange}
+                    description="Connection details for the source relational MS SQL Server database."
+                    placeholder="Server=localhost,1333;Database=..."
+                  />
+
+                  <ConfigField
+                    id="mongodbUri"
+                    label="MongoDB Target URI"
+                    value={config.mongodbUri}
+                    onChange={handleChange}
+                    description="The connection URI for the target document-based MongoDB."
+                    placeholder="mongodb://..."
+                  />
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <ConfigField
+                      id="neo4jUri"
+                      label="Neo4j Target URI"
+                      value={config.neo4jUri}
+                      onChange={handleChange}
+                      description="The connection URI for the target graph-based Neo4j database."
+                      placeholder="neo4j://..."
+                    />
+
+                    <ConfigField
+                      id="neo4jPassword"
+                      type="password"
+                      label="Neo4j Database Password"
+                      value={config.neo4jPassword}
+                      onChange={handleChange}
+                      description="Password for Neo4j authentication."
+                      placeholder="password"
+                    />
+                  </div>
+
+                  <Separator className="my-2" />
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <ConfigField
+                      id="dbToolboxUri"
+                      label="Database Toolbox MCP URI"
+                      value={config.dbToolboxUri || ""}
+                      onChange={handleChange}
+                      description="Optional DB inspection server URI."
+                      placeholder="e.g. http://localhost:8000"
+                    />
+
+                    <ConfigField
+                      id="mongodbMcpUri"
+                      label="MongoDB MCP URI"
+                      value={config.mongodbMcpUri || ""}
+                      onChange={handleChange}
+                      description="Optional MongoDB inspection server URI."
+                      placeholder="e.g. http://localhost:8001"
+                    />
+                  </div>
+                </FieldGroup>
+              </TabsContent>
+
+              {/* Daytona Sandbox Content */}
+              <TabsContent 
+                value="daytona" 
+                className="absolute inset-0 overflow-y-auto custom-scrollbar p-6 space-y-6 mt-0"
+              >
+                <div>
+                  <h2 className="font-bold text-foreground">Daytona Dev Sandbox</h2>
+                  <p className="text-muted-foreground">Define compiler timeouts and Daytona workspace rules.</p>
+                </div>
+
+                <FieldGroup>
+                  <ConfigField
+                    id="daytonaTimeout"
+                    type="number"
+                    label="Sandbox Build Timeout (seconds)"
+                    value={config.daytonaTimeout}
+                    onChange={handleChange}
+                    description="Time allowed for .NET and Spring compilation & verification runs inside the container."
+                  />
+
+                  <InfoAlert 
+                    title="Daytona Local Sandbox Mode" 
+                    description="Daytona is automatically loaded and configured in the devcontainer environment. Target compilation builds run securely in parallel sandbox environments to ensure generated C# queries and target Java spring mappings build successfully before comparing data equivalence."
+                    Icon={Terminal}
+                  />
+                </FieldGroup>
+              </TabsContent>
+
             </div>
 
-            <div className="px-2 py-3 bg-slate-900/60 rounded-lg border border-slate-800/40">
-              <span className="text-[10px] text-slate-500 block uppercase font-semibold mb-1">Status</span>
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                <span className="size-1.5 rounded-full bg-emerald-500 pulse-dot"></span>
-                System Configured
-              </div>
-            </div>
-          </div>
-
-          {/* Main Pane */}
-          <div className="flex-1 flex flex-col min-h-0 bg-slate-900/40">
-            <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
-              {activeTab === "onboarding" && (
-                <div className="space-y-5">
-                  <div>
-                    <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
-                      <span>Getting Started with UOM</span>
-                    </h2>
-                    <p className="text-slate-400 text-xs mt-1">
-                      Migrate .NET ORM schema/queries to Java Spring Data ODM/OGM.
-                    </p>
-                  </div>
-
-                  <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg space-y-2">
-                    <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold">
-                      <Info className="size-4 shrink-0" />
-                      <span>CRITICAL PREREQUISITE</span>
-                    </div>
-                    <p className="text-[11px] text-slate-300 leading-relaxed">
-                      Your database environments <strong>MUST be set up and running</strong> before the assistant can execute translations. The assistant connects directly to them to inspect schemas, build mapping rules, and run live queries.
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Useful References &amp; Commands</h3>
-                    
-                    <div className="space-y-2 text-xs">
-                      <div className="flex items-start justify-between gap-3 p-3 bg-slate-950/60 rounded-lg border border-slate-800/50">
-                        <div>
-                          <span className="font-medium text-slate-200 block">Universal-Object-Mapping Repository</span>
-                          <span className="text-[10px] text-slate-400 block mt-0.5">Contains all docker-compose stacks and environment scripts.</span>
-                        </div>
-                        <a 
-                          href="https://github.com/corovcam/Universal-Object-Mapping" 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-semibold shrink-0"
-                        >
-                          Repo <ExternalLink className="size-3" />
-                        </a>
-                      </div>
-
-                      <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800/50 space-y-2">
-                        <span className="font-medium text-slate-200 block">MongoDB Relational Migrator</span>
-                        <span className="text-[10px] text-slate-400 block leading-relaxed">
-                          We utilize the official <strong>MongoDB Relational Migrator</strong>. Follow the documentation below to map and migrate between relational and MongoDB databases.
-                        </span>
-                        <a 
-                          href="https://www.mongodb.com/docs/relational-migrator/" 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold"
-                        >
-                          MongoDB Relational Migrator Docs <ExternalLink className="size-3" />
-                        </a>
-                        {/* TODO: Check the API healthcheck endpoint and render this dynamically */}
-                        <span className="text-[10px] text-slate-400 block leading-relaxed">
-                          <span className="font-bold">NOTE:</span> The relational migrator instance is already running at:
-                          <a 
-                            href="http://localhost:8091" 
-                            target="_blank" 
-                            rel="noreferrer" 
-                            className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold"
-                          >
-                            http://localhost:8091
-                          </a>
-                        </span>
-                      </div>
-
-                      <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800/50 space-y-2">
-                        <span className="font-medium text-slate-200 block">Neo4j ETL UI tool setup</span>
-                        <span className="text-[10px] text-slate-400 block leading-relaxed">
-                          We utilize the official <strong>Neo4j ETL Tool UI</strong>. Follow the documentation below to extract relational schemas and import target Spring graph mappings smoothly:
-                        </span>
-                        <a 
-                          href="https://neo4j.com/developer/neo4j-etl/" 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold"
-                        >
-                          Neo4j ETL Docs <ExternalLink className="size-3" />
-                        </a>
-                      </div>
-
-                      <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800/50 space-y-1.5">
-                        <span className="font-medium text-slate-200 block">Quick Start DB Cluster</span>
-                        <p className="text-[10px] text-slate-400">Run this inside the workspace root to boot up SQL Server, Redis, MongoDB, and Neo4j:</p>
-                        <div className="bg-slate-900 p-2 rounded font-mono text-[10px] text-indigo-300 border border-slate-800 select-all">
-                          docker compose up -d
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === "llm" && (
-                <div className="space-y-4">
-                  <div>
-                    <h2 className="text-sm font-bold text-slate-200">LLM Orchestration Settings</h2>
-                    <p className="text-slate-400 text-[11px]">Specify backend model selectors and API endpoints.</p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold text-slate-300 block">Ollama Endpoint URL</label>
-                      <input 
-                        type="text" 
-                        value={config.ollamaHost}
-                        onChange={(e) => handleChange("ollamaHost", e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500 font-mono text-slate-300"
-                        placeholder="e.g. http://localhost:11434"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold text-slate-300 block">Target Translation LLM Model</label>
-                      <input 
-                        type="text" 
-                        value={config.model}
-                        onChange={(e) => handleChange("model", e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500 font-mono text-slate-300"
-                        placeholder="ollama/qwen3-coder:30b"
-                      />
-                      <span className="text-[10px] text-slate-500 block">Must match the provider/name paradigm (e.g. einfra/kimi-k2.6 or ollama/qwen3-coder:30b).</span>
-                    </div>
-
-                    <hr className="border-slate-800" />
-
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold text-slate-300 block">E-Infra API Base URL (Optional)</label>
-                      <input 
-                        type="text" 
-                        value={config.openaiApiUrl}
-                        onChange={(e) => handleChange("openaiApiUrl", e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500 font-mono text-slate-300"
-                        placeholder="https://einfra.net/v1"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold text-slate-300 block">E-Infra API Secret Token</label>
-                      <input 
-                        type="password" 
-                        value={config.openaiApiKey}
-                        onChange={(e) => handleChange("openaiApiKey", e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500 font-mono text-slate-300"
-                        placeholder="Enter API key"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === "db" && (
-                <div className="space-y-4">
-                  <div>
-                    <h2 className="text-sm font-bold text-slate-200">Database Connection Mappings</h2>
-                    <p className="text-slate-400 text-[11px]">Define URIs where target databases and caches reside.</p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold text-slate-300 block">MS SQL Server Connection String</label>
-                      <textarea 
-                        value={config.mssqlConnectionString}
-                        onChange={(e) => handleChange("mssqlConnectionString", e.target.value)}
-                        rows={2}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500 font-mono text-slate-300 resize-none"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold text-slate-300 block">MongoDB target URI</label>
-                      <input 
-                        type="text" 
-                        value={config.mongodbUri}
-                        onChange={(e) => handleChange("mongodbUri", e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500 font-mono text-slate-300"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-semibold text-slate-300 block">Neo4j target URI</label>
-                        <input 
-                          type="text" 
-                          value={config.neo4jUri}
-                          onChange={(e) => handleChange("neo4jUri", e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500 font-mono text-slate-300"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-semibold text-slate-300 block">Neo4j Database Password</label>
-                        <input 
-                          type="password" 
-                          value={config.neo4jPassword}
-                          onChange={(e) => handleChange("neo4jPassword", e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500 font-mono text-slate-300"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === "daytona" && (
-                <div className="space-y-4">
-                  <div>
-                    <h2 className="text-sm font-bold text-slate-200">Daytona Dev Sandbox</h2>
-                    <p className="text-slate-400 text-[11px]">Define compiler timeouts and Daytona workspace rules.</p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold text-slate-300 block">Sandbox Build Timeout (seconds)</label>
-                      <input 
-                        type="number" 
-                        value={config.daytonaTimeout}
-                        onChange={(e) => handleChange("daytonaTimeout", Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500 font-mono text-slate-300"
-                      />
-                      <span className="text-[10px] text-slate-500 block">Time allowed for .NET and Spring compilation &amp; verification runs inside the container.</span>
-                    </div>
-
-                    <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800/40 text-xs leading-relaxed space-y-2">
-                      <div className="flex items-center gap-1.5 text-indigo-400 font-semibold text-[11px]">
-                        <Terminal className="size-3.5" />
-                        <span>Daytona Local Sandbox Sandbox Mode</span>
-                      </div>
-                      <p className="text-slate-400 text-[10px]">
-                        Daytona is automatically loaded and configured in the devcontainer environment. Target compilation builds run securely in parallel sandbox environments to ensure generated C# queries and target Java spring mappings build successfully before comparing data equivalence.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Footer Buttons */}
-            <div className="p-4 bg-slate-950/80 border-t border-slate-800/80 flex items-center justify-between">
-              <span className="text-[10px] text-slate-500">Universal Object Mapping Translator v0.1</span>
+            {/* Shared Footer */}
+            <div className="p-4 border-t border-border bg-muted/10 flex items-center justify-between shrink-0 select-none">
+              <span className="text-xs text-muted-foreground">Universal Object Mapping Translator v0.1</span>
               <div className="flex items-center gap-2">
                 <Button 
                   variant="outline" 
                   onClick={onClose}
-                  className="bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-slate-100 text-xs px-3 h-8"
+                  className="text-xs px-3 h-8"
                 >
                   Cancel
                 </Button>
                 <Button 
                   onClick={handleSave}
                   disabled={saveSuccess}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs px-4 h-8 flex items-center gap-1.5 shadow-lg shadow-indigo-600/20"
+                  className="bg-sidebar-primary hover:bg-sidebar-primary/80 text-white font-medium text-xs px-4 h-8 flex items-center gap-1.5 shadow-lg shadow-indigo-600/20"
                 >
                   {saveSuccess ? (
                     <>
@@ -421,14 +546,14 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
                   ) : (
                     <>
                       <Settings className="size-3.5" />
-                      <span>Save Mappings</span>
+                      <span>Save Settings</span>
                     </>
                   )}
                 </Button>
               </div>
             </div>
           </div>
-        </div>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );
