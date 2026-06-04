@@ -37,6 +37,7 @@ import {
 	UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
 import { InterruptHandler } from "@/components/assistant-ui/interrupt-handler";
+import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import {
 	Reasoning,
 	ReasoningContent,
@@ -409,7 +410,7 @@ const AssistantMessageContent: FC = () => {
 		<div
 			data-slot="aui_assistant-message-content"
 			// [contain-intrinsic-size:auto_24px] fixes issue #4104, don't change without checking for regressions
-			className="text-foreground px-2 leading-relaxed wrap-break-word [contain-intrinsic-size:auto_24px] [content-visibility:auto]"
+			className="mt-2 text-foreground px-2 leading-relaxed wrap-break-word [contain-intrinsic-size:auto_24px] [content-visibility:auto]"
 		>
 			<MessagePrimitive.GroupedParts
 				groupBy={groupPartByType({
@@ -441,7 +442,7 @@ const AssistantMessageContent: FC = () => {
 								</ToolGroupRoot>
 							);
 						case "text":
-							return <StreamdownText {...part} />;
+							return <MarkdownText />;
 						case "reasoning":
 							return <Reasoning {...part} />;
 						case "tool-call":
@@ -469,13 +470,13 @@ const ThinkingIndicator = ({
 			aria-label="Assistant is working"
 			{...props}
 		>
-			<span className="animate-bounce [animation-delay:-0.2s] text-[10px]">
+			<span className="animate-bounce [animation-delay:-0.2s]">
 				{symbol || "•"}
 			</span>
-			<span className="animate-bounce [animation-delay:-0.1s] text-[10px]">
+			<span className="animate-bounce [animation-delay:-0.1s]">
 				{symbol || "•"}
 			</span>
-			<span className="animate-bounce text-[10px]">{symbol || "•"}</span>
+			<span className="animate-bounce">{symbol || "•"}</span>
 		</span>
 	);
 };
@@ -502,7 +503,7 @@ const AssistantMessage: FC = () => {
 			<AuiIf
 				condition={(s) => s.thread.isRunning && s.message.content.length === 0}
 			>
-				<div className="flex items-center gap-2 text-muted-foreground">
+				<div className="flex items-center gap-2 text-muted-foreground px-2 mt-2">
 					<LoaderIcon className="size-4 animate-spin" />
 					<span className="text-sm">
 						Thinking

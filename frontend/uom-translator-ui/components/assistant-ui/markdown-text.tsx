@@ -9,9 +9,10 @@ import {
 	useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
 import { CheckIcon, CopyIcon } from "lucide-react";
+import { Allow, parse as parsePartialJson } from "partial-json";
 import { type FC, memo, useState } from "react";
 import remarkGfm from "remark-gfm";
-
+import { SyntaxHighlighter } from "@/components/assistant-ui/shiki-highlighter";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { JsonViewer } from "@/components/json-viewer";
 import { cn } from "@/lib/utils";
@@ -36,8 +37,8 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
 	};
 
 	return (
-		<div className="aui-code-header-root mt-2.5 flex items-center justify-between rounded-t-lg border border-border/50 border-b-0 bg-muted/50 px-3 py-1.5 text-xs">
-			<span className="aui-code-header-language font-medium text-muted-foreground lowercase">
+		<div className="aui-code-header-root border-border/50 bg-muted/50 mt-2.5 flex items-center justify-between rounded-t-lg border border-b-0 px-3 py-1.5 text-xs">
+			<span className="aui-code-header-language text-muted-foreground font-medium lowercase">
 				{language}
 			</span>
 			<TooltipIconButton tooltip="Copy" onClick={onCopy}>
@@ -56,22 +57,28 @@ const useCopyToClipboard = ({
 	const [isCopied, setIsCopied] = useState<boolean>(false);
 
 	const copyToClipboard = (value: string) => {
-		if (!value) return;
+		if (!value || typeof navigator === "undefined" || !navigator.clipboard) {
+			return;
+		}
 
-		navigator.clipboard.writeText(value).then(() => {
-			setIsCopied(true);
-			setTimeout(() => setIsCopied(false), copiedDuration);
-		});
+		navigator.clipboard.writeText(value).then(
+			() => {
+				setIsCopied(true);
+				setTimeout(() => setIsCopied(false), copiedDuration);
+			},
+			() => {},
+		);
 	};
 
 	return { isCopied, copyToClipboard };
 };
 
 const defaultComponents = memoizeMarkdownComponents({
+	SyntaxHighlighter: SyntaxHighlighter,
 	h1: ({ className, ...props }) => (
 		<h1
 			className={cn(
-				"aui-md-h1 mb-2 scroll-m-20 font-semibold text-base first:mt-0 last:mb-0",
+				"aui-md-h1 mb-2 scroll-m-20 text-base font-semibold first:mt-0 last:mb-0",
 				className,
 			)}
 			{...props}
@@ -80,7 +87,7 @@ const defaultComponents = memoizeMarkdownComponents({
 	h2: ({ className, ...props }) => (
 		<h2
 			className={cn(
-				"aui-md-h2 mt-3 mb-1.5 scroll-m-20 font-semibold text-sm first:mt-0 last:mb-0",
+				"aui-md-h2 mt-3 mb-1.5 scroll-m-20 text-sm font-semibold first:mt-0 last:mb-0",
 				className,
 			)}
 			{...props}
@@ -89,7 +96,7 @@ const defaultComponents = memoizeMarkdownComponents({
 	h3: ({ className, ...props }) => (
 		<h3
 			className={cn(
-				"aui-md-h3 mt-2.5 mb-1 scroll-m-20 font-semibold text-sm first:mt-0 last:mb-0",
+				"aui-md-h3 mt-2.5 mb-1 scroll-m-20 text-sm font-semibold first:mt-0 last:mb-0",
 				className,
 			)}
 			{...props}
@@ -98,7 +105,7 @@ const defaultComponents = memoizeMarkdownComponents({
 	h4: ({ className, ...props }) => (
 		<h4
 			className={cn(
-				"aui-md-h4 mt-2 mb-1 scroll-m-20 font-medium text-sm first:mt-0 last:mb-0",
+				"aui-md-h4 mt-2 mb-1 scroll-m-20 text-sm font-medium first:mt-0 last:mb-0",
 				className,
 			)}
 			{...props}
@@ -107,7 +114,7 @@ const defaultComponents = memoizeMarkdownComponents({
 	h5: ({ className, ...props }) => (
 		<h5
 			className={cn(
-				"aui-md-h5 mt-2 mb-1 font-medium text-sm first:mt-0 last:mb-0",
+				"aui-md-h5 mt-2 mb-1 text-sm font-medium first:mt-0 last:mb-0",
 				className,
 			)}
 			{...props}
@@ -116,7 +123,7 @@ const defaultComponents = memoizeMarkdownComponents({
 	h6: ({ className, ...props }) => (
 		<h6
 			className={cn(
-				"aui-md-h6 mt-2 mb-1 font-medium text-sm first:mt-0 last:mb-0",
+				"aui-md-h6 mt-2 mb-1 text-sm font-medium first:mt-0 last:mb-0",
 				className,
 			)}
 			{...props}
@@ -134,7 +141,7 @@ const defaultComponents = memoizeMarkdownComponents({
 	a: ({ className, ...props }) => (
 		<a
 			className={cn(
-				"aui-md-a text-primary underline underline-offset-2 hover:text-primary/80",
+				"aui-md-a text-primary hover:text-primary/80 underline underline-offset-2",
 				className,
 			)}
 			{...props}
@@ -143,7 +150,7 @@ const defaultComponents = memoizeMarkdownComponents({
 	blockquote: ({ className, ...props }) => (
 		<blockquote
 			className={cn(
-				"aui-md-blockquote my-2.5 border-muted-foreground/30 border-s-2 ps-3 text-muted-foreground italic",
+				"aui-md-blockquote border-muted-foreground/30 text-muted-foreground my-2.5 border-s-2 ps-3 italic",
 				className,
 			)}
 			{...props}
@@ -152,7 +159,7 @@ const defaultComponents = memoizeMarkdownComponents({
 	ul: ({ className, ...props }) => (
 		<ul
 			className={cn(
-				"aui-md-ul my-2 ms-4 list-disc marker:text-muted-foreground [&>li]:mt-1",
+				"aui-md-ul marker:text-muted-foreground my-2 ms-4 list-disc [&>li]:mt-1",
 				className,
 			)}
 			{...props}
@@ -161,7 +168,7 @@ const defaultComponents = memoizeMarkdownComponents({
 	ol: ({ className, ...props }) => (
 		<ol
 			className={cn(
-				"aui-md-ol my-2 ms-4 list-decimal marker:text-muted-foreground [&>li]:mt-1",
+				"aui-md-ol marker:text-muted-foreground my-2 ms-4 list-decimal [&>li]:mt-1",
 				className,
 			)}
 			{...props}
@@ -169,7 +176,7 @@ const defaultComponents = memoizeMarkdownComponents({
 	),
 	hr: ({ className, ...props }) => (
 		<hr
-			className={cn("aui-md-hr my-2 border-muted-foreground/20", className)}
+			className={cn("aui-md-hr border-muted-foreground/20 my-2", className)}
 			{...props}
 		/>
 	),
@@ -221,7 +228,7 @@ const defaultComponents = memoizeMarkdownComponents({
 	pre: ({ className, ...props }) => (
 		<pre
 			className={cn(
-				"aui-md-pre overflow-x-auto rounded-t-none rounded-b-lg border border-border/50 border-t-0 bg-muted/30 p-3 text-xs leading-relaxed",
+				"aui-md-pre border-border/50 bg-muted/30 overflow-x-auto rounded-t-none rounded-b-lg border border-t-0 p-3 text-xs leading-relaxed",
 				className,
 			)}
 			{...props}
@@ -229,24 +236,34 @@ const defaultComponents = memoizeMarkdownComponents({
 	),
 	code: function Code({ className, ...props }) {
 		const isCodeBlock = useIsMarkdownCodeBlock();
-		if (isCodeBlock && className?.includes("language-json")) {
-			const codeString = String(props.children || "").trim();
-			try {
-				const parsed = JSON.parse(codeString);
-				return (
-					<div className="border border-slate-800/80 rounded-lg bg-slate-950/80 p-4 mt-2 max-h-[500px] overflow-y-auto custom-scrollbar select-text">
-						<JsonViewer value={parsed} />
-					</div>
-				);
-			} catch (e) {
-				// Fall back to default rendering if not yet fully formed JSON
+		if (isCodeBlock) {
+			const codeString = String(props.children || "")
+				.trim()
+				.replace(/^"|"$/g, "");
+			if (codeString.startsWith("{")) {
+				console.debug("Parsing partial JSON code block:", codeString);
+				try {
+					const parsed = parsePartialJson(codeString, Allow.ALL);
+					return (
+						<div
+							className={cn(
+								"border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar",
+								className,
+							)}
+						>
+							<JsonViewer value={parsed} />
+						</div>
+					);
+				} catch {
+					// Fall back to default rendering if parsing exception occurs
+				}
 			}
 		}
 		return (
 			<code
 				className={cn(
 					!isCodeBlock &&
-						"aui-md-inline-code rounded-md border border-border/50 bg-muted/50 px-1.5 py-0.5 font-mono text-[0.85em]",
+						"aui-md-inline-code border-border/50 bg-muted/50 rounded-md border px-1.5 py-0.5 font-mono text-[0.85em]",
 					className,
 				)}
 				{...props}

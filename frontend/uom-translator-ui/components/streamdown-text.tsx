@@ -8,6 +8,7 @@ import { code } from "@streamdown/code";
 import { mermaid } from "@streamdown/mermaid";
 import dynamic from "next/dynamic";
 import { Allow, parse as parsePartialJson } from "partial-json";
+import { memo } from "react";
 import {
 	CodeBlock,
 	CodeBlockContainer,
@@ -28,8 +29,6 @@ const StreamdownTextPrimitive = dynamic(
 
 export const StreamdownText = ({ ...props }) => {
 	"use-client";
-
-	const renderers = [{ language: "json", component: JsonRenderer }];
 
 	return (
 		<StreamdownTextPrimitive
@@ -89,10 +88,10 @@ export const JsonCodeComponent = ({
 	language,
 	code,
 }: SyntaxHighlighterProps) => {
-	console.log("Parsing JSON code block:", code);
+	console.debug("Parsing JSON code block:", code);
 	try {
 		code = code.trim().replace(/^"|"$/g, "");
-		console.log("Parsing JSON code block:", code);
+		console.debug("Parsing JSON code block:", code);
 		const parsed = parsePartialJson(code, Allow.ALL);
 		return (
 			<div className="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar">
@@ -118,6 +117,7 @@ export const StaticStreamdownWrapper = ({
 	...props
 }: Omit<StreamdownProps, "children"> & { markdownText: string }) => {
 	const processedText = markdownText.replace(/\r\n/g, "\n");
+	const renderers = [{ language: "json", component: JsonRenderer }];
 
 	return (
 		<Streamdown
@@ -126,7 +126,7 @@ export const StaticStreamdownWrapper = ({
 			linkSafety={{
 				enabled: true,
 			}}
-			plugins={{ code, mermaid }}
+			plugins={{ code, mermaid, renderers }}
 			shikiTheme={["github-light", "github-dark"]}
 			{...props}
 		>
@@ -135,7 +135,7 @@ export const StaticStreamdownWrapper = ({
 	);
 };
 
-export const JsonRenderer = ({
+const JsonRendererImpl = ({
 	code,
 	language,
 	isIncomplete,
@@ -158,3 +158,5 @@ export const JsonRenderer = ({
 		<CodeBlock code={code} language={language} isIncomplete={isIncomplete} />
 	);
 };
+
+export const JsonRenderer = memo(JsonRendererImpl);

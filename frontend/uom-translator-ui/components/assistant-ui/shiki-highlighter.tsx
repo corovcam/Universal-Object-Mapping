@@ -1,0 +1,59 @@
+"use client";
+
+import type { SyntaxHighlighterProps as AUIProps } from "@assistant-ui/react-markdown";
+import type { FC } from "react";
+import ShikiHighlighter, { type ShikiHighlighterProps } from "react-shiki";
+import { cn } from "@/lib/utils";
+
+/**
+ * Props for the SyntaxHighlighter component
+ */
+export type HighlighterProps = Omit<
+	ShikiHighlighterProps,
+	"children" | "theme"
+> & {
+	theme?: ShikiHighlighterProps["theme"];
+} & Pick<AUIProps, "language" | "code"> &
+	Partial<Pick<AUIProps, "node" | "components">>;
+
+/**
+ * SyntaxHighlighter component, using react-shiki
+ * Use it by passing to `defaultComponents` in `markdown-text.tsx`
+ *
+ * @example
+ * const defaultComponents = memoizeMarkdownComponents({
+ *   SyntaxHighlighter,
+ *   h1: //...
+ *   //...other elements...
+ * });
+ */
+export const SyntaxHighlighter: FC<HighlighterProps> = ({
+	code,
+	language,
+	theme = { dark: "github-dark", light: "github-light" },
+	className,
+	addDefaultStyles = false, // assistant-ui requires custom base styles
+	showLanguage = false, // assistant-ui/react-markdown handles language labels
+	node: _node,
+	components: _components,
+	...props
+}) => {
+	return (
+		<ShikiHighlighter
+			{...props}
+			language={language}
+			theme={theme}
+			addDefaultStyles={addDefaultStyles}
+			showLanguage={showLanguage}
+			defaultColor="light-dark()"
+			className={cn(
+				"aui-shiki-base [&_pre]:bg-muted/75! [&_pre]:overflow-x-auto [&_pre]:rounded-b-lg [&_pre]:p-4",
+				className,
+			)}
+		>
+			{code.trim()}
+		</ShikiHighlighter>
+	);
+};
+
+SyntaxHighlighter.displayName = "SyntaxHighlighter";
