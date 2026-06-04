@@ -61,7 +61,7 @@ export function AssistantRuntimeProviderWrapper({
 
 			const payload = {
 				input: messages.length ? { messages } : null,
-				streamMode: ["debug"],
+				streamMode: ["messages", "updates", "custom"],
 				streamSubgraphs: true,
 				signal: config.abortSignal,
 				onDisconnect: "cancel",
@@ -95,19 +95,19 @@ export function AssistantRuntimeProviderWrapper({
 				ASSISTANT_ID,
 				payload as any,
 			);
-			// return eventStream;
-			async function* makeDebugGenerator() {
-				try {
-					for await (const chunk of eventStream) {
-						console.debug("Received chunk:", chunk);
-						yield chunk;
-					}
-				} catch (err: any) {
-					console.error("Error during LangGraph run stream:", err);
-					throw err;
-				}
-			}
-			return makeDebugGenerator();
+			return eventStream;
+			// async function* makeDebugGenerator() {
+			// 	try {
+			// 		for await (const chunk of eventStream) {
+			// 			console.debug("Received chunk:", chunk);
+			// 			yield chunk;
+			// 		}
+			// 	} catch (err: any) {
+			// 		console.error("Error during LangGraph run stream:", err);
+			// 		throw err;
+			// 	}
+			// }
+			// return makeDebugGenerator();
 			// async function* makeGenerator() {
 			//   try {
 			//     for await (const chunk of eventStream) {

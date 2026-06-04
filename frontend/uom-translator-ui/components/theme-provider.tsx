@@ -3,7 +3,7 @@
 import { Moon, Sun } from "lucide-react";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { SidebarMenuButton } from "@/components/ui/sidebar";
+import type { SidebarMenuButton } from "@/components/ui/sidebar";
 
 type Theme = "light" | "dark" | "system";
 

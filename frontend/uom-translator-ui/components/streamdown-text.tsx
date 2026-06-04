@@ -39,11 +39,11 @@ export const StreamdownText = ({ ...props }) => {
 			linkSafety={{
 				enabled: true,
 			}}
-			componentsByLanguage={{
-				json: {
-					SyntaxHighlighter: JsonCodeComponent,
-				},
-			}}
+			// componentsByLanguage={{
+			// 	json: {
+			// 		SyntaxHighlighter: JsonCodeComponent,
+			// 	},
+			// }}
 			containerProps={{
 				suppressHydrationWarning: true,
 			}}
