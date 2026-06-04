@@ -58,9 +58,6 @@
       "password": "Testingorms123"
     }
   ],
-  "editor.codeActionsOnSave": {
-    "source.organizeImports": "explicit"
-  },
   "maven.view": "flat",
   "java.sources.organizeImports.staticStarThreshold": 1,
   "ruff.exclude": ["external"],
@@ -80,7 +77,6 @@
       }
     }
   },
-  "editor.formatOnSave": false,
   "files.associations": {
     "*.css": "tailwindcss"
   },
@@ -90,4 +86,41 @@
   "js/ts.preferGoToSourceDefinition": true,
   "js/ts.preferences.importModuleSpecifier": "non-relative",
   "biome.configurationPath": "./frontend/uom-translator-ui/biome.json",
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "never",
+    "source.removeUnusedImports": "never"
+  },
+  "[python]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[java]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[csharp]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "biomejs.biome",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.addMissingImports.ts": "explicit",
+      "source.organizeImports.biome": "explicit",
+      "source.fixAll.biome": "explicit"
+    },
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "biomejs.biome",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.addMissingImports.ts": "explicit",
+      "source.organizeImports.biome": "explicit",
+      "source.fixAll.biome": "explicit"
+    },
+  }
 }

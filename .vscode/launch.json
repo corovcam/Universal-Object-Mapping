@@ -65,6 +65,36 @@
           "DAPPER_RESULTS_PATH": "/home/corovcak/Uni/DP/Universal-Object-Mapping/services/dotnet-service/dapper-sandbox/results"
         }
       }
+    },
+    {
+      "name": "Next.js: debug server-side",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm run dev",
+      "localRoot": "${workspaceFolder}/frontend/uom-translator-ui",
+      "cwd": "${workspaceFolder}/frontend/uom-translator-ui",
+    },
+    {
+      "name": "Next.js: debug client-side",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3001"
+    },
+    {
+      "name": "Next.js: debug full stack",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/frontend/uom-translator-ui/node_modules/next/dist/bin/next",
+      "runtimeArgs": ["--inspect"],
+      "skipFiles": ["<node_internals>/**"],
+      "cwd": "${workspaceFolder}/frontend/uom-translator-ui",
+      "serverReadyAction": {
+        "action": "debugWithChrome",
+        "killOnServerStop": true,
+        "pattern": "- Local:.+(https?://.+)",
+        "uriFormat": "%s",
+        "webRoot": "${workspaceFolder}/frontend/uom-translator-ui"
+      }
     }
   ]
 }
