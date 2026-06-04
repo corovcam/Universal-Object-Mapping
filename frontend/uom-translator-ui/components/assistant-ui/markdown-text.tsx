@@ -14,7 +14,7 @@ import { type FC, memo, useState } from "react";
 import remarkGfm from "remark-gfm";
 import { SyntaxHighlighter } from "@/components/assistant-ui/shiki-highlighter";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
-import { JsonViewer } from "@/components/json-viewer";
+import { AutoScrollJsonViewer } from "@/components/json-viewer";
 import { cn } from "@/lib/utils";
 
 const MarkdownTextImpl = () => {
@@ -245,14 +245,13 @@ const defaultComponents = memoizeMarkdownComponents({
 				try {
 					const parsed = parsePartialJson(codeString, Allow.ALL);
 					return (
-						<div
-							className={cn(
+						<AutoScrollJsonViewer
+							value={parsed}
+							containerClassName={cn(
 								"border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar",
 								className,
 							)}
-						>
-							<JsonViewer value={parsed} />
-						</div>
+						/>
 					);
 				} catch {
 					// Fall back to default rendering if parsing exception occurs

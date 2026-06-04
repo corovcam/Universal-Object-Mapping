@@ -7,6 +7,7 @@ import {
 	useAui,
 } from "@assistant-ui/react";
 import {
+	convertLangChainMessages,
 	type LangChainMessage,
 	useLangGraphRuntime,
 } from "@assistant-ui/react-langgraph";
@@ -259,6 +260,13 @@ export function AssistantRuntimeProviderWrapper({
 				}
 			},
 			async generateTitle() {
+				// return createAssistantStream(async (controller) => {
+				// 	const { title } = await fetch(`/api/threads/${remoteId}/title`, {
+				// 		method: "POST",
+				// 		body: JSON.stringify({ messages }),
+				// 	}).then((r) => r.json());
+				// 	controller.appendText(title);
+				// });
 				return {
 					async *[Symbol.asyncIterator]() {
 						yield { type: "text", text: "" };
@@ -294,8 +302,16 @@ export function AssistantRuntimeProviderWrapper({
 				}>(
 					externalId,
 					undefined,
-					config?.signal ? { signal: config.signal } : undefined,
+					config?.signal
+						? { signal: config.signal, subgraphs: true }
+						: { subgraphs: true },
 				);
+
+				// TODO: Map your history array to match the standard LangChain shape
+				// const formattedMessages = (state.values?.messages || []).map((msg: any) => {
+				// 	return convertLangChainMessages(msg, null);
+				// });
+
 				return {
 					messages: state.values?.messages || [],
 					interrupts: state.tasks?.[0]?.interrupts || [],

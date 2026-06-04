@@ -4,12 +4,9 @@ import type { JsonViewProps } from "@uiw/react-json-view";
 import JsonView from "@uiw/react-json-view";
 import { githubDarkTheme } from "@uiw/react-json-view/githubDark";
 import { githubLightTheme } from "@uiw/react-json-view/githubLight";
-import dynamic from "next/dynamic";
-import { Suspense } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { SkeletonText } from "@/components/ui/skeleton";
-
-// const JsonView = dynamic(() => import("@uiw/react-json-view"), { ssr: false });
 
 export function JsonViewer({ value, ...props }: JsonViewProps<object>) {
 	const { theme } = useTheme();
@@ -33,7 +30,7 @@ export function JsonViewer({ value, ...props }: JsonViewProps<object>) {
 				{...props}
 			>
 				<JsonView.String
-					render={({ children, ...reset }, { type, value, keyName }) => {
+					render={({ children, ...reset }, { type }) => {
 						if (type === "type") {
 							return <span {...reset} />;
 						}
@@ -56,5 +53,72 @@ export function JsonViewer({ value, ...props }: JsonViewProps<object>) {
 				/>
 			</JsonView>
 		</Suspense>
+	);
+}
+
+interface AutoScrollJsonViewerProps
+	extends Omit<JsonViewProps<object>, "value"> {
+	value: unknown;
+	containerClassName?: string;
+}
+
+export function AutoScrollJsonViewer({
+	value,
+	containerClassName,
+	...props
+}: AutoScrollJsonViewerProps) {
+	const containerRef = useRef<HTMLDivElement>(null);
+	const [isPinned, setIsPinned] = useState(true);
+	const isPinnedRef = useRef(true);
+
+	useEffect(() => {
+		isPinnedRef.current = isPinned;
+	}, [isPinned]);
+
+	useEffect(() => {
+		const container = containerRef.current;
+		if (!container) return;
+
+		const observer = new MutationObserver(() => {
+			if (isPinnedRef.current) {
+				container.scrollTop = container.scrollHeight - container.clientHeight;
+			}
+		});
+
+		observer.observe(container, {
+			childList: true,
+			subtree: true,
+			characterData: true,
+		});
+
+		return () => observer.disconnect();
+	}, []);
+
+	useEffect(() => {
+		const container = containerRef.current;
+		if (!container || value === undefined) return;
+		if (isPinnedRef.current) {
+			container.scrollTop = container.scrollHeight - container.clientHeight;
+		}
+	}, [value]);
+
+	const handleScroll = () => {
+		const container = containerRef.current;
+		if (!container) return;
+		const { scrollTop, scrollHeight, clientHeight } = container;
+		const isAtBottom = scrollHeight - clientHeight - scrollTop < 15;
+		if (isPinnedRef.current !== isAtBottom) {
+			setIsPinned(isAtBottom);
+		}
+	};
+
+	return (
+		<div
+			ref={containerRef}
+			className={containerClassName}
+			onScroll={handleScroll}
+		>
+			<JsonViewer value={value as object} {...props} />
+		</div>
 	);
 }

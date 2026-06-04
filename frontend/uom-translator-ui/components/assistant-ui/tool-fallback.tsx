@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Allow, parse as parsePartialJson } from "partial-json";
 import { memo, useCallback, useRef, useState } from "react";
-import { JsonViewer } from "@/components/json-viewer";
+import { AutoScrollJsonViewer } from "@/components/json-viewer";
 import { StaticStreamdownWrapper } from "@/components/streamdown-text";
 import {
 	Collapsible,
@@ -197,7 +197,7 @@ function ToolFallbackArgs({
 
 	let parsedJson: any = null;
 	try {
-		parsedJson = JSON.parse(argsText);
+		parsedJson = parsePartialJson(argsText, Allow.ALL);
 	} catch (_) {}
 
 	return (
@@ -208,9 +208,10 @@ function ToolFallbackArgs({
 		>
 			<p className="aui-tool-fallback-result-header font-semibold">Input:</p>
 			{parsedJson ? (
-				<div className="border-t pt-2 mt-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-					<JsonViewer value={parsedJson} />
-				</div>
+				<AutoScrollJsonViewer
+					value={parsedJson}
+					containerClassName="border-t pt-2 mt-2 max-h-[300px] overflow-y-auto custom-scrollbar"
+				/>
 			) : (
 				<pre className="aui-tool-fallback-args-value border-t mt-2 whitespace-pre-wrap">
 					{argsText}
@@ -232,7 +233,7 @@ function ToolFallbackResult({
 	let parsedJson: any = null;
 	if (typeof result === "string") {
 		try {
-			parsedJson = parsePartialJson(result, Allow.ALL);
+			parsedJson = JSON.parse(result);
 		} catch (_) {}
 	} else if (result !== null && typeof result === "object") {
 		parsedJson = result;
@@ -249,9 +250,10 @@ function ToolFallbackResult({
 		>
 			<p className="aui-tool-fallback-result-header font-semibold">Result:</p>
 			{parsedJson ? (
-				<div className="border-t pt-2 mt-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-					<JsonViewer value={parsedJson} />
-				</div>
+				<AutoScrollJsonViewer
+					value={parsedJson}
+					containerClassName="border-t pt-2 mt-2 max-h-[300px] overflow-y-auto custom-scrollbar"
+				/>
 			) : typeof result === "string" ? (
 				<div className="border-t pt-2 mt-2">
 					<StaticStreamdownWrapper markdownText={result} />

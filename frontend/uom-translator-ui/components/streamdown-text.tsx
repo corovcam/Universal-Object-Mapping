@@ -17,7 +17,7 @@ import {
 	Streamdown,
 	type StreamdownProps,
 } from "streamdown";
-import { JsonViewer } from "@/components/json-viewer";
+import { AutoScrollJsonViewer } from "@/components/json-viewer";
 
 const StreamdownTextPrimitive = dynamic(
 	() =>
@@ -94,9 +94,10 @@ export const JsonCodeComponent = ({
 		console.debug("Parsing JSON code block:", code);
 		const parsed = parsePartialJson(code, Allow.ALL);
 		return (
-			<div className="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar">
-				<JsonViewer value={parsed} />
-			</div>
+			<AutoScrollJsonViewer
+				value={parsed}
+				containerClassName="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar"
+			/>
 		);
 	} catch (e) {
 		// Fall back to default rendering if parsing exception occurs
@@ -150,9 +151,10 @@ const JsonRendererImpl = ({
 	return parsed ? (
 		<CodeBlockContainer isIncomplete={isIncomplete} language={language}>
 			<CodeBlockHeader language={language} />
-			<div className="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar">
-				<JsonViewer value={parsed} />
-			</div>
+			<AutoScrollJsonViewer
+				value={parsed}
+				containerClassName="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar"
+			/>
 		</CodeBlockContainer>
 	) : (
 		<CodeBlock code={code} language={language} isIncomplete={isIncomplete} />

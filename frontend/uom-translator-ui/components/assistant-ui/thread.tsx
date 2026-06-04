@@ -54,8 +54,7 @@ import {
 } from "@/components/assistant-ui/tool-group";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { ErrorAlert } from "@/components/custom-alerts";
-import { JsonViewer } from "@/components/json-viewer";
-import { StreamdownText } from "@/components/streamdown-text";
+import { AutoScrollJsonViewer } from "@/components/json-viewer";
 import { Button } from "@/components/ui/button";
 import { ScrollBar } from "@/components/ui/scroll-area";
 import { useGraphStateContext } from "@/hooks/use-graph-state-context";
@@ -178,9 +177,10 @@ const ThreadMessage = () => {
 	const partialStructuredOutput = parsePartialStructuredOutput(fullText);
 	if (partialStructuredOutput) {
 		return (
-			<div className="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar">
-				<JsonViewer value={partialStructuredOutput} />
-			</div>
+			<AutoScrollJsonViewer
+				value={partialStructuredOutput}
+				containerClassName="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar"
+			/>
 		);
 	}
 
