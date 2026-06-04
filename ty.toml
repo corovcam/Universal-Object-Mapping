@@ -2,10 +2,11 @@
 root = ["./services/orchestrator/src"]
 
 [src]
-include = ["services/orchestrator/src", "services/orchestrator/tests"]
+include = ["services/orchestrator/src", "services/orchestrator/tests", "external/langgraphics"]
 
 [rules]
 unused-type-ignore-comment = "ignore"
+unused-ignore-comment = "ignore"
 
 [[overrides]]
 include = ["services/orchestrator/tests"]

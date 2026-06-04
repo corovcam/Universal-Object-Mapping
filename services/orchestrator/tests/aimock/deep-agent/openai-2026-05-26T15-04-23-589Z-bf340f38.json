@@ -1,0 +1,69 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "userMessage": "Translate EFCore 10 to Spring Data MongoDB 5.0:\n\n[Table(\"Customers\", Schema = \"Sales\")]\npublic class Customer\n{\n  [Key]\n  public required int CustomerID { get; set; }\n  [MaxLength(200)]\n  public required string CustomerName { get; set; }\n  [Column(TypeName = \"datetime2\")]\n  [Precision(7)]\n  public required DateTime AccountOpenedDate { get; set; }\n  [Column(TypeName = \"decimal\")]\n  [Precision(18, 2)]\n  public decimal? CreditLimit { get; set; }\n  public List<CustomerTransaction> CustomerTransactions { get; set; } = [];\n}\n\n[Table(\"CustomerTransactions\", Schema = \"Sales\")]\npublic class CustomerTransaction\n{\n  [Key]\n  public int CustomerTransactionID { get; set; }\n  [ForeignKey(nameof(Customer))]\n  public int CustomerID { get; set; }\n  public DateTime TransactionDate { get; set; }\n  public decimal TransactionAmount { get; set; }\n}\n\n[Table(\"Orders\", Schema = \"Sales\")]\npublic class Order\n{\n  [Key]\n  public int OrderID { get; set; }\n  [ForeignKey(nameof(Customer))]\n  public int CustomerID { get; set; }\n  public Customer Customer { get; set; } = null!;\n  public List<OrderLine> OrderLines { get; set; } = [];\n}\n\n[Table(\"OrderLines\", Schema = \"Sales\")]\npublic class OrderLine\n{\n  [Key]\n  public int OrderLineID { get; set; }\n  [ForeignKey(nameof(Order))]\n  public int OrderID { get; set; }\n  public int StockItemID { get; set; }\n  public required string Description { get; set; }\n  public int PackageTypeID { get; set; }\n  public int Quantity { get; set; }\n  public decimal? UnitPrice { get; set; }\n  public decimal TaxRate { get; set; }\n  public int PickedQuantity { get; set; }\n  public DateTime? PickingCompletedWhen { get; set; }\n  public int LastEditedBy { get; set; }\n  public DateTime LastEditedWhen { get; set; }\n}\n\npublic class SandboxDbContext(DbContextOptions<SandboxDbContext> options) : DbContext(options)\n{\n  public DbSet<Customer> Customers => Set<Customer>();\n  public DbSet<Order> Orders => Set<Order>();\n  public DbSet<CustomerTransaction> CustomerTransactions => Set<CustomerTransaction>();\n  public DbSet<OrderLine> OrderLines => Set<OrderLine>();\n}\n\npublic static IQueryable<OrderLine> Query1(SandboxDbContext ctx)\n{\n  var from = new DateTime(2014, 12, 20);\n  var to = new DateTime(2014, 12, 31);\n  return ctx.OrderLines.Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);\n}\n\npublic static IQueryable<Order> Query2(SandboxDbContext ctx)\n{\n  return ctx.Orders\n    .Include(o => o.Customer)\n      .ThenInclude(c => c.CustomerTransactions)\n    .Include(o => o.OrderLines)\n    .AsSplitQuery()\n    .Where(c => c.CustomerID == 1);\n}\n\npublic static IQueryable<dynamic> Query3(SandboxDbContext ctx)\n{\n  return ctx.OrderLines.GroupBy(ol => ol.TaxRate).Select(g => new { TaxRate = g.Key, Count = g.Count() }).OrderByDescending(x => x.Count);\n}\n\npublic static IQueryable<OrderLine> Query4(SandboxDbContext ctx)\n{\n  return ctx.OrderLines.OrderByDescending(ol => ol.Quantity).Take(50);\n}\n\npublic static IQueryable<dynamic> Query5(SandboxDbContext ctx)\n{\n  return ctx.OrderLines.Select(ol => new { ol.OrderLineID, ol.Quantity });\n}\n",
+        "model": "deepseek-v4-pro-thinking",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "content": "\n\n",
+        "toolCalls": [
+          {
+            "name": "start_async_task",
+            "arguments": "{\"subagent_type\": \"universal-object-mapping-translator\", \"description\": \"Translate EFCore 10 to Spring Data MongoDB 5.0:\\n\\n[Table(\\\"Customers\\\", Schema = \\\"Sales\\\")]\\npublic class Customer\\n{\\n  [Key]\\n  public required int CustomerID { get; set; }\\n  [MaxLength(200)]\\n  public required string CustomerName { get; set; }\\n  [Column(TypeName = \\\"datetime2\\\")]\\n  [Precision(7)]\\n  public required DateTime AccountOpenedDate { get; set; }\\n  [Column(TypeName = \\\"decimal\\\")]\\n  [Precision(18, 2)]\\n  public decimal? CreditLimit { get; set; }\\n  public List<CustomerTransaction> CustomerTransactions { get; set; } = [];\\n}\\n\\n[Table(\\\"CustomerTransactions\\\", Schema = \\\"Sales\\\")]\\npublic class CustomerTransaction\\n{\\n  [Key]\\n  public int CustomerTransactionID { get; set; }\\n  [ForeignKey(nameof(Customer))]\\n  public int CustomerID { get; set; }\\n  public DateTime TransactionDate { get; set; }\\n  public decimal TransactionAmount { get; set; }\\n}\\n\\n[Table(\\\"Orders\\\", Schema = \\\"Sales\\\")]\\npublic class Order\\n{\\n  [Key]\\n  public int OrderID { get; set; }\\n  [ForeignKey(nameof(Customer))]\\n  public int CustomerID { get; set; }\\n  public Customer Customer { get; set; } = null!;\\n  public List<OrderLine> OrderLines { get; set; } = [];\\n}\\n\\n[Table(\\\"OrderLines\\\", Schema = \\\"Sales\\\")]\\npublic class OrderLine\\n{\\n  [Key]\\n  public int OrderLineID { get; set; }\\n  [ForeignKey(nameof(Order))]\\n  public int OrderID { get; set; }\\n  public int StockItemID { get; set; }\\n  public required string Description { get; set; }\\n  public int PackageTypeID { get; set; }\\n  public int Quantity { get; set; }\\n  public decimal? UnitPrice { get; set; }\\n  public decimal TaxRate { get; set; }\\n  public int PickedQuantity { get; set; }\\n  public DateTime? PickingCompletedWhen { get; set; }\\n  public int LastEditedBy { get; set; }\\n  public DateTime LastEditedWhen { get; set; }\\n}\\n\\npublic class SandboxDbContext(DbContextOptions<SandboxDbContext> options) : DbContext(options)\\n{\\n  public DbSet<Customer> Customers => Set<Customer>();\\n  public DbSet<Order> Orders => Set<Order>();\\n  public DbSet<CustomerTransaction> CustomerTransactions => Set<CustomerTransaction>();\\n  public DbSet<OrderLine> OrderLines => Set<OrderLine>();\\n}\\n\\npublic static IQueryable<OrderLine> Query1(SandboxDbContext ctx)\\n{\\n  var from = new DateTime(2014, 12, 20);\\n  var to = new DateTime(2014, 12, 31);\\n  return ctx.OrderLines.Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);\\n}\\n\\npublic static IQueryable<Order> Query2(SandboxDbContext ctx)\\n{\\n  return ctx.Orders\\n    .Include(o => o.Customer)\\n      .ThenInclude(c => c.CustomerTransactions)\\n    .Include(o => o.OrderLines)\\n    .AsSplitQuery()\\n    .Where(c => c.CustomerID == 1);\\n}\\n\\npublic static IQueryable<dynamic> Query3(SandboxDbContext ctx)\\n{\\n  return ctx.OrderLines.GroupBy(ol => ol.TaxRate).Select(g => new { TaxRate = g.Key, Count = g.Count() }).OrderByDescending(x => x.Count);\\n}\\n\\npublic static IQueryable<OrderLine> Query4(SandboxDbContext ctx)\\n{\\n  return ctx.OrderLines.OrderByDescending(ol => ol.Quantity).Take(50);\\n}\\n\\npublic static IQueryable<dynamic> Query5(SandboxDbContext ctx)\\n{\\n  return ctx.OrderLines.Select(ol => new { ol.OrderLineID, ol.Quantity });\\n}\"}",
+            "id": "call_04102004c38f41d3a56516fc"
+          }
+        ]
+      },
+      "recordedTimings": {
+        "ttftMs": 0,
+        "interChunkDelaysMs": [
+          0,
+          19,
+          26,
+          27,
+          28,
+          31,
+          25,
+          26,
+          35,
+          24,
+          24,
+          25,
+          35,
+          26,
+          25,
+          26,
+          34,
+          25,
+          40,
+          22,
+          39,
+          18,
+          24,
+          38,
+          40,
+          25,
+          24,
+          25,
+          27,
+          24,
+          36,
+          32,
+          51,
+          37244,
+          228,
+          0,
+          0
+        ],
+        "totalDurationMs": 38398
+      },
+      "metadata": {
+        "systemHash": "5ab3c284",
+        "toolsHash": "54f81191"
+      }
+    }
+  ]
+}

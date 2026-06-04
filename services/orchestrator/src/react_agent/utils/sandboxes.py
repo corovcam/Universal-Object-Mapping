@@ -1,22 +1,33 @@
 """Handles creation and management of Daytona sandboxes for code execution."""
-
 import asyncio
-import logging
 import os
+from typing import Any, Callable
 
+import structlog
 from daytona import (
     AsyncDaytona,
     AsyncSandbox,
-    CreateSandboxFromImageParams,
+    CreateSandboxFromSnapshotParams,
+    CreateSnapshotParams,
     Image,
     SandboxState,
 )
 
-from react_agent.constants import SandboxType
+from react_agent.constants import LanggraphCustomEventKeys, SandboxType
+from react_agent.utils.utils import process_streaming_chunks
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger()
+
 
 class ValidationSandbox:
+    """Manager class for Daytona validation sandboxes.
+
+    This class tracks active container instances and handles the lifecycle of building and 
+    restoring runtime environment snapshots (e.g., pulling Docker images and installing dependencies).
+    It ensures that validation steps execute in a clean, consistent sandbox environment, while
+    minimizing startup latency via snapshot caching.
+    """
+
     SANDBOXES: dict[SandboxType, AsyncSandbox] = {}
     
     DAYTONA_SANDBOX_IMAGES: dict[SandboxType, Image] = {
@@ -34,18 +45,103 @@ class ValidationSandbox:
     }
     
     @staticmethod
-    async def get_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType) -> AsyncSandbox:
-        await ValidationSandbox.initialize_validation_sandbox(daytona, sandbox_type)
+    async def get_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, stream_writer: Callable[[Any], None], env_vars: dict[str, Any] | None = None) -> AsyncSandbox:
+        """Retrieve or create an active validation sandbox, ensuring that the base environment snapshot is loaded.
+
+        Args:
+            daytona: The AsyncDaytona API client instance.
+            sandbox_type: The type of sandbox runtime container needed (.NET or Java).
+            stream_writer: Callback to stream snapshot compilation and startup progress events back to client.
+            env_vars: Optional dictionary of environment variables to inject into the sandbox.
+
+        Returns:
+            AsyncSandbox: The active, fully initialized AsyncSandbox container.
+        """
+        await ValidationSandbox.create_snapshot(daytona, sandbox_type, stream_writer)
+        await ValidationSandbox.create_validation_sandbox(daytona, sandbox_type, env_vars)
         return ValidationSandbox.SANDBOXES[sandbox_type]
+    
+    @staticmethod
+    async def create_snapshot(daytona: AsyncDaytona, sandbox_type: SandboxType, stream_writer: Callable[[Any], None]) -> None:
+        """Create and cache a Daytona snapshot for the specified sandbox architecture.
+
+    A snapshot acts as a baseline environment (e.g., pre-installing Maven or downloading the
+    .NET SDK). This function checks if a snapshot named `validation-snapshot-<type>` already
+    exists. If not, it instructs the Daytona daemon to build one based on the configuration in
+    `DAYTONA_SANDBOX_IMAGES`, streaming the build logs back to the LangGraph UI.
+
+    Args:
+        daytona (AsyncDaytona): The asynchronous Daytona API client.
+        sandbox_type (SandboxType): The target architecture.
+        stream_writer (Callable[[Any], None]): Callback to stream logs to the UI.
+
+    Raises:
+        Exception: If snapshot creation fails after multiple exponential backoff retries.
+    """
+        params = CreateSnapshotParams(
+            name=f"validation-snapshot-{sandbox_type.value.lower()}",
+            image=ValidationSandbox.DAYTONA_SANDBOX_IMAGES[sandbox_type],
+        )
+        
+        def custom_event_stream_writer(chunk):
+            if sandbox_type == SandboxType.JAVA_25_SANDBOX:
+                return stream_writer({"type": LanggraphCustomEventKeys.JAVA_SANDBOX_SNAPSHOT_CREATION, "data": chunk})
+            elif sandbox_type == SandboxType.DOTNET_10_SANDBOX:
+                return stream_writer({"type": LanggraphCustomEventKeys.DOTNET_SANDBOX_SNAPSHOT_CREATION, "data": chunk})
+            else:
+                return stream_writer({"type": LanggraphCustomEventKeys.UNKNOWN, "data": chunk})
+        
+        chunk_buffer = []
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                try:
+                    existing_snapshot = await daytona.snapshot.get(params.name)
+                    logger.info(f"Snapshot '{params.name}' already exists with ID: {existing_snapshot.id}")
+                    return
+                except Exception as e:
+                    logger.info(f"Snapshot '{params.name}' not found or error retrieving: {e}")
+                chunk_buffer = []
+                snapshot = await daytona.snapshot.create(params, on_logs=lambda chunk: process_streaming_chunks(chunk, custom_event_stream_writer, chunk_buffer))
+                logger.info(f"Snapshot created with ID: {snapshot.id}")
+                break
+            except Exception as e:
+                logger.error(f"Failed to create snapshot for sandbox '{sandbox_type.value}': {e}")
+                # We implement exponential backoff here. If pulling the base image from Docker Hub 
+                # temporarily fails due to rate limits or network issues, we wait 1s, 2s, 4s, 8s, etc.
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                else:
+                    raise
+            finally:
+                if len(chunk_buffer) > 0:
+                    await logger.adebug("snapshot_creation_logs", sandbox_type=sandbox_type.value, logs="".join(chunk_buffer))
   
     @staticmethod
-    async def initialize_validation_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType) -> None:
-        """Initialize a validation sandbox."""
-        params = CreateSandboxFromImageParams(
-            image=ValidationSandbox.DAYTONA_SANDBOX_IMAGES[sandbox_type],
-            auto_stop_interval=10, # Sandbox will be stopped after 5 minutes
-            auto_archive_interval=5, # Auto-archive after a Sandbox has been stopped for 5 minutes
+    async def create_validation_sandbox(daytona: AsyncDaytona, sandbox_type: SandboxType, env_vars: dict[str, Any] | None = None) -> AsyncSandbox:
+        """Provision and start a Daytona sandbox container based on the cached snapshot.
+
+    This complex lifecycle manager ensures that a sandbox container named
+    `validation-sandbox-<type>` is actively running. It robustly handles Daytona state machine
+    transitions (e.g., cleaning up stuck ERROR/DESTROYING states, waiting for PENDING_BUILD,
+    or waking up a STOPPED container).
+
+    Args:
+        daytona (AsyncDaytona): The asynchronous Daytona API client.
+        sandbox_type (SandboxType): The target architecture.
+        env_vars (dict[str, Any] | None, optional): Optional environment variables to inject.
+
+    Returns:
+        AsyncSandbox: The verified running sandbox instance.
+
+    Raises:
+        RuntimeError: If the sandbox cannot be transitioned to a STARTED state after max retries.
+    """
+        params = CreateSandboxFromSnapshotParams(
+            snapshot=f"validation-snapshot-{sandbox_type.value.lower()}",
+            auto_stop_interval=60, # TODO: make this configurable: Sandbox will be stopped after 60 minutes
             name=f"validation-sandbox-{sandbox_type.value.lower()}",
+            env_vars=env_vars,
         )
         assert params.name is not None
         
@@ -61,7 +157,7 @@ class ValidationSandbox:
                 
                 if sandbox_instance is None or sandbox_instance.state == SandboxState.DESTROYED:
                     logger.info(f"Creating sandbox '{params.name}'...")
-                    sandbox_instance = await daytona.create(params, on_snapshot_create_logs=logger.info, timeout=180)
+                    sandbox_instance = await daytona.create(params, timeout=180)
                     logger.info(f"Sandbox created with ID: {sandbox_instance.id}")
                 
                 state = sandbox_instance.state
@@ -69,6 +165,8 @@ class ValidationSandbox:
                 
                 if state in (SandboxState.ERROR, SandboxState.BUILD_FAILED, SandboxState.ARCHIVED):
                     logger.warning(f"Sandbox '{params.name}' is in state '{state}'. Deleting and recreating...")
+                    # If the Daytona engine crashed leaving a zombie container in ERROR state, 
+                    # we proactively delete it here so the next loop iteration can cleanly rebuild it.
                     try:
                         await daytona.delete(sandbox_instance)
                         await asyncio.sleep(5)
@@ -110,7 +208,7 @@ class ValidationSandbox:
                 if sandbox_instance.state == SandboxState.STARTED:
                     ValidationSandbox.SANDBOXES[sandbox_type] = sandbox_instance
                     logger.debug("Sandbox details:\n%s", sandbox_instance.model_dump_json(indent=2))
-                    return
+                    return sandbox_instance
                 else:
                     logger.warning(f"Sandbox '{params.name}' failed to reach STARTED state. Current state: {sandbox_instance.state}")
                     
@@ -122,8 +220,7 @@ class ValidationSandbox:
                     await asyncio.sleep(wait_time)
                 else:
                     logger.error(f"Failed to handle sandbox '{params.name}' after {max_retries} attempts.")
-                    logger.warning("Continuing gracefully without the sandbox.")
-                    return
+                    raise RuntimeError(f"Failed to initialize sandbox '{params.name}' after {max_retries} attempts.") from e
         
-        logger.warning(f"Exhausted retries for sandbox '{params.name}'. Continuing gracefully.")
-    
+        logger.error(f"Failed to initialize sandbox {params.name} with snapshot {params.snapshot}")
+        raise RuntimeError(f"Failed to initialize sandbox {params.name} with snapshot {params.snapshot}")

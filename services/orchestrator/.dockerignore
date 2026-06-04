@@ -42,6 +42,18 @@ coverage
 tests
 
 # Custom ignores
-misc
-logs
+misc/
+logs/
 GEMINI.md
+.github/
+.envrc
+langgraph.json
+Makefile
+aimock.json
+docs/
+.pytest*
+.langgraph_api/
+.ruff_cache
+.venv/
+*.egg-info/
+.codespellignore

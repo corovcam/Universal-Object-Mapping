@@ -1,7 +1,17 @@
-"""Default prompts used by the agent."""
+"""System Prompts for LangGraph Nodes.
+
+These multi-line strings define the core persona, instructions, and few-shot 
+examples for the LLM agents operating within the orchestrator's state machine.
+They are dynamically interpolated at runtime using str.format() to inject 
+the chosen frameworks and context variables.
+"""
 
 from react_agent.state import State
 from react_agent.utils.utils import get_framework_config_content, get_snippet_content
+
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
 
 SYSTEM_PROMPT_TRANSLATOR = """You are a Universal Object Mapping architect. Your goal is to aid in translating database schema structures and query logic between diverse languages and frameworks.
 
@@ -689,6 +699,8 @@ Extraction rules:
 4. Output specific structured outputs exactly as requested. Do not provide markdown wrapping if native tools capture the output natively.
 5. Keep source_schema_code and source_query_code as raw code snippets when available.
 6. Preserve the original formatting (including indentation and line breaks) of the extracted code snippets."""
+"""Information Extraction prompt used at the very beginning of the graph execution.
+Its purpose is strictly to classify intent (translation type) and extract the raw code."""
 
 SYSTEM_PROMPT_SCHEMA_INSPECTOR = """You are a database schema inspector. Your goal is to examine source and target database schemas to provide context for code translation.
 
@@ -704,10 +716,18 @@ Your task:
    - For Neo4j: use the prebuilt neo4j tools to list node labels, relationship types, and sample nodes/edges.
 2. Inspect the TARGET database schema if applicable (e.g., if translating from SQL to MongoDB, inspect what MongoDB collections exist).
 3. Return a concise but complete summary of the relevant source and target schemas."""
+"""Schema inspection prompt used prior to code translation.
+Guides the agent to use the MCP tools to interact with live relational and NoSQL databases."""
 
 
 async def build_system_prompt(state: State) -> str:
-    """Dynamically build the system prompt based on the specific translation pair."""
+    """Dynamically build the system prompt based on the specific translation pair.
+    
+    This function assembles a comprehensive system prompt by combining the base persona,
+    rules, and dynamic framework configurations retrieved from the file system snippets.
+    It injects the exact C# and Java dependencies (like pom.xml or .csproj values) directly
+    into the prompt context so the LLM understands the exact versions it is translating for.
+    """
     assert state.source_target is not None and state.destination_target is not None
     base_prompt = f"""You are a Universal Object Mapping architect. Your goal is to aid in translating database schema structures and query logic between diverse languages and frameworks.
 

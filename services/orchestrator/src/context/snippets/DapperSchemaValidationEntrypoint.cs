@@ -192,7 +192,7 @@ public static class DapperSchemaValidationEntrypoint
     public static void Main(string[] args)
     {
         var connectionString = args.ElementAtOrDefault(0) ?? Environment.GetEnvironmentVariable("CONNECTION_STRING") 
-            ?? "Server=localhost,1444;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True";
+            ?? "Server=localhost,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True";
 
         using var conn = new SqlConnection(connectionString);
         conn.Open();

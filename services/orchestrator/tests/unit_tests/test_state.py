@@ -9,7 +9,6 @@ def test_state_initialization() -> None:
 
     assert state.messages == []
     assert state.schema_context == ""
-    assert state.council_responses == []
     assert state.translation_messages == []
     assert state.translation_loop_count == 0
 

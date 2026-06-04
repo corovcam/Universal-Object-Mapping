@@ -1,9 +1,10 @@
 """Java compilation and validation tool using execute_in_sandbox."""
+
 import base64
 import logging
 import os
 from datetime import datetime
-from typing import cast
+from urllib.parse import urlparse
 
 import orjson
 from langchain.tools import ToolRuntime
@@ -13,6 +14,13 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from react_agent.constants import (
+    AGENTS_MD_CONTENT,
+    FRAMEWORK_TO_NORMALIZED_NAME,
+    GENERAL_SANDBOX_README,
+    JAVA_SPRING_DATA_MONGODB_SANDBOX_README,
+    JAVA_SPRING_DATA_NEO4J_SANDBOX_README,
+    JAVA_VSCODE_EXTENSIONS,
+    MCP_CONFIG_CONTENT,
     FrameworkEnum,
     JavaFramework,
     SandboxType,
@@ -24,15 +32,25 @@ from react_agent.custom_tools.sandbox_tools import (
     execute_in_sandbox,
 )
 from react_agent.state import State
-from react_agent.utils.utils import get_framework_config_content
+from react_agent.utils.utils import (
+    get_framework_config_content,
+    translate_localhost_to_host_gateway,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class JavaValidationInput(BaseModel):
+    """Pydantic input model for specifying Java validation parameters.
+
+    Attributes:
+        source_code: The Java source code (either schema mapping or query) to compile and run.
+        framework: The specific Java target framework (e.g., Spring Data MongoDB, Spring Data Neo4j).
+        entry_type_name: The public class name of the entry point declared in the source code.
+    """
+
     source_code: str = Field(
-        min_length=1,
-        description="The Java source code to compile and validate."
+        min_length=1, description="The Java source code to compile and validate."
     )
     framework: JavaFramework = Field(
         description="The Java framework.",
@@ -47,49 +65,175 @@ async def compile_and_run_java(
     source_code: str,
     framework: JavaFramework,
     entry_type_name: str,
-    translation_type: TranslationType,
+    runtime: ToolRuntime[Context, State],
 ) -> tuple[str, str | None]:
-    """Helper to compile and run Java source code, returning (output, json_part)."""
+    """Compile and execute Java code within an isolated Daytona Sandbox container.
+
+    This utility handles the complex orchestration of validating Java code:
+    1. Fetches the required `pom.xml` configurations for Spring Data.
+    2. Builds a bash script (`run.sh`) to compile via Maven and execute the specified entry point class.
+    3. Provisions environment variables and database connection strings.
+    4. Base64 encodes all payload files to safely transfer them over to the sandbox.
+    5. Invokes the `execute_in_sandbox` tool.
+    6. If a query output JSON was produced, it downloads it via `download_file_from_sandbox`.
+
+    Args:
+        source_code (str): The raw Java source code to compile and run.
+        framework (JavaFramework): The target Java framework (Spring Data MongoDB, Spring Data Neo4j).
+        entry_type_name (str): The name of the main class containing the public static void main method.
+        runtime (ToolRuntime[Context, State]): The LangGraph tool runtime containing context and state.
+
+    Returns:
+        tuple[str, str | None]: A tuple containing the standard output/error log of the execution,
+        and the raw JSON string of the query results (if applicable and successful).
+
+    Raises:
+        RuntimeError: If fetching the framework config fails or the sandbox execution throws an exception.
+    """
+    framework_type = FrameworkEnum(framework.value)
     try:
-        pom_content = await get_framework_config_content(FrameworkEnum(framework.value))
+        pom_content = await get_framework_config_content(framework_type)
     except ValueError as e:
         raise RuntimeError(f"[Error] {e}") from e
 
     pom_b64 = base64.b64encode(pom_content.encode()).decode()
     java_b64 = base64.b64encode(source_code.encode()).decode()
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    sandbox_dir = f"/sandbox/sandbox-{timestamp}"
+    configurable = runtime.config.get("configurable", {}) if runtime.config else {}
+
+    # We generate a unique sandbox directory per invocation to avoid collisions if validations run concurrently.
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    normalized_name = FRAMEWORK_TO_NORMALIZED_NAME[framework_type]
+    thread_id = (
+        runtime.execution_info.thread_id
+        if runtime.execution_info
+        else configurable.get("thread_id", "unknown_thread")
+    )
+    sandbox_dir = f"/sandbox/{thread_id}/sandbox-{normalized_name}-{timestamp}"
     src_dir = f"{sandbox_dir}/src/main/java/uom/services"
     results_dir = f"{sandbox_dir}/results"
 
-    script = f"""
-export MONGODB_URI="{os.getenv('MONGODB_URI', 'mongodb://uom_readonly:uom_readonly@mongodb:27017/uom')}"
-export NEO4J_URI="{os.getenv('NEO4J_URI', 'neo4j://neo4j:7687')}"
-export NEO4J_USERNAME="{os.getenv('NEO4J_USERNAME', 'neo4j')}"
-export NEO4J_PASSWORD="{os.getenv('NEO4J_PASSWORD', 'password')}"
-export MONGO_RESULTS_PATH="{results_dir}"
-export NEO4J_RESULTS_PATH="{results_dir}"
-mkdir -p "{src_dir}"
-mkdir -p "{results_dir}"
-echo "{pom_b64}" | base64 -d > "{sandbox_dir}/pom.xml"
-echo "{java_b64}" | base64 -d > "{src_dir}/{entry_type_name}.java"
-cd "{sandbox_dir}"
+    ms_sql_connection_string = (
+        configurable.get("ms_sql_connection_string")
+        or configurable.get("mssql_connection_string")
+        or runtime.context.ms_sql_connection_string
+    )
+    mongodb_uri = configurable.get("mongodb_uri") or runtime.context.mongodb_uri
+    neo4j_uri = configurable.get("neo4j_uri") or runtime.context.neo4j_uri
+
+    neo4j_browser_uri = os.environ.get("NEO4J_BROWSER_URI")
+    if not neo4j_browser_uri:
+        parsed_neo4j_uri = urlparse(neo4j_uri)
+        neo4j_browser_uri = f"http://{parsed_neo4j_uri.hostname or 'localhost'}:7474"
+    neo4j_username = (
+        configurable.get("neo4j_username") or runtime.context.neo4j_username
+    )
+    neo4j_password = (
+        configurable.get("neo4j_password") or runtime.context.neo4j_password
+    )
+    sandbox_execution_timeout = (
+        configurable.get("sandbox_execution_timeout")
+        or configurable.get("daytona_timeout")
+        or runtime.context.sandbox_execution_timeout
+    )
+
+    env_vars = {
+        "MONGODB_URI": translate_localhost_to_host_gateway(mongodb_uri),
+        "NEO4J_URI": translate_localhost_to_host_gateway(neo4j_uri),
+        "NEO4J_USERNAME": neo4j_username,
+        "NEO4J_PASSWORD": neo4j_password,
+        "MONGO_RESULTS_PATH": results_dir,
+        "NEO4J_RESULTS_PATH": results_dir,
+    }
+
+    daytona_url = (
+        configurable.get("daytona_api_url") or runtime.context.daytona_api_url
+    ).replace("/api", "")
+    general_readme = GENERAL_SANDBOX_README.format(
+        daytona_url=daytona_url,
+        ms_sql_connection_string=translate_localhost_to_host_gateway(
+            ms_sql_connection_string
+        ),
+        mongodb_uri=translate_localhost_to_host_gateway(mongodb_uri),
+        neo4j_uri=translate_localhost_to_host_gateway(neo4j_uri),
+        neo4j_browser_uri=translate_localhost_to_host_gateway(neo4j_browser_uri),
+        frontend_url=os.getenv("FRONTEND_URL", "http://localhost:3000"),
+    )
+    general_readme_b64 = base64.b64encode(general_readme.encode()).decode()
+
+    readme_template = {
+        FrameworkEnum.JAVA_SPRING_DATA_MONGODB: JAVA_SPRING_DATA_MONGODB_SANDBOX_README,
+        FrameworkEnum.JAVA_SPRING_DATA_NEO4J: JAVA_SPRING_DATA_NEO4J_SANDBOX_README,
+    }[framework_type]
+
+    specific_readme = readme_template.format(
+        thread_id=thread_id,
+        timestamp=timestamp,
+        framework=framework.value,
+        mongodb_uri=translate_localhost_to_host_gateway(mongodb_uri),
+        neo4j_uri=translate_localhost_to_host_gateway(neo4j_uri),
+        frontend_url=os.getenv("FRONTEND_URL", "http://localhost:3000"),
+    )
+    specific_readme_b64 = base64.b64encode(specific_readme.encode()).decode()
+
+    run_sh_content = f"""#!/bin/bash
+{"\n".join([f'export {key}="{value}"' for key, value in env_vars.items()])}
 mvn -q -B --no-transfer-progress dependency:resolve clean compile
 """
     if source_code.strip():
-        script += f"mvn -q -B --no-transfer-progress exec:java -Dexec.mainClass=\"uom.services.{entry_type_name}\" -Dexec.classpathScope=compile"
-        if translation_type in [TranslationType.QUERY, TranslationType.BOTH]:
-            script += f"""
+        run_sh_content += f'mvn -q -B --no-transfer-progress exec:java -Dexec.mainClass="uom.services.{entry_type_name}" -Dexec.classpathScope=compile\n'
+        if runtime.state.translation_type in [
+            TranslationType.QUERY,
+            TranslationType.BOTH,
+        ]:
+            run_sh_content += f"""
 NEWEST_JSON=$(ls -t "{results_dir}"/*.json 2>/dev/null | head -n 1)
 if [ -n "$NEWEST_JSON" ]; then
-    printf "\nJSON_PATH=%s\n" "$NEWEST_JSON"
+    printf "\\nJSON_PATH=%s\\n" "$NEWEST_JSON"
 fi
+"""
+
+    run_sh_b64 = base64.b64encode(run_sh_content.encode()).decode()
+    vscode_ext_b64 = base64.b64encode(JAVA_VSCODE_EXTENSIONS.encode()).decode()
+    agents_md_b64 = base64.b64encode(AGENTS_MD_CONTENT.encode()).decode()
+    host_gateway_ip = os.getenv("OUTER_HOST_GATEWAY_IP", "host.docker.internal")
+    mcp_config_b64 = base64.b64encode(
+        MCP_CONFIG_CONTENT.format(host_gateway_ip=host_gateway_ip).encode()
+    ).decode()
+
+    script = f"""
+mkdir -p "/sandbox/.vscode"
+mkdir -p "{src_dir}"
+mkdir -p "{results_dir}"
+mkdir -p "{sandbox_dir}/.vscode"
+
+echo "{general_readme_b64}" | base64 -d > "/sandbox/README.md"
+echo "{agents_md_b64}" | base64 -d > "/sandbox/AGENTS.md"
+echo "{vscode_ext_b64}" | base64 -d > "/sandbox/.vscode/extensions.json"
+echo "{mcp_config_b64}" | base64 -d > "/sandbox/.vscode/mcp.json"
+
+echo "{specific_readme_b64}" | base64 -d > "{sandbox_dir}/README.md"
+echo "{agents_md_b64}" | base64 -d > "{sandbox_dir}/AGENTS.md"
+echo "{vscode_ext_b64}" | base64 -d > "{sandbox_dir}/.vscode/extensions.json"
+echo "{mcp_config_b64}" | base64 -d > "{sandbox_dir}/.vscode/mcp.json"
+echo "{pom_b64}" | base64 -d > "{sandbox_dir}/pom.xml"
+echo "{java_b64}" | base64 -d > "{src_dir}/{entry_type_name}.java"
+echo "{run_sh_b64}" | base64 -d > "{sandbox_dir}/run.sh"
+chmod +x "{sandbox_dir}/run.sh"
+cd "{sandbox_dir}"
+./run.sh
 """
 
     try:
         result = await execute_in_sandbox.ainvoke(
-            {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "command": script}
+            {
+                "sandbox_type": SandboxType.JAVA_25_SANDBOX,
+                "command": script,
+                "timeout": sandbox_execution_timeout,
+                "env_vars": env_vars,
+                "runtime": runtime,
+            },
+            config=runtime.config,
         )
         output: str = result[0]
         exit_code: int = result[1]
@@ -97,20 +241,40 @@ fi
         logger.error("Java sandbox execution failed", exc_info=True)
         raise RuntimeError(f"[Error] Java sandbox execution failed: {e}") from e
 
-    json_path_line = next((line for line in reversed(output.splitlines()) if line.startswith("JSON_PATH=")), None)
+    # Parse the sandbox shell output in reverse to find the very last JSON_PATH variable exported.
+    # This ensures we get the most recently generated results file, bypassing any previous leftover logs.
+    json_path_line = next(
+        (
+            line
+            for line in reversed(output.splitlines())
+            if line.startswith("JSON_PATH=")
+        ),
+        None,
+    )
     if exit_code == 0:
         if json_path_line is not None:
             remote_path = json_path_line.split("=")[1].strip()
             json_content = await download_file_from_sandbox.ainvoke(
-                {"sandbox_type": SandboxType.JAVA_25_SANDBOX, "remote_path": remote_path}
+                {
+                    "sandbox_type": SandboxType.JAVA_25_SANDBOX,
+                    "remote_path": remote_path,
+                    "runtime": runtime,
+                },
+                config=runtime.config,
             )
             json_part = json_content
 
-            return f"[Java Validation Passed] Validation successful. Framework targeted: {framework.value}\n{output}", json_part
+            return (
+                f"[Java Validation Passed] Validation successful. Framework targeted: {framework.value}\n```\n{output}\n```",
+                json_part,
+            )
         else:
-            return f"[Java Validation Failed] No JSON path found in output.\n{output}", None
+            return (
+                f"[Java Validation Failed] No JSON path found in output.\n```\n{output}\n```",
+                None,
+            )
     else:
-        return f"[Java Validation Failed]\n{output}", None
+        return f"[Java Validation Failed]\n```\n{output}\n```", None
 
 
 @tool("validate_java_code", args_schema=JavaValidationInput)
@@ -118,37 +282,89 @@ async def validate_java_code(
     source_code: str,
     framework: JavaFramework,
     entry_type_name: str,
-    runtime: ToolRuntime, # type: ignore
+    runtime: ToolRuntime[Context, State],
 ) -> Command | str:
-    """Compile and validate Java source code through java-service CLI."""
-    runtime: ToolRuntime[Context, State] = runtime  # type: ignore
-    output, json_part = await compile_and_run_java(source_code, framework, entry_type_name, cast(TranslationType, runtime.state.translation_type))
-    
+    """LangChain Tool wrapper to execute and evaluate Java code inside a Sandbox.
+
+    This tool acts as a bridge between the LangGraph state machine and the low-level sandbox
+    execution. It calls `compile_and_run_java` and then parses the returned JSON results.
+    Crucially, it determines whether it is currently validating the "source" query or the
+    "target" query based on the tool call ID or state comparison, and dynamically issues a
+    LangGraph `Command` to update the global state with the parsed `QueryValidationResults`.
+
+    Args:
+        source_code (str): The Java source code to validate.
+        framework (JavaFramework): The target Java framework.
+        entry_type_name (str): The entrypoint class name declared in the Java code.
+        runtime (ToolRuntime[Context, State]): Automatically injected runtime context.
+
+    Returns:
+        Command | str: A LangGraph state update command containing parsed results and the
+        execution log, or just the error string if validation fails.
+    """
+    output, json_part = await compile_and_run_java(
+        source_code, framework, entry_type_name, runtime
+    )
+
     if json_part:
         if "===JSON ERROR===" in json_part:
-            return f"{output}\n\n[JSON Results]\n{json_part}"
+            return f"```\n{output}\n```\n\n[JSON Results]\n```\n{json_part}\n```"
         try:
             parsed = orjson.loads(json_part)
         except orjson.JSONDecodeError:
-            return f"[Java Validation Failed] Could not parse JSON output.\n{output}\n{json_part}"
-            
-        tool_call_id = getattr(runtime, "tool_call_id", None)
+            return f"[Java Validation Failed] Could not parse JSON output.\n```\n{output}\n```\n```\n{json_part}\n```"
+
+        # Determine side (source or target)
+        side = None
+        if (
+            source_code.strip()
+            == (runtime.state.source_validation_harness_code or "").strip()
+        ):
+            side = "source"
+        elif (
+            source_code.strip()
+            == (runtime.state.target_validation_harness_code or "").strip()
+        ):
+            side = "target"
+
+        # We determine whether these results belong to the source or target framework
+        # either by strictly comparing the executed code payload against the state strings,
+        # or by checking the specific `tool_call_id` injected during `prep_query_validation`.
+        tool_call_id = (
+            getattr(runtime, "tool_call_id", None)
+            or (
+                runtime.config.get("metadata", {}).get("langgraph_tool_call_id")
+                if runtime.config
+                else None
+            )
+            or (
+                runtime.config.get("metadata", {}).get("tool_call_id")
+                if runtime.config
+                else None
+            )
+        )
+        if not side:
+            if tool_call_id == "source_query_val":
+                side = "source"
+            elif tool_call_id == "target_query_val":
+                side = "target"
+
         update_dict = {}
-        if tool_call_id == "source_query_val":
+        if side == "source":
             update_dict["source_query_validation_results"] = parsed
-        elif tool_call_id == "target_query_val":
+        elif side == "target":
             update_dict["target_query_validation_results"] = parsed
-            
+
         return Command(
             update={
                 **update_dict,
-                "translation_messages": [
+                "messages": [
                     ToolMessage(
                         content=output,
                         tool_call_id=tool_call_id,
-                        name=validate_java_code.name
+                        name=validate_java_code.name,
                     )
-                ]
+                ],
             }
         )
     return output

@@ -21,7 +21,14 @@
     "reasoning_output": true,
     "temperature": true
   },
-  "ollama/qwen3.6:27b": {},
+  "ollama/qwen3.6:27b": {
+    "name": "qwen3.6:27b",
+    "text_inputs": true,
+    "text_outputs": true,
+    "max_input_tokens": 262144,
+    "image_inputs": true,
+    "tool_calling": true
+  },
   "einfra/mini": {
     "name": "mini",
     "text_inputs": true,

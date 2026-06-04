@@ -9,3 +9,7 @@ gha-creds-*.json
 node_modules/
 next-env.d.ts
 *.lscache
+code-server/
+frontend/uom-translator-ui-old*/
+frontend/assistant-ui-langgraph-example/
+misc/

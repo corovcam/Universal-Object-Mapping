@@ -7,7 +7,7 @@ git submodule update --init --recursive
 
 echo "Checking and updating submodules..."
 
-for dir in "external/daytona"; do
+for dir in external/*; do
     echo "Processing $dir..."
     if [ -d "$dir" ]; then
         cd "$dir"

@@ -1,0 +1,227 @@
+name: universal-object-mapping
+include:
+  - path:
+      - ./services/orchestrator/docker-compose.yml
+      - ./docker-compose.langgraph.override.yml
+services:
+  ollama-autossh-tunnel:
+    image: jnovack/autossh:2.1.0
+    environment:
+      - SSH_REMOTE_USER=${XRG13_SSH_USERNAME}
+      - SSH_REMOTE_HOST=xrg13.ms.mff.cuni.cz
+      - SSH_REMOTE_PORT=1302
+      - SSH_TUNNEL_PORT=11434
+      - SSH_BIND_IP=0.0.0.0
+      - SSH_TARGET_HOST=localhost
+      - SSH_TARGET_PORT=11434
+      - SSH_MODE=-L
+      - SSH_STRICT_HOST_IP_CHECK=false
+    ports:
+      - "${OLLAMA_PORT}:11434"
+    restart: unless-stopped
+    volumes:
+      - ${XRG13_SSH_PRIVATE_KEY_PATH}:/id_rsa
+    dns:
+      - 8.8.8.8
+      - 4.2.2.4
+    networks:
+      - ollama
+
+  mssql_db:
+    build:
+      context: ./services/etl/mssql
+    ports:
+      - "${MSSQL_PORT}:1433"
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_USER=${MSSQL_SA_USER:-sa}
+      - MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD}
+      - MSSQL_PID=Developer
+      - MSSQL_USER=${MSSQL_USER}
+      - MSSQL_PASSWORD=${MSSQL_PASSWORD}
+      - MSSQL_DATABASE=${MSSQL_DATABASE}
+    restart: unless-stopped
+    volumes:
+      - mssql_data:/var/opt/mssql
+    networks:
+      - default
+      - uom
+
+  mongodb:
+    image: mongo:8.2.6
+    ports:
+      - "${MONGODB_PORT}:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=root
+      - MONGO_INITDB_DATABASE=${MONGODB_DATABASE}
+      - MONGO_INITDB_USERNAME=${MONGODB_USER}
+      - MONGO_INITDB_PASSWORD=${MONGODB_PASSWORD}
+    restart: unless-stopped
+    volumes:
+      - mongodb_data:/data/db
+      - ./services/etl/mongodb/init-mongodb.sh:/docker-entrypoint-initdb.d/init-mongodb.sh
+    networks:
+      - default
+      - uom
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:2026.02.2
+    ports:
+      - "${NEO4J_BROWSER_PORT}:7474"
+      - "${NEO4J_PORT}:7687"
+    environment:
+      - NEO4J_AUTH=${NEO4J_USERNAME}/${NEO4J_PASSWORD}
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*
+      - NEO4J_server_memory_heap_initial__size=7900m
+      - NEO4J_server_memory_heap_max__size=7900m
+      - NEO4J_server_memory_pagecache_size=10000m
+    restart: unless-stopped
+    volumes:
+      - neo4j_data:/data
+      - ./services/etl/neo4j:/neo4j-etl
+    networks:
+      - default
+      - uom
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "echo RETURN 1 | cypher-shell -a bolt://localhost:7687 -u ${NEO4J_USERNAME} -p ${NEO4J_PASSWORD} || exit 1",
+        ]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb-relational-migrator:
+    image: public.ecr.aws/v4d7k6c9/relational-migrator:latest
+    ports:
+      - "${MONGODB_MIGRATOR_PORT}:8080"
+    volumes:
+      - mongodb_migrator_data:/root/Migrator
+      # MIGRATOR_PATH_DRIVER - optional - Path to a local JDBC driver to mount
+      - ${MIGRATOR_PATH_DRIVER:-/dev/null}:/opt/mongodb-relational-migrator/lib/app/lib/driver.jar
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      mssql_db:
+        condition: service_healthy
+
+  db-toolbox:
+    image: us-central1-docker.pkg.dev/database-toolbox/toolbox/toolbox:latest
+    platform: linux/amd64
+    ports:
+      - "${DB_TOOLBOX_PORT}:5000"
+    environment:
+      - MSSQL_HOST=mssql_db
+      - MSSQL_PORT=1433
+      - MSSQL_USER=${MSSQL_USER}
+      - MSSQL_PASSWORD=${MSSQL_PASSWORD}
+      - MSSQL_DATABASE=${MSSQL_DATABASE}
+      - MONGODB_URI=${MONGODB_URI}
+      - NEO4J_URI=${NEO4J_URI}
+      - NEO4J_USERNAME=${NEO4J_USERNAME}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - NEO4J_DATABASE=${NEO4J_DATABASE}
+    volumes:
+      - ./services/orchestrator/src/config/db_toolbox:/config
+    restart: unless-stopped
+    command:
+      [
+        "--tools-folder",
+        "/config",
+        "--prebuilt",
+        "mssql",
+        "--prebuilt",
+        "neo4j",
+        "--ui",
+        "--address",
+        "0.0.0.0",
+        "--log-level",
+        "debug",
+      ]
+    depends_on:
+      mssql_db:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    networks:
+      - default
+      - uom
+
+  mongodb-mcp-server:
+    image: mongodb/mongodb-mcp-server:latest
+    ports:
+      - "3010:3000"
+    environment:
+      - MDB_MCP_TRANSPORT=http
+      - MDB_MCP_HTTP_HOST=0.0.0.0
+      - MDB_MCP_HTTP_PORT=3000
+      - MDB_MCP_LOGGERS=disk,mcp,stderr
+      - MDB_MCP_CONNECTION_STRING=${MONGODB_URI}
+      - MDB_MCP_READ_ONLY=true
+      - MDB_MCP_DISABLED_TOOLS=create,update,delete,switch-connection,atlas-local-list-deployments,atlas-local-create-deployment,atlas-local-connect-deployment,atlas-local-delete-deployment,list-knowledge-sources,search-knowledge,export,collection-storage-size,collection-indexes,db-stats,mongodb-logs,connect
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - default
+      - uom
+
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce:lts
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    ports:
+      - 9443:9443
+  
+  # code-server:
+  #   image: lscr.io/linuxserver/code-server:latest
+  #   container_name: code-server
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #     - TZ=Etc/UTC
+  #     - PASSWORD=password #optional
+  #     # - HASHED_PASSWORD= #optional
+  #     - SUDO_PASSWORD=password #optional
+  #     # - SUDO_PASSWORD_HASH= #optional
+  #     # - PROXY_DOMAIN=code-server.my.domain #optional
+  #     # - DEFAULT_WORKSPACE=/config/workspace #optional
+  #     # - PWA_APPNAME=code-server #optional
+  #   volumes:
+  #     - ./services/code-server:/config
+  #   ports:
+  #     - 8443:8443
+  #   restart: unless-stopped
+  #   networks:
+  #     - default
+  #     - uom
+
+volumes:
+  mssql_data:
+  mongodb_data:
+  neo4j_data:
+  mongodb_migrator_data:
+  portainer_data:
+
+networks:
+  ollama:
+    driver: bridge
+  uom:
+    external: true
+    name: uom

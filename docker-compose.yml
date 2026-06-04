@@ -4,6 +4,21 @@ include:
       - ./services/orchestrator/docker-compose.yml
       - ./docker-compose.langgraph.override.yml
 services:
+  frontend:
+    build:
+      context: ./frontend/uom-translator-ui
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      NEXT_PUBLIC_LANGGRAPH_API_URL: "http://localhost:${FRONTEND_PORT}/api"
+      LANGGRAPH_API_URL: "http://langgraph-api:8000"
+    ports:
+      - "${FRONTEND_PORT}:3000"
+    restart: unless-stopped
+    networks:
+      - default
+      - uom
+
   ollama-autossh-tunnel:
     image: jnovack/autossh:2.1.0
     environment:
@@ -27,55 +42,24 @@ services:
     networks:
       - ollama
 
-  # dotnet-service:
-  #   build:
-  #     context: ./services/dotnet-service
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "${DOTNET_SERVICE_PORT}:5073"
-  #     - "${DOTNET_SERVICE_SSH_PORT}:22"
-  #   environment:
-  #     - MSSQL_HOST=mssql_db
-  #     - MSSQL_PORT=1433
-  #     - MSSQL_USER=${MSSQL_USER}
-  #     - MSSQL_PASSWORD=${MSSQL_PASSWORD}
-  #   restart: unless-stopped
-  #   depends_on:
-  #     - mssql_db
-
-  # java-service:
-  #   build:
-  #     context: ./services/java-services
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "${JAVA_SERVICE_PORT}:8080"
-  #     - "${JAVA_SERVICE_SSH_PORT}:22"
-  #   environment:
-  #     - SPRING_NEO4J_URI=bolt://neo4j:7687
-  #     - SPRING_NEO4J_AUTHENTICATION_USERNAME=${NEO4J_USERNAME}
-  #     - SPRING_NEO4J_AUTHENTICATION_PASSWORD=${NEO4J_PASSWORD}
-  #     - SPRING_DATA_MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE}
-  #   restart: unless-stopped
-  #   depends_on:
-  #     - neo4j
-  #     - mongodb
-
   mssql_db:
     build:
-      context: ./ORMConvertor
-      dockerfile: database.Dockerfile
+      context: ./services/etl/mssql
     ports:
       - "${MSSQL_PORT}:1433"
     environment:
       - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=${MSSQL_PASSWORD}
+      - MSSQL_SA_USER=${MSSQL_SA_USER:-sa}
+      - MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD}
       - MSSQL_PID=Developer
+      - MSSQL_USER=${MSSQL_USER}
+      - MSSQL_PASSWORD=${MSSQL_PASSWORD}
+      - MSSQL_DATABASE=${MSSQL_DATABASE}
     restart: unless-stopped
     volumes:
       - mssql_data:/var/opt/mssql
     networks:
       - default
-      - daytona-uom
       - uom
 
   mongodb:
@@ -94,7 +78,6 @@ services:
       - ./services/etl/mongodb/init-mongodb.sh:/docker-entrypoint-initdb.d/init-mongodb.sh
     networks:
       - default
-      - daytona-uom
       - uom
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
@@ -122,7 +105,6 @@ services:
       - ./services/etl/neo4j:/neo4j-etl
     networks:
       - default
-      - daytona-uom
       - uom
     healthcheck:
       test:
@@ -160,19 +142,19 @@ services:
       - MSSQL_PORT=1433
       - MSSQL_USER=${MSSQL_USER}
       - MSSQL_PASSWORD=${MSSQL_PASSWORD}
-      - MSSQL_DATABASE=WideWorldImporters
+      - MSSQL_DATABASE=${MSSQL_DATABASE}
       - MONGODB_URI=${MONGODB_URI}
       - NEO4J_URI=${NEO4J_URI}
       - NEO4J_USERNAME=${NEO4J_USERNAME}
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
-      - NEO4J_DATABASE=neo4j
+      - NEO4J_DATABASE=${NEO4J_DATABASE}
     volumes:
-      - ./services/orchestrator/src/config:/config
+      - ./services/orchestrator/src/config/db_toolbox:/config
     restart: unless-stopped
     command:
       [
-        "--tools-file",
-        "/config/database_tools.yaml",
+        "--tools-folder",
+        "/config",
         "--prebuilt",
         "mssql",
         "--prebuilt",
@@ -180,6 +162,8 @@ services:
         "--ui",
         "--address",
         "0.0.0.0",
+        "--log-level",
+        "debug",
       ]
     depends_on:
       mssql_db:
@@ -210,18 +194,49 @@ services:
       - default
       - uom
 
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce:lts
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    ports:
+      - 9020:9000
+  
+  # code-server:
+  #   image: lscr.io/linuxserver/code-server:latest
+  #   container_name: code-server
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #     - TZ=Etc/UTC
+  #     - PASSWORD=password #optional
+  #     # - HASHED_PASSWORD= #optional
+  #     - SUDO_PASSWORD=password #optional
+  #     # - SUDO_PASSWORD_HASH= #optional
+  #     # - PROXY_DOMAIN=code-server.my.domain #optional
+  #     # - DEFAULT_WORKSPACE=/config/workspace #optional
+  #     # - PWA_APPNAME=code-server #optional
+  #   volumes:
+  #     - ./services/code-server:/config
+  #   ports:
+  #     - 8443:8443
+  #   restart: unless-stopped
+  #   networks:
+  #     - default
+  #     - uom
+
 volumes:
   mssql_data:
   mongodb_data:
   neo4j_data:
   mongodb_migrator_data:
+  portainer_data:
 
 networks:
   ollama:
     driver: bridge
-  daytona-uom:
-    external: true
-    name: daytona-uom
   uom:
     external: true
     name: uom

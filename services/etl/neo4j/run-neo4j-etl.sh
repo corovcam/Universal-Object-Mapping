@@ -77,7 +77,7 @@ docker exec -u 0 -it "$container_name" /var/lib/neo4j/bin/neo4j-admin database i
 }
 echo "[$(date +"%Y-%m-%d %T")] Neo4j ETL process finished successfully" |& tee -a "$log_file"
 
-cp "$mapping_file" "../../orchestrator/src/context/mssql_neo4j.json" 2>&1 | tee -a "$log_file" || echo "[$(date +"%Y-%m-%d %T")] Warning: Failed to copy mapping file to orchestrator context directory. Please copy it manually."
+cp -u "$mapping_file" "../../orchestrator/src/context/mappings/mssql_neo4j.json" 2>&1 | tee -a "$log_file" || echo "[$(date +"%Y-%m-%d %T")] Warning: Failed to copy mapping file to orchestrator context directory. Please copy it manually."
 echo "[$(date +"%Y-%m-%d %T")] Mapping file copied to orchestrator context directory" |& tee -a "$log_file"
 
 # Step 5: Restart the database

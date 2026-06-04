@@ -1,8 +1,9 @@
 """Core utility & helper functions."""
+
 import logging
 import os
 import re
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Callable, Literal, cast
 
 import aiofiles
 import httpx
@@ -14,7 +15,8 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
-from openai import DefaultAsyncHttpxClient, DefaultHttpxClient
+
+# from openai import DefaultAsyncHttpxClient, DefaultHttpxClient
 from pydantic import BaseModel, Field, create_model
 
 from react_agent.constants import (
@@ -26,14 +28,84 @@ from react_agent.constants import (
     FrameworkEnum,
 )
 from react_agent.context import Context
-from react_agent.utils.request_logging import LLMRequestLogger
 from react_agent.utils.types import FrameworkType
 
 logger = logging.getLogger(__name__)
-llm_request_logger = LLMRequestLogger()
+
 
 def get_context_dir() -> str:
-    return os.getenv("CONTEXT_ABSOLUTE_PATH", os.path.join(os.path.dirname(__file__), "..", "..", "context"))
+    """Retrieve the absolute path to the local context directory.
+
+    Returns:
+        str: Absolute folder path.
+    """
+    return os.path.join(os.path.dirname(__file__), "..", "..", "context")
+
+
+def get_config_dir() -> str:
+    """Retrieve the absolute path to the local configuration directory.
+
+    Returns:
+        str: Absolute folder path.
+    """
+    return os.path.join(os.path.dirname(__file__), "..", "..", "config")
+
+
+def extract_mssql_connection_info(
+    connection_string: str,
+) -> dict[Literal["host", "port", "database", "user", "password"], str | int]:
+    """Extract host, port, database, user, and password from a MSSQL connection string.
+
+    Parses standard format connection strings (e.g., 'Server=host,1333;Database=db;User Id=sa;Password=pw')
+    using regex to extract the individual components needed to configure the MCP Database Toolbox.
+
+    Args:
+        connection_string (str): The raw MSSQL connection string.
+
+    Returns:
+        dict[Literal["host", "port", "database", "user", "password"], str | int]: A dictionary of the extracted values.
+
+    Raises:
+        ValueError: If the connection string format is invalid or cannot be parsed.
+    """
+    # e.g. "Server=host.docker.internal,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
+    # We use a strict regex grouping because different connection strings might omit the trailing semicolon, 
+    # or include additional arbitrary parameters (like TrustServerCertificate) that we don't need for the toolbox payload.
+    pattern = re.compile(
+        r"Server=(?P<host>[^,;]+),(?P<port>\d+);Database=(?P<database>[^;]+);User Id=(?P<user>[^;]+);Password=(?P<password>[^;]+);?"
+    )
+    match = pattern.search(connection_string)
+    if not match:
+        raise ValueError("Invalid MSSQL connection string format.")
+
+    return {
+        "host": match.group("host"),
+        "port": int(match.group("port")),
+        "database": match.group("database"),
+        "user": match.group("user"),
+        "password": match.group("password"),
+    }
+
+
+def translate_localhost_to_host_gateway(uri: str) -> str:
+    """Translate localhost in a URI to the Docker host gateway for sandbox compatibility.
+
+    When running tools inside Daytona sandboxes (which are Docker containers), 'localhost'
+    refers to the container itself. This function replaces 'localhost' or '127.0.0.1' with
+    the host gateway IP (usually 'host.docker.internal' or an env-provided IP) so the sandbox
+    can reach services running on the host machine.
+
+    Args:
+        uri (str): The original connection URI or string.
+
+    Returns:
+        str: The translated URI.
+    """
+    host_gateway_ip = os.getenv("OUTER_HOST_GATEWAY_IP", "host.docker.internal")
+    uri = uri.replace("localhost", host_gateway_ip)
+    uri = uri.replace("127.0.0.1", host_gateway_ip)
+    return uri
+
 
 async def get_snippet_content(framework: FrameworkEnum, is_schema: bool = False) -> str:
     """Read a snippet file's content based on framework and type."""
@@ -43,7 +115,11 @@ async def get_snippet_content(framework: FrameworkEnum, is_schema: bool = False)
         logger.warning(f"No snippet file mapping found for framework {framework.value}")
         return ""
 
-    file_name = FRAMEWORK_TO_SNIPPET_FILES[framework][0] if is_schema else FRAMEWORK_TO_SNIPPET_FILES[framework][1]
+    file_name = (
+        FRAMEWORK_TO_SNIPPET_FILES[framework][0]
+        if is_schema
+        else FRAMEWORK_TO_SNIPPET_FILES[framework][1]
+    )
     path = os.path.join(snippets_dir, file_name)
     try:
         async with aiofiles.open(path) as f:
@@ -110,13 +186,24 @@ def get_message_text(msg: BaseMessage) -> str:
 
 
 async def load_chat_model(
-    fully_specified_name: str, config: dict[str, Any] | None = None,
+    fully_specified_name: str,
+    config: dict[str, Any] | None = None,
 ) -> BaseChatModel:
-    """Load a chat model from a fully specified name.
+    """Instantiate and configure a BaseChatModel given a fully specified model string.
+
+    This complex factory function handles initialization for various LLM providers (OpenAI,
+    Ollama, EINFRA, etc.). It applies standard configurations like API endpoints, keys, and
+    timeouts. Importantly, it dynamically fetches the model's capabilities (context size,
+    tool calling support, structured output support) from the provider or an AI Gateway proxy
+    and caches this `ModelProfile`. This prevents LangChain from crashing when it doesn't
+    statically know if a remote model supports tools.
 
     Args:
         fully_specified_name (str): String in the format 'provider/model'.
-        config (dict): Optional configuration passed from the context to initialize remote parameters like API keys.
+        config (dict | None): Optional configuration passed from the context to initialize remote parameters like API keys.
+
+    Returns:
+        BaseChatModel: An initialized, ready-to-use LangChain chat model instance.
     """
     config = config or {}
     provider, model = fully_specified_name.split("/", maxsplit=1)
@@ -126,23 +213,23 @@ async def load_chat_model(
 
     if provider == "openai" or provider == "einfra":
         debug_kwargs = {}
-        if debugging:
-            debug_kwargs = {
-                "http_client": DefaultHttpxClient(
-                    timeout=120,
-                    event_hooks={
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                ),
-                "http_async_client": DefaultAsyncHttpxClient(
-                    timeout=120,
-                    event_hooks={
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                ),
-            }
+        # if debugging:
+        #     debug_kwargs = {
+        #         "http_client": DefaultHttpxClient(
+        #             timeout=120,
+        #             event_hooks={
+        #                 "request": [llm_request_logger.log_request],
+        #                 "response": [llm_request_logger.log_response],
+        #             },
+        #         ),
+        #         "http_async_client": DefaultAsyncHttpxClient(
+        #             timeout=120,
+        #             event_hooks={
+        #                 "request": [llm_request_logger.log_request],
+        #                 "response": [llm_request_logger.log_response],
+        #             },
+        #         ),
+        #     }
         extra_body = config.get("extra_body")
         extra_body_kwargs: dict[str, Any] = {}
         if config.get("reasoning") is not None:
@@ -157,36 +244,48 @@ async def load_chat_model(
             base_url=config.get("openai_api_url"),  # type: ignore
             api_key=config.get("openai_api_key"),  # type: ignore
             max_retries=10,
-            request_timeout=120, # type: ignore
+            request_timeout=120,  # type: ignore
             stream_usage=True,
-            **({"temperature": config.get("temperature", 1)} if config.get("temperature") is not None else {}),
-            **({"extra_body": extra_body_kwargs} if extra_body_kwargs else {})
+            **(
+                {"temperature": config.get("temperature", 1)}
+                if config.get("temperature") is not None
+                else {}
+            ),
+            **({"extra_body": extra_body_kwargs} if extra_body_kwargs else {}),
             # **debug_kwargs,  # type: ignore
         )
     elif provider == "ollama":
         debug_kwargs = {}
-        if debugging:
-            debug_kwargs = {
-                "sync_client_kwargs": {
-                    "event_hooks": {
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                    # "transport": log_http_transport
-                },
-                "async_client_kwargs": {
-                    "event_hooks": {
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                    # "transport": async_log_http_transport
-                },
-            }
+        # if debugging:
+        #     debug_kwargs = {
+        #         "sync_client_kwargs": {
+        #             "event_hooks": {
+        #                 "request": [llm_request_logger.log_request],
+        #                 "response": [llm_request_logger.log_response],
+        #             },
+        #             # "transport": log_http_transport
+        #         },
+        #         "async_client_kwargs": {
+        #             "event_hooks": {
+        #                 "request": [llm_request_logger.log_request],
+        #                 "response": [llm_request_logger.log_response],
+        #             },
+        #             # "transport": async_log_http_transport
+        #         },
+        #     }
         model_client = ChatOllama(
             model=model,
             base_url=config.get("ollama_api_url", "http://localhost:11434"),
-            **({"temperature": config.get("temperature", 1)} if config.get("temperature") is not None else {}), # pyright: ignore[reportArgumentType]
-            **({"reasoning": config.get("reasoning")} if config.get("reasoning") is not None else {}),
+            **(
+                {"temperature": config.get("temperature", 1)}
+                if config.get("temperature") is not None
+                else {}
+            ),  # pyright: ignore[reportArgumentType]
+            **(
+                {"reasoning": config.get("reasoning")}
+                if config.get("reasoning") is not None
+                else {}
+            ),
             # **debug_kwargs,  # type: ignore
         )
     else:
@@ -203,32 +302,32 @@ async def load_chat_model(
                 timeout=120,
                 configurable_fields="any",
                 **config,
-                http_client=DefaultHttpxClient(
-                    timeout=120,
-                    event_hooks={
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                ),
-                http_async_client=DefaultAsyncHttpxClient(
-                    timeout=120,
-                    event_hooks={
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                ),
-                sync_client_kwargs={
-                    "event_hooks": {
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                },
-                async_client_kwargs={
-                    "event_hooks": {
-                        "request": [llm_request_logger.log_request],
-                        "response": [llm_request_logger.log_response],
-                    },
-                },
+                # http_client=DefaultHttpxClient(
+                #     timeout=120,
+                #     event_hooks={
+                #         "request": [llm_request_logger.log_request],
+                #         "response": [llm_request_logger.log_response],
+                #     },
+                # ),
+                # http_async_client=DefaultAsyncHttpxClient(
+                #     timeout=120,
+                #     event_hooks={
+                #         "request": [llm_request_logger.log_request],
+                #         "response": [llm_request_logger.log_response],
+                #     },
+                # ),
+                # sync_client_kwargs={
+                #     "event_hooks": {
+                #         "request": [llm_request_logger.log_request],
+                #         "response": [llm_request_logger.log_response],
+                #     },
+                # },
+                # async_client_kwargs={
+                #     "event_hooks": {
+                #         "request": [llm_request_logger.log_request],
+                #         "response": [llm_request_logger.log_response],
+                #     },
+                # },
             )
         else:
             model_client = init_chat_model(
@@ -243,11 +342,12 @@ async def load_chat_model(
 
     if getattr(model_client, "profile", None) is None:
         profile: ModelProfile | None = None
-        
+
         # Check static cache
-        config_dir = os.path.join(os.path.dirname(__file__), "..", "..", "config")
-        cache_file = os.path.join(config_dir, "model_profiles.json")
-        
+        cache_file = os.path.join(get_config_dir(), "model_profiles.json")
+
+        # Because probing the AI Gateway or specific LLM endpoints for capability profiles (like max context window)
+        # introduces severe startup latency, we cache the profiles locally as JSON on the first successful hit.
         if not MODEL_PROFILE_CACHE:
             try:
                 async with aiofiles.open(cache_file, "rb") as f:
@@ -256,13 +356,15 @@ async def load_chat_model(
                         MODEL_PROFILE_CACHE.update(orjson.loads(content))
             except Exception:
                 pass
-                
+
         cached_kwargs = MODEL_PROFILE_CACHE.get(fully_specified_name)
         if cached_kwargs:
             try:
                 profile = ModelProfile(**cached_kwargs)
             except Exception as e:
-                logger.warning(f"Failed to load cached profile for {provider}/{model}: {e}")
+                logger.warning(
+                    f"Failed to load cached profile for {provider}/{model}: {e}"
+                )
 
         if profile is not None:
             model_client.profile = profile  # type: ignore
@@ -325,7 +427,7 @@ async def load_chat_model(
                                 p_kwargs["max_input_tokens"] = int(max_input)
                             if max_output is not None:
                                 p_kwargs["max_output_tokens"] = int(max_output)
-                            
+
                             capabilities = minfo.get("capabilities", [])
                             for key, check1, check2 in [
                                 (
@@ -333,14 +435,30 @@ async def load_chat_model(
                                     "tools" in capabilities,
                                     "tools" in supported or "functions" in supported,
                                 ),
-                                ("tool_choice", "tools" in capabilities, "tool_choice" in supported),
-                                ("structured_output", "tools" in capabilities, "response_format" in supported),
+                                (
+                                    "tool_choice",
+                                    "tools" in capabilities,
+                                    "tool_choice" in supported,
+                                ),
+                                (
+                                    "structured_output",
+                                    "tools" in capabilities,
+                                    "response_format" in supported,
+                                ),
                                 (
                                     "reasoning_output",
                                     "enable_thinking" in ebody or "thinking" in ebody,
-                                    "reasoning_effort" in supported or "thinking" in ebody.get("chat_template_kwargs", {}) or "enable_thinking" in ebody.get("chat_template_kwargs", {}),
+                                    "reasoning_effort" in supported
+                                    or "thinking"
+                                    in ebody.get("chat_template_kwargs", {})
+                                    or "enable_thinking"
+                                    in ebody.get("chat_template_kwargs", {}),
                                 ),
-                                ("temperature", "temperature" in ebody, "temperature" in supported),
+                                (
+                                    "temperature",
+                                    "temperature" in ebody,
+                                    "temperature" in supported,
+                                ),
                             ]:
                                 if check1 or check2:
                                     p_kwargs[key] = True
@@ -422,13 +540,15 @@ async def load_chat_model(
                             f"Could not fetch AI Gateway profile for {creator}/{model}: {e}"
                         )
             profile = ModelProfile(**p_kwargs)
-            
+
             # Save to cache
             try:
-                os.makedirs(config_dir, exist_ok=True)
+                os.makedirs(get_config_dir(), exist_ok=True)
                 MODEL_PROFILE_CACHE[fully_specified_name] = p_kwargs
                 async with aiofiles.open(cache_file, "wb") as f:
-                    await f.write(orjson.dumps(MODEL_PROFILE_CACHE, option=orjson.OPT_INDENT_2))
+                    await f.write(
+                        orjson.dumps(MODEL_PROFILE_CACHE, option=orjson.OPT_INDENT_2)
+                    )
             except Exception as e:
                 logger.warning(f"Failed to save model profile cache: {e}")
 
@@ -465,16 +585,14 @@ async def get_model(
         "openai_api_key", getattr(runtime.context, "openai_api_key", None)
     )
     chat_model_config = {
-        "openai_api_url": openai_url, 
-        "openai_api_key": openai_key, 
-        "temperature": temperature, 
-        "reasoning": reasoning, 
+        "openai_api_url": openai_url,
+        "openai_api_key": openai_key,
+        "temperature": temperature,
+        "reasoning": reasoning,
         "extra_body": extra_body,
-        **chat_model_kwargs
+        **chat_model_kwargs,
     }
-    return await load_chat_model(
-        model_name, config=chat_model_config
-    )
+    return await load_chat_model(model_name, config=chat_model_config)
 
 
 async def get_database_mapping_json(
@@ -509,8 +627,7 @@ async def get_database_mapping_json(
 
 
 async def create_example_for_prompt(
-    framework: FrameworkEnum,
-    return_schema: bool
+    framework: FrameworkEnum, return_schema: bool
 ) -> str:
     """Create example code snippets for prompts based on the framework."""
     example = f"""
@@ -520,18 +637,39 @@ async def create_example_for_prompt(
     return example
 
 
-def override_pydantic_model_schema(model_cls: type[BaseModel], overrides: dict[str, dict[str, Any]], model_name: str | None = None) -> type[BaseModel]:
-    """Override the schema of a Pydantic model's fields."""
+def override_pydantic_model_schema(
+    model_cls: type[BaseModel],
+    overrides: dict[str, dict[str, Any]],
+    model_name: str | None = None,
+) -> type[BaseModel]:
+    """Dynamically modify the schema of a Pydantic model's fields at runtime.
+
+    Used by the graph to tailor the `BaseTranslationOutput` schema so the LLM doesn't waste
+    tokens generating irrelevant fields (like query validations when only doing a schema translation).
+
+    Args:
+        model_cls (type[BaseModel]): The base Pydantic model class.
+        overrides (dict[str, dict[str, Any]]): A dictionary of field names mapped to their new schema annotations and metadata.
+        model_name (str | None): Optional name for the new dynamically generated model class.
+
+    Returns:
+        type[BaseModel]: A new Pydantic model class with the applied schema overrides.
+    """
     new_fields = {}
     for f_name, f_info in model_cls.model_fields.items():
         f_dct = f_info.asdict()
         if f_name in overrides:
             override = overrides[f_name]
             f_dct["annotation"] = override.get("annotation", f_dct["annotation"])
-            f_dct["metadata"] =  override.get("metadata", f_dct["metadata"])
-            f_dct["attributes"] = {**f_dct["attributes"], **override.get("attributes", {})}
+            f_dct["metadata"] = override.get("metadata", f_dct["metadata"])
+            f_dct["attributes"] = {
+                **f_dct["attributes"],
+                **override.get("attributes", {}),
+            }
         new_fields[f_name] = (
-            Annotated[f_dct["annotation"], *f_dct['metadata'], Field(**f_dct['attributes'])],  # noqa: F821
+            Annotated[
+                f_dct["annotation"], *f_dct["metadata"], Field(**f_dct["attributes"])
+            ],  # noqa: F821
             None,
         )
     return create_model(
@@ -540,5 +678,20 @@ def override_pydantic_model_schema(model_cls: type[BaseModel], overrides: dict[s
         **new_fields,
     )
 
-def identity(x: Any) -> Any:
-    return x
+
+def process_streaming_chunks(
+    chunk: Any, writer: Callable[[Any], None], log_buffer: list | None = None
+):
+    """Process and dispatch streaming chunks from nested tools or graphs.
+
+    Writes the chunk to a designated `writer` callback (usually `runtime.stream_writer` for
+    custom LangGraph UI events) and optionally buffers it for logging or later aggregation.
+
+    Args:
+        chunk (Any): The streamed data chunk (e.g., stdout line).
+        writer (Callable[[Any], None]): The callback function to route the chunk.
+        log_buffer (list | None): Optional list to append the chunk to for later inspection.
+    """
+    writer(chunk)
+    if log_buffer is not None:
+        log_buffer.append(chunk)

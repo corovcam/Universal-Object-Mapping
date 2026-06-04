@@ -52,10 +52,12 @@ async def fetch_web_docs(query: str, framework_version: str = "") -> str:
                 "TavilySearch failed, falling back to HTTP fetch.", exc_info=True
             )
 
-    # Basic HTTP fallback: fetch from official docs sites
+    # Basic HTTP fallback: fetch from official docs sites directly.
+    # We construct a series of fallback URLs dynamically based on the requested framework.
     urls = _build_fallback_urls(query, framework_version)
     results = []
 
+    # Follow redirects as Microsoft Learn pages frequently redirect to generic paths or localized subdomains.
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
         for url in urls[:3]:
             try:
@@ -134,6 +136,9 @@ async def load_docs_mcp_tools() -> AsyncGenerator[list[BaseTool], None]:
             logger.info(
                 "Loaded MCP documentation tools: %s", [tool.name for tool in mcp_tools]
             )
+            # The Spring Docs MCP server relies on NPX to run a transient Node.js application process.
+            # If the user doesn't have NPX installed or the command fails, we want to catch it gracefully
+            # instead of aborting the agent's graph iteration.
             spring_docs_mcp_yielded = False
             try:
                 async with client.session("spring_docs") as spring_docs_session:
@@ -143,6 +148,7 @@ async def load_docs_mcp_tools() -> AsyncGenerator[list[BaseTool], None]:
                         "Loaded Spring Docs MCP tools: %s",
                         [tool.name for tool in spring_tools],
                     )
+                    # We yield here if Spring is available, otherwise we'll yield in the except block
                     yield tools
                     spring_docs_mcp_yielded = True
             except Exception:

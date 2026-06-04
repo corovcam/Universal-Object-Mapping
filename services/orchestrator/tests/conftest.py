@@ -5,28 +5,48 @@ and live service connections (MongoDB, DB Toolbox, Ollama).
 """
 import os
 from pathlib import Path
-from unittest.mock import MagicMock
+from typing import AsyncGenerator
 from uuid import uuid4
 
 import orjson
 import pytest
+from aiohttp.test_utils import TestClient
 from langchain.tools import ToolRuntime
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.runtime import Runtime
+from langgraph.runtime import DEFAULT_RUNTIME, Runtime
+from langgraph_sdk.client import LangGraphClient
 
 from react_agent.constants import AvailableModel, FrameworkEnum, TranslationType
 from react_agent.context import Context
 from react_agent.graph import graph
 from react_agent.state import State
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
+# @pytest.hookimpl
+# def pytest_configure(config):
+#     logging_plugin = config.pluginmanager.get_plugin("logging-plugin")
+
+#     # Change color on existing log level
+#     logging_plugin.log_cli_handler.formatter.add_color_level(logging.INFO, "cyan")
+#     logging_plugin.log_cli_handler.formatter.add_color_level(logging.DEBUG, "blue")
+#     logging_plugin.log_cli_handler.formatter.add_color_level(logging.WARNING, "yellow")
+#     logging_plugin.log_cli_handler.formatter.add_color_level(logging.ERROR, "red")
+#     logging_plugin.log_cli_handler.formatter.add_color_level(logging.CRITICAL, "red", "bold")
+
 
 #  ---------------------------------------------------------------------------
 #  Pytest Fixtures
 #  ---------------------------------------------------------------------------
 
+
+@pytest.fixture(scope="session")
+def config():
+    return {
+        "FIXTURES_DIR": Path(__file__).parent / "fixtures",
+        "AIMOCK_FIXTURES_DIR": Path(__file__).parent / "aimock" / "recorded",
+        "SNIPPETS_DIR": Path(__file__).parent.parent / "src" / "context" / "snippets",
+    }
 
 @pytest.fixture(scope="session")
 def anyio_backend():
@@ -46,6 +66,45 @@ def vcr_config():
 def check_api_keys():
     if not os.environ.get("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
+        
+# ---------------------------------------------------------------------------
+# Sample States
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def efcore_mongodb_unstructured_input(config) -> str:
+    return (config["FIXTURES_DIR"] / "input-efcore-mongodb.txt").read_text()
+
+
+@pytest.fixture()
+def sample_state(efcore_mongodb_unstructured_input) -> State:
+    """A pre-populated State for EFCore → Spring Data MongoDB translation."""
+    return State(
+        messages=[
+            HumanMessage(
+                content=(
+                    efcore_mongodb_unstructured_input
+                )
+            )
+        ],
+        translation_type=TranslationType.BOTH,
+        source_target=FrameworkEnum.DOTNET_EFCORE,
+        destination_target=FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
+    )
+
+
+@pytest.fixture()
+def empty_state(efcore_mongodb_unstructured_input) -> State:
+    """A State with no source data — forces extract_input to call the LLM."""
+    return State(
+        messages=[
+            HumanMessage(
+                content=(
+                    efcore_mongodb_unstructured_input
+                )
+            )
+        ],
+    )
 
 # ---------------------------------------------------------------------------
 # Context & Runtime
@@ -59,18 +118,22 @@ def context() -> Context:
 
 
 @pytest.fixture()
-def runtime(context: Context, sample_state) -> MagicMock:
+def runtime(context: Context):
     """A mock Runtime whose `.context` points to the real Context."""
-    rt = MagicMock(spec=Runtime)
-    rt.context = context
-    rt.state = sample_state
-    return rt
+    import sys
+
+    def eprint(*args, **kwargs):
+        print(*args, file=sys.stderr, **kwargs)  # noqa: T201
+    
+    return Runtime(context=context, stream_writer=eprint)
 
 
 @pytest.fixture()
 def runnable_config() -> RunnableConfig:
     """A minimal RunnableConfig for node invocations."""
-    return RunnableConfig()
+    return RunnableConfig(configurable={
+        "thread_id": "test-thread",
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -99,69 +162,8 @@ def compiled_graph_with_checkpointer():
         pytest.skip(f"Graph build with checkpointer unavailable: {exc}")
 
 
-# ---------------------------------------------------------------------------
-# Sample States
-# ---------------------------------------------------------------------------
-
-SAMPLE_EFCORE_CODE = """\
-public class Customer
-{
-    public int Id { get; set; }
-    public string Name { get; set; }
-    public ICollection<Order> Orders { get; set; }
-}
-
-public class Order
-{
-    public int Id { get; set; }
-    public DateTime OrderDate { get; set; }
-    public int CustomerId { get; set; }
-    public Customer Customer { get; set; }
-}
-
-// Query
-var customers = await dbContext.Customers
-    .Include(c => c.Orders)
-    .Where(c => c.Orders.Any(o => o.OrderDate > DateTime.UtcNow.AddDays(-30)))
-    .ToListAsync();
-"""
-
-
 @pytest.fixture()
-def sample_state() -> State:
-    """A pre-populated State for EFCore → Spring Data MongoDB translation."""
-    return State(
-        messages=[
-            HumanMessage(
-                content=(
-                    "Translate this EFCore code to Spring Data MongoDB:\n"
-                    + SAMPLE_EFCORE_CODE
-                )
-            )
-        ],
-        translation_type=TranslationType.BOTH,
-        source_target=FrameworkEnum.DOTNET_EFCORE,
-        destination_target=FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
-    )
-
-
-@pytest.fixture()
-def empty_state() -> State:
-    """A State with no source data — forces extract_input to call the LLM."""
-    return State(
-        messages=[
-            HumanMessage(
-                content=(
-                    "Convert this EFCore LINQ code to Spring Data MongoDB:\n"
-                    + SAMPLE_EFCORE_CODE
-                )
-            )
-        ],
-    )
-
-
-@pytest.fixture()
-def sample_tool_runtime(runtime, runnable_config, sample_state) -> ToolRuntime[Context, State]:
+def sample_tool_runtime(runtime: Runtime[Context], runnable_config: RunnableConfig, sample_state: State) -> ToolRuntime[Context, State]:
     # Create the ToolRuntime
     tool_runtime = ToolRuntime(
         state=sample_state,
@@ -176,25 +178,37 @@ def sample_tool_runtime(runtime, runnable_config, sample_state) -> ToolRuntime[C
 
 
 @pytest.fixture()
-def sample_config_with_runtime(runtime: Runtime, sample_tool_runtime: ToolRuntime) -> RunnableConfig:
+def sample_config_with_runtime(runtime: Runtime, runnable_config: RunnableConfig, sample_tool_runtime: ToolRuntime) -> RunnableConfig:
     # Mock the internal Pregel Runtime
-    mock_pregel_runtime = runtime
-    return {
-        "configurable": {
-            "__pregel_runtime": mock_pregel_runtime,
-            "__tool_runtime__": sample_tool_runtime,
-            "thread_id": "test-tool-node-1",
-        }
-    }
+    return RunnableConfig(configurable={
+        **runnable_config.get("configurable", {}),
+        "__pregel_runtime": runtime,
+        "__tool_runtime__": sample_tool_runtime,
+    })
 
 
 @pytest.fixture()
-def sample_efcore_results() -> dict:
+def sample_efcore_results(config) -> dict:
     """Sample EFCore results for testing."""
-    return orjson.loads((FIXTURES_DIR / "efcore_results.json").read_bytes())
+    return orjson.loads((config["FIXTURES_DIR"] / "efcore_results.json").read_bytes())
 
 
 @pytest.fixture()
-def sample_mongo_results() -> dict:
+def sample_mongo_results(config) -> dict:
     """Sample MongoDB results for testing."""
-    return orjson.loads((FIXTURES_DIR / "mongo_results.json").read_bytes())
+    return orjson.loads((config["FIXTURES_DIR"] / "mongo_results.json").read_bytes())
+
+
+# ---------------------------------------------------------------------------
+# API Client & Test Runs
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def client() -> LangGraphClient:
+    """Get the LangGraph SDK client."""
+    from langgraph_sdk import get_client
+    
+    client = get_client(url=os.getenv("LANGGRAPH_API_URL"))
+
+    return client

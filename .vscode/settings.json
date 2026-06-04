@@ -24,9 +24,10 @@
     "${workspaceFolder}/services/orchestrator/tests"
   ],
   "python.analysis.inlayHints.pytestParameters": true,
-  // "python.languageServer": "Pylance",
+  "python.languageServer": "Pylance",
   // if using Pylance in VSCode
-  "ty.disableLanguageServices": false,
+  "ty.disableLanguageServices": true,
+  "remote.autoForwardPorts": false,
   "sqltools.connections": [
     {
       "ssh": "Disabled",
@@ -50,16 +51,76 @@
       "ssh": "Disabled",
       "previewLimit": 50,
       "server": "localhost",
-      "port": 1444,
+      "port": 1333,
       "driver": "MSSQL",
       "name": "uom-mssql",
       "username": "sa",
       "password": "Testingorms123"
     }
   ],
-  "editor.codeActionsOnSave": {
-    "source.organizeImports": "explicit"
-  },
   "maven.view": "flat",
-  "java.sources.organizeImports.staticStarThreshold": 1
+  "java.sources.organizeImports.staticStarThreshold": 1,
+  "ruff.exclude": ["external"],
+  "omnisharp.projectFilesExcludePattern": "**/node_modules/**,**/.git/**,**/bower_components/**,**/orchestrator/**,**/external/**",
+  "csharp.debug.symbolOptions.moduleFilter.excludedModules": [
+    "**/orchestrator/**,**/external/**"
+  ],
+  "acp.agents": {
+    "Universal Object Mapping Translator": {
+      "command": "services/orchestrator/run_acp_agent.sh",
+      "args": [],
+      "env": {
+        "OPENAI_API_URL": "http://localhost:4010/v1",
+        "OPENAI_API_KEY": "sk-326a0e49f0eb408b9b2c553fa9129ff7",
+        "OLLAMA_HOST": "http://localhost:11434",
+        "DEVELOPMENT": true
+      }
+    }
+  },
+  "files.associations": {
+    "*.css": "tailwindcss"
+  },
+  "editor.quickSuggestions": {
+    "strings": "on"
+  },
+  "js/ts.preferGoToSourceDefinition": true,
+  "js/ts.preferences.importModuleSpecifier": "non-relative",
+  "biome.configurationPath": "./frontend/uom-translator-ui/biome.json",
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "never",
+    "source.removeUnusedImports": "never"
+  },
+  "[python]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[java]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[csharp]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "biomejs.biome",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.addMissingImports.ts": "explicit",
+      "source.organizeImports.biome": "explicit",
+      "source.fixAll.biome": "explicit"
+    },
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "biomejs.biome",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.addMissingImports.ts": "explicit",
+      "source.organizeImports.biome": "explicit",
+      "source.fixAll.biome": "explicit"
+    },
+  }
 }

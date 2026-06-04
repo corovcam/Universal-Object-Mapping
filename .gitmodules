@@ -1,3 +1,6 @@
 [submodule "external/daytona"]
 	path = external/daytona
 	url = git@github.com:daytonaio/daytona.git
+[submodule "external/langgraphics"]
+	path = external/langgraphics
+	url = git@github.com:corovcam/langgraphics.git
