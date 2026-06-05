@@ -1,4 +1,4 @@
-import { SpinnerEmpty } from "@/components/spinner-empty";
+import { SpinnerEmpty } from "@/components/custom-empty";
 
 export default function Loading() {
 	return (

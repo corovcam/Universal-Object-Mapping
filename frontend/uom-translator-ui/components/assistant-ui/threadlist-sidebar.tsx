@@ -1,11 +1,12 @@
 "use-client";
 
 import { BookOpen, FolderGit, Settings } from "lucide-react";
+import Image from "next/image";
 import type * as React from "react";
 import { useEffect, useState } from "react";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { GitHubIcon } from "@/components/icons/github";
-import { ThemeToggle } from "@/components/theme-provider";
+import { ThemeToggle, useTheme } from "@/components/theme-provider";
 import {
 	Sidebar,
 	SidebarContent,
@@ -26,6 +27,7 @@ export function ThreadListSidebar({
 	...props
 }: React.ComponentProps<typeof Sidebar>) {
 	const [isConfigOpen, setIsConfigOpen] = useState(false);
+	const { theme } = useTheme();
 
 	useEffect(() => {
 		if (typeof window !== "undefined") {
@@ -42,8 +44,25 @@ export function ThreadListSidebar({
 						<SidebarMenuItem>
 							<SidebarMenuButton size="lg" asChild tooltip="UOM Assistant Home">
 								<a href="/" aria-label="UOM Assistant Home">
-									<div className="aui-sidebar-header-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+									{/* <div className="aui-sidebar-header-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg shimemer-bg shimmer-color-indigo-100 shimmer-spread-200 shimmer-angle-75">
 										<FolderGit className="aui-sidebar-header-icon size-5" />
+									</div> */}
+									<div className="aspect-square size-8">
+										{theme === "light" ? (
+											<Image
+												src="/logo-uom-black-730.svg"
+												alt="UOM Logo Black"
+												width={32}
+												height={32}
+											/>
+										) : (
+											<Image
+												src="/logo-uom-white-730.svg"
+												alt="UOM Logo White"
+												width={32}
+												height={32}
+											/>
+										)}
 									</div>
 									<div className="aui-sidebar-header-heading me-6 flex flex-col gap-0.5 leading-none">
 										<span className="aui-sidebar-header-title font-semibold">

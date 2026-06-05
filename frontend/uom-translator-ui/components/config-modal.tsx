@@ -38,25 +38,9 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import type { UomConfig } from "@/lib/types";
 
-export interface UomConfig {
-	ollamaHost: string;
-	model: string;
-	openaiApiUrl: string;
-	openaiApiKey: string;
-	mssqlConnectionString: string;
-	mongodbUri: string;
-	neo4jUri: string;
-	neo4jPassword: string;
-	daytonaApiUrl: string;
-	daytonaApiKey: string;
-	daytonaTarget: "eu" | "us";
-	daytonaTimeout: number;
-	dbToolboxUri?: string;
-	mongodbMcpUri?: string;
-}
-
-const DEFAULT_CONFIG: UomConfig = {
+export const DEFAULT_CONFIG: UomConfig = {
 	ollamaHost: "http://localhost:11434",
 	model: "einfra/kimi-k2.6",
 	openaiApiUrl: "https://llm.ai.e-infra.cz/v1",

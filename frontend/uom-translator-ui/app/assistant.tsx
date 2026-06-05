@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import ComponentErrorBoundary from "@/app/component-error-boundary";
 import { AssistantRuntimeProviderWrapper } from "@/components/assistant-ui/runtime/assistant-runtime-provider";
 import { Thread } from "@/components/assistant-ui/thread";
 import { ThreadListSidebar } from "@/components/assistant-ui/threadlist-sidebar";
@@ -32,17 +33,21 @@ export function Assistant({
 			{process.env.NODE_ENV === "development" && <DevToolsModal />}
 			<SidebarProvider defaultOpen>
 				<div className="flex h-dvh w-full">
-					<ThreadListSidebar />
+					<ComponentErrorBoundary title="An error occurred while loading the thread list.">
+						<ThreadListSidebar />
+					</ComponentErrorBoundary>
 					<SidebarInset>
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<SidebarTrigger className="absolute top-5 left-5 z-20" />
-							</TooltipTrigger>
-							<TooltipContent side="right">
-								<p>Toggle Sidebar</p>
-							</TooltipContent>
-						</Tooltip>
-						<Thread />
+						<ComponentErrorBoundary title="An error occurred while loading the thread.">
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<SidebarTrigger className="absolute top-5 left-5 z-20" />
+								</TooltipTrigger>
+								<TooltipContent side="right">
+									<p>Toggle Sidebar</p>
+								</TooltipContent>
+							</Tooltip>
+							<Thread />
+						</ComponentErrorBoundary>
 					</SidebarInset>
 				</div>
 			</SidebarProvider>

@@ -31,12 +31,8 @@ import {
 } from "lucide-react";
 import { Allow, parse as parsePartialJson } from "partial-json";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
-import { type FC, useEffect, useState } from "react";
-import {
-	ComposerAddAttachment,
-	ComposerAttachments,
-	UserMessageAttachments,
-} from "@/components/assistant-ui/attachment";
+import { type FC, Suspense, useEffect, useState } from "react";
+import { UserMessageAttachments } from "@/components/assistant-ui/attachment";
 import { InterruptHandler } from "@/components/assistant-ui/interrupt-handler";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import {
@@ -57,6 +53,7 @@ import { ErrorAlert } from "@/components/custom-alerts";
 import { AutoScrollJsonViewer } from "@/components/json-viewer";
 import { Button } from "@/components/ui/button";
 import { ScrollBar } from "@/components/ui/scroll-area";
+import { SkeletonText } from "@/components/ui/skeleton";
 import { useGraphStateContext } from "@/hooks/use-graph-state-context";
 import { cn } from "@/lib/utils";
 
@@ -154,12 +151,32 @@ const isIntermediatePrompt = (text: string): boolean => {
 		// lower.includes("commencing parallel validation") ||
 		// lower.includes("commencing query equivalence") ||
 		// lower.includes("successfully extracted inputs") ||
-		// lower.includes("generated translation. commencing deterministic validation") ||
+		// lower.includes(
+		// 	"generated translation. commencing deterministic validation",
+		// ) ||
+		// lower.includes("schema inspection completed successfully") ||
 		lower.includes("inspect the database schemas") ||
 		lower.includes("evaluate the following validation results") ||
 		lower.includes("analyze the following conversation") ||
 		lower.includes("translate the following source code")
 	);
+};
+
+const getPromptTitle = (text: string): string => {
+	const lowerText = text.toLowerCase();
+	if (lowerText.includes("inspect the database schemas")) {
+		return "Database Schema Inspector Prompt";
+	}
+	if (lowerText.includes("evaluate the following validation results")) {
+		return "LLM Evaluation Prompt";
+	}
+	if (lowerText.includes("translate the following source code")) {
+		return "Code Translation Prompt";
+	}
+	if (lowerText.includes("analyze the following conversation")) {
+		return "Extraction Prompt";
+	}
+	return "System Prompt";
 };
 
 const ThreadMessage = () => {
@@ -181,44 +198,6 @@ const ThreadMessage = () => {
 				value={partialStructuredOutput}
 				containerClassName="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar"
 			/>
-		);
-	}
-
-	const isIntermediate = isIntermediatePrompt(fullText);
-	if (isIntermediate) {
-		let promptTitle = "System Prompt";
-		const lowerText = fullText.toLowerCase();
-		// if (lowerText.includes("commencing validation")) {
-		// 	promptTitle = "Validation Stage Trigger";
-		// } else if (lowerText.includes("successfully extracted inputs")) {
-		// 	promptTitle = "Input Extraction Success";
-		// } else if (lowerText.includes("commencing parallel validation")) {
-		// 	promptTitle = "Parallel Query Validation Trigger";
-		// } else if (lowerText.includes("commencing query equivalence")) {
-		// 	promptTitle = "Query Equivalence Stage Trigger";
-		// }
-		if (lowerText.includes("inspect the database schemas")) {
-			promptTitle = "Database Schema Inspector Prompt";
-		} else if (
-			lowerText.includes("evaluate the following validation results")
-		) {
-			promptTitle = "LLM Evaluation Prompt";
-		} else if (lowerText.includes("translate the following source code")) {
-			promptTitle = "Code Translation Prompt";
-		} else if (lowerText.includes("analyze the following conversation")) {
-			promptTitle = "Extraction Prompt";
-		}
-
-		return (
-			<div className="px-2">
-				<CollapsiblePrompt title={promptTitle}>
-					{role === "user" ? (
-						<UserMessageContent />
-					) : (
-						<AssistantMessageContent />
-					)}
-				</CollapsiblePrompt>
-			</div>
 		);
 	}
 
@@ -246,18 +225,22 @@ const ThreadWelcome: FC = () => {
 			<div className="aui-thread-welcome-center flex w-full grow flex-col items-center justify-center">
 				<div className="aui-thread-welcome-message flex size-full flex-col justify-center px-4">
 					<h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both font-semibold text-2xl duration-200 text-primary">
-						Welcome to{" "}
-						<span className="font-bold bg-clip-text">
-							Universal Object Mapping
-						</span>{" "}
-						Assistant!
+						<span className="shimmer shimmer-color-neutral-400 shimmer-spread-200 text-primary shimmer-angle-75">
+							Welcome to{" "}
+							<span className="font-bold bg-clip-text">
+								Universal Object Mapping
+							</span>{" "}
+							Assistant!
+						</span>
 					</h1>
 					<p className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-muted-foreground text-xl delay-75 duration-200">
 						Use the below sample translation suggestions or write your own.
 					</p>
 				</div>
 			</div>
-			<ThreadSuggestions />
+			<Suspense fallback={<SkeletonText count={3} />}>
+				<ThreadSuggestions />
+			</Suspense>
 		</div>
 	);
 };
@@ -507,6 +490,15 @@ const AssistantMessage: FC = () => {
 	const ACTION_BAR_PT = "pt-1.5";
 	const ACTION_BAR_HEIGHT = `-mb-7.5 min-h-7.5 ${ACTION_BAR_PT}`;
 
+	const content = useAuiState((s) => s.message.content);
+	const fullText = content
+		.filter((part) => part.type === "text")
+		.map((part) => (part as any).text || "")
+		.join("\n");
+
+	const isIntermediate = isIntermediatePrompt(fullText);
+	const promptTitle = getPromptTitle(fullText);
+
 	return (
 		<MessagePrimitive.Root
 			data-slot="aui_assistant-message-root"
@@ -517,7 +509,15 @@ const AssistantMessage: FC = () => {
 				<BotIcon className="size-4" />
 			</div>
 
-			<AssistantMessageContent />
+			{isIntermediate ? (
+				<div className="px-2 w-full">
+					<CollapsiblePrompt title={promptTitle}>
+						<AssistantMessageContent />
+					</CollapsiblePrompt>
+				</div>
+			) : (
+				<AssistantMessageContent />
+			)}
 
 			<AuiIf
 				condition={(s) => s.thread.isRunning && s.message.content.length === 0}
@@ -591,6 +591,15 @@ const AssistantActionBar: FC = () => {
 };
 
 const UserMessage: FC = () => {
+	const content = useAuiState((s) => s.message.content);
+	const fullText = content
+		.filter((part) => part.type === "text")
+		.map((part) => (part as any).text || "")
+		.join("\n");
+
+	const isIntermediate = isIntermediatePrompt(fullText);
+	const promptTitle = getPromptTitle(fullText);
+
 	return (
 		<MessagePrimitive.Root
 			data-slot="aui_user-message-root"
@@ -606,18 +615,16 @@ const UserMessage: FC = () => {
 			<UserMessageAttachments />
 
 			<div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
-				<div className="aui-user-message-content wrap-break-word peer rounded-2xl bg-muted px-4 py-2.5 text-foreground empty:hidden">
-					<MessagePrimitive.Parts />
-				</div>
-				{/* <div className="aui-user-action-bar-wrapper absolute start-0 top-1/2 -translate-x-full -translate-y-1/2 pe-2 peer-empty:hidden rtl:translate-x-full">
-					<UserActionBar />
-				</div> */}
+				{isIntermediate ? (
+					<CollapsiblePrompt title={promptTitle}>
+						<UserMessageContent />
+					</CollapsiblePrompt>
+				) : (
+					<div className="aui-user-message-content wrap-break-word peer rounded-2xl bg-muted px-4 py-2.5 text-foreground empty:hidden">
+						<MessagePrimitive.Parts />
+					</div>
+				)}
 			</div>
-
-			{/* <BranchPicker
-				data-slot="aui_user-branch-picker"
-				className="col-span-full col-start-1 row-start-3 -me-1 justify-end"
-			/> */}
 			<MessageError />
 		</MessagePrimitive.Root>
 	);

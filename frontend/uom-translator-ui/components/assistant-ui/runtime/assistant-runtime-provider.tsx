@@ -11,11 +11,12 @@ import {
 	type LangChainMessage,
 	useLangGraphRuntime,
 } from "@assistant-ui/react-langgraph";
+import type { RunsInvokePayload } from "@langchain/langgraph-sdk";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { GraphStateContext } from "@/hooks/use-graph-state-context";
 import { createClient } from "@/lib/chatApi";
-import type { BackendState } from "@/lib/types";
+import type { BackendState, UomConfig } from "@/lib/types";
 
 const ASSISTANT_ID =
 	process.env.NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID ||
@@ -70,13 +71,15 @@ export function AssistantRuntimeProviderWrapper({
 				typeof window !== "undefined"
 					? localStorage.getItem("uom_translator_config")
 					: null;
-			const configurable = savedConfig ? JSON.parse(savedConfig) : {};
+			const configurable: UomConfig = savedConfig
+				? JSON.parse(savedConfig)
+				: {};
 
 			const payload = {
 				input: messages.length ? { messages } : null,
 				streamMode: ["messages", "updates", "custom"],
 				streamSubgraphs: true,
-				signal: config.abortSignal,
+				...(config.abortSignal != null && { signal: config.abortSignal }),
 				onDisconnect: "cancel",
 				multitaskStrategy: "reject",
 				...(config.command != null && { command: config.command }),
@@ -95,7 +98,7 @@ export function AssistantRuntimeProviderWrapper({
 					mongodb_uri: configurable.mongodbUri || undefined,
 					neo4j_uri: configurable.neo4jUri || undefined,
 					neo4j_password: configurable.neo4jPassword || undefined,
-					daytona_api_url: configurable.daytonaUrl || undefined,
+					daytona_api_url: configurable.daytonaApiUrl || undefined,
 					daytona_api_key: configurable.daytonaApiKey || undefined,
 					daytona_target: configurable.daytonaTarget || undefined,
 					sandbox_execution_timeout: configurable.daytonaTimeout || undefined,
@@ -103,74 +106,42 @@ export function AssistantRuntimeProviderWrapper({
 			};
 
 			// TODO: clieant.runs.stream is deprecated, use client.threads.stream https://github.com/langchain-ai/langgraphjs/blob/2f0010e3a59e79cae1ff22b05985c7c82f8a2261/libs/sdk/docs/runs.md
-			// const threadStream = await client.threads.stream(externalId, { assistantId: ASSISTANT_ID });
-			// threadStream.run.start({ input: payload })
-			// threadStream.messages
+			// const threadStream = await client.threads.stream(externalId, {
+			// 	assistantId: ASSISTANT_ID,
+			// });
+			// await threadStream.run.start({ input: payload });
+			// return threadStream;
 			const eventStream = await client.runs.stream(
 				externalId,
 				ASSISTANT_ID,
 				payload as any,
 			);
 			return eventStream;
-			// async function* makeDebugGenerator() {
-			// 	try {
-			// 		for await (const chunk of eventStream) {
-			// 			console.debug("Received chunk:", chunk);
-			// 			yield chunk;
+
+			// const cleanChunk = (val: any): any => {
+			// 	if (val === null || typeof val !== "object") {
+			// 		return val;
+			// 	}
+			// 	if (Array.isArray(val)) {
+			// 		return val.map(cleanChunk);
+			// 	}
+			// 	const copy = { ...val };
+			// 	for (const key in copy) {
+			// 		if (key === "argsText" && copy[key] === "{}") {
+			// 			copy[key] = "";
+			// 		} else {
+			// 			copy[key] = cleanChunk(copy[key]);
 			// 		}
-			// 	} catch (err: any) {
-			// 		console.error("Error during LangGraph run stream:", err);
-			// 		throw err;
+			// 	}
+			// 	return copy;
+			// };
+
+			// async function* cleanStream() {
+			// 	for await (const chunk of eventStream) {
+			// 		yield cleanChunk(chunk);
 			// 	}
 			// }
-			// return makeDebugGenerator();
-			// async function* makeGenerator() {
-			//   try {
-			//     for await (const chunk of eventStream) {
-			//       // Process chunk
-			//       if (chunk.event === "updates" && chunk.data) {
-			//         setGraphState((prev: any) => {
-			//           const next = { ...prev };
-			//           for (const [nodeName, nodeState] of Object.entries(chunk.data)) {
-			//             if (nodeState && typeof nodeState === "object") {
-			//               Object.assign(next, nodeState);
-			//             }
-			//             if (NODE_NAME_MAP[nodeName]) {
-			//               setActiveNode(NODE_NAME_MAP[nodeName]);
-			//             }
-			//           }
-			//           return next;
-			//         });
-			//       }
-			//       // not used
-			//       if (chunk.event === "values" && chunk.data) {
-			//         setGraphState((prev: any) => ({ ...prev, ...chunk.data }));
-			//       }
-			//       if (chunk.event === "messages/metadata" && chunk.data) {
-			//         const entry = Object.values(chunk.data)[0] as any;
-			//         const nodeName = entry?.metadata?.langgraph_node;
-			//         if (nodeName && NODE_NAME_MAP[nodeName]) {
-			//           setActiveNode(NODE_NAME_MAP[nodeName]);
-			//         }
-			//       }
-			//       if (chunk.event === "error") {
-			//         const errMsg = (chunk.data as any)?.message || JSON.stringify(chunk.data);
-			//         setRunError(errMsg);
-			//         setServerActive(false);
-			//       }
-			//       if (chunk.event === "custom") {
-			//         console.log("Custom event from LangGraph:", chunk.data);
-			//       }
-			//       yield chunk;
-			//     }
-			//   } catch (err: any) {
-			//     console.error("Error during LangGraph run stream:", err);
-			//     setRunError(err.message || String(err));
-			//     setServerActive(false);
-			//     throw err;
-			//   }
-			// }
-			// return makeGenerator();
+			// return cleanStream();
 		};
 	}, [client]);
 
@@ -267,11 +238,11 @@ export function AssistantRuntimeProviderWrapper({
 				// 	}).then((r) => r.json());
 				// 	controller.appendText(title);
 				// });
-				return {
-					async *[Symbol.asyncIterator]() {
-						yield { type: "text", text: "" };
+				return new ReadableStream({
+					start(controller) {
+						controller.close();
 					},
-				} as any;
+				}) as any;
 			},
 		};
 	}, [client, handleError]);

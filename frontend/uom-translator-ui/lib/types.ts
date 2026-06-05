@@ -18,15 +18,18 @@ export interface QueryEquivalenceDeepDiff {
 }
 
 export interface UomConfig {
-	ollamaHost?: string;
-	model?: string;
-	openaiApiUrl?: string;
-	openaiApiKey?: string;
-	mssqlConnectionString?: string;
-	mongodbUri?: string;
-	neo4jUri?: string;
-	neo4jPassword?: string;
-	daytonaTimeout?: number;
+	ollamaHost: string;
+	model: string;
+	openaiApiUrl: string;
+	openaiApiKey: string;
+	mssqlConnectionString: string;
+	mongodbUri: string;
+	neo4jUri: string;
+	neo4jPassword: string;
+	daytonaApiUrl: string;
+	daytonaApiKey: string;
+	daytonaTarget: "eu" | "us";
+	daytonaTimeout: number;
 	dbToolboxUri?: string;
 	mongodbMcpUri?: string;
 }
