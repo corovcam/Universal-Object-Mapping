@@ -512,8 +512,10 @@ Conversation:
     # Verification gate: ensure the extracted output contains the absolute minimum requirements
     # (framework targets and source code) to actually perform a translation.
     if is_input_extracted(extraction):
-        msg = [AIMessage(
-            content=f"""Successfully extracted inputs:
+        msg = [
+            *response["messages"],
+            AIMessage(
+                content=f"""Successfully extracted inputs:
 
 ```json
 {orjson.dumps(extraction.model_dump(mode="json", exclude_unset=True, exclude={"error"}), option=orjson.OPT_INDENT_2).decode('utf-8')}
