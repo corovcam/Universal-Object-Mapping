@@ -83,7 +83,7 @@
   "editor.quickSuggestions": {
     "strings": "on"
   },
-  "js/ts.preferGoToSourceDefinition": true,
+  "js/ts.preferGoToSourceDefinition": false,
   "js/ts.preferences.importModuleSpecifier": "non-relative",
   "biome.configurationPath": "./frontend/uom-translator-ui/biome.json",
   "editor.codeActionsOnSave": {
