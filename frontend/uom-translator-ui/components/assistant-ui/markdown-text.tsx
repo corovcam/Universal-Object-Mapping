@@ -12,7 +12,10 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 import { Allow, parse as parsePartialJson } from "partial-json";
 import { type FC, memo, useState } from "react";
 import remarkGfm from "remark-gfm";
-import { SyntaxHighlighter } from "@/components/assistant-ui/shiki-highlighter";
+import {
+	type HighlighterProps,
+	SyntaxHighlighter,
+} from "@/components/assistant-ui/shiki-highlighter";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { AutoScrollJsonViewer } from "@/components/json-viewer";
 import { cn } from "@/lib/utils";
@@ -73,8 +76,17 @@ const useCopyToClipboard = ({
 	return { isCopied, copyToClipboard };
 };
 
+const SyntaxHighlighterImpl: FC<HighlighterProps> = (props) => {
+	return (
+		<SyntaxHighlighter
+			className={`${props?.className || ""} [&_pre]:overflow-auto!`}
+			{...props}
+		/>
+	);
+};
+
 const defaultComponents = memoizeMarkdownComponents({
-	SyntaxHighlighter: SyntaxHighlighter,
+	SyntaxHighlighter: SyntaxHighlighterImpl,
 	h1: ({ className, ...props }) => (
 		<h1
 			className={cn(
@@ -181,13 +193,15 @@ const defaultComponents = memoizeMarkdownComponents({
 		/>
 	),
 	table: ({ className, ...props }) => (
-		<table
-			className={cn(
-				"aui-md-table my-2 w-full border-separate border-spacing-0 overflow-y-auto",
-				className,
-			)}
-			{...props}
-		/>
+		<div className="my-2 w-full border-spacing-0 border-separate overflow-x-auto overflow-y-auto rounded-md border border-border bg-background custom-scrollbar">
+			<table
+				className={cn(
+					"aui-md-table w-full whitespace-pre-wrap wrap-break-word divide-y divide-border",
+					className,
+				)}
+				{...props}
+			/>
+		</div>
 	),
 	th: ({ className, ...props }) => (
 		<th

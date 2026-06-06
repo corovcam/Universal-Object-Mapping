@@ -103,7 +103,7 @@ export const Thread: FC = () => {
 						</div>
 					</ThreadPrimitive.Viewport>
 				</ScrollAreaPrimitive.Viewport>
-				<ScrollBar />
+				<ScrollBar className="custom-scrollbar" />
 			</ThreadPrimitive.Root>
 		</ScrollAreaPrimitive.Root>
 	);
@@ -129,18 +129,6 @@ const GlobalErrorMessage: FC = () => {
 			}
 		/>
 	);
-};
-
-const parsePartialStructuredOutput = (text: string): any => {
-	if (!text) return null;
-	const trimmed = text.trim();
-	if (trimmed.startsWith("{")) {
-		try {
-			const parsed = parsePartialJson(trimmed, Allow.ALL);
-			return parsed;
-		} catch (_) {}
-	}
-	return null;
 };
 
 const isIntermediatePrompt = (text: string): boolean => {
@@ -182,24 +170,8 @@ const getPromptTitle = (text: string): string => {
 const ThreadMessage = () => {
 	const isEditing = useAuiState((s) => s.message.composer.isEditing);
 	const role = useAuiState((s) => s.message.role);
-	const content = useAuiState((s) => s.message.content);
 
 	if (isEditing) return <EditComposer />;
-
-	const fullText = content
-		.filter((part) => part.type === "text")
-		.map((part) => (part as any).text || "")
-		.join("\n");
-
-	const partialStructuredOutput = parsePartialStructuredOutput(fullText);
-	if (partialStructuredOutput) {
-		return (
-			<AutoScrollJsonViewer
-				value={partialStructuredOutput}
-				containerClassName="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar"
-			/>
-		);
-	}
 
 	if (role === "user") return <UserMessage />;
 	return <AssistantMessage />;
@@ -387,7 +359,7 @@ const CollapsiblePrompt: FC<{ title: string; children: React.ReactNode }> = ({
 				</span>
 			</Button>
 			{isOpen && (
-				<div className="p-4 text-xs select-text leading-relaxed border-t max-h-[400px] overflow-y-auto custom-scrollbar">
+				<div className="p-4 text-xs select-text leading-relaxed border-t max-h-[600px] overflow-y-auto custom-scrollbar">
 					{children}
 				</div>
 			)}
@@ -395,9 +367,38 @@ const CollapsiblePrompt: FC<{ title: string; children: React.ReactNode }> = ({
 	);
 };
 
+const parsePartialStructuredOutput = (text: string): any => {
+	if (!text) return null;
+	const trimmed = text.trim();
+	if (trimmed.startsWith("{")) {
+		try {
+			const parsed = parsePartialJson(trimmed, Allow.ALL);
+			return parsed;
+		} catch (_) {}
+	}
+	return null;
+};
+
 const UserMessageContent: FC = () => {
+	const content = useAuiState((s) => s.message.content);
+
+	const fullText = content
+		.filter((part) => part.type === "text")
+		.map((part) => (part as any).text || "")
+		.join("\n");
+
+	const partialStructuredOutput = parsePartialStructuredOutput(fullText);
+	if (partialStructuredOutput) {
+		return (
+			<AutoScrollJsonViewer
+				value={partialStructuredOutput}
+				containerClassName="border p-4 mt-2 mb-2 max-h-[600px] w-full overflow-y-auto custom-scrollbar"
+			/>
+		);
+	}
+
 	return (
-		<div className="aui-user-message-content wrap-break-word rounded-2xl bg-muted/40 px-4 py-2.5 text-foreground">
+		<div className="aui-user-message-content wrap-break-word peer rounded-2xl bg-muted px-4 py-2.5 text-foreground">
 			<MessagePrimitive.Parts />
 		</div>
 	);
@@ -446,7 +447,7 @@ const AssistantMessageContent: FC = () => {
 						case "tool-call":
 							return part.toolUI ?? <ToolFallback {...part} />;
 						case "indicator":
-							return <ThinkingIndicator className="mt-2" />;
+							return <LoaderIcon className="size-4 animate-spin mt-2" />;
 						default:
 							return null;
 					}
@@ -458,24 +459,22 @@ const AssistantMessageContent: FC = () => {
 };
 
 const ThinkingIndicator = ({
-	symbol,
-	...props
-}: { symbol?: string } & React.HTMLAttributes<HTMLSpanElement>) => {
+	text = "Thinking...",
+	className,
+}: {
+	text?: string;
+	className?: string;
+}) => {
 	return (
-		// biome-ignore lint/a11y/useAriaPropsSupportedByRole: n
-		<span
+		<div
 			className={cn(
-				"flex items-center gap-1 text-muted-foreground font-sans",
-				props?.className,
+				"flex items-center gap-2 text-muted-foreground px-2 mt-2",
+				className,
 			)}
-			data-slot="aui_assistant-message-indicator"
-			aria-label="Assistant is working"
-			{...props}
 		>
-			<span className="animate-bounce delay-[0.2s]">{symbol || "•"}</span>
-			<span className="animate-bounce delay-[0.1s]">{symbol || "•"}</span>
-			<span className="animate-bounce">{symbol || "•"}</span>
-		</span>
+			<LoaderIcon className="size-4 animate-spin" />
+			<span className="text-sm">{text}</span>
+		</div>
 	);
 };
 
@@ -485,15 +484,6 @@ const AssistantMessage: FC = () => {
 	// for pt-[n] use -mb-[n + 6] & min-h-[n + 6] to preserve compensation
 	const ACTION_BAR_PT = "pt-1.5";
 	const ACTION_BAR_HEIGHT = `-mb-7.5 min-h-7.5 ${ACTION_BAR_PT}`;
-
-	const content = useAuiState((s) => s.message.content);
-	const fullText = content
-		.filter((part) => part.type === "text")
-		.map((part) => (part as any).text || "")
-		.join("\n");
-
-	const isIntermediate = isIntermediatePrompt(fullText);
-	const promptTitle = getPromptTitle(fullText);
 
 	return (
 		<MessagePrimitive.Root
@@ -505,26 +495,12 @@ const AssistantMessage: FC = () => {
 				<BotIcon className="size-4" />
 			</div>
 
-			{isIntermediate ? (
-				<div className="px-2 w-full">
-					<CollapsiblePrompt title={promptTitle}>
-						<AssistantMessageContent />
-					</CollapsiblePrompt>
-				</div>
-			) : (
-				<AssistantMessageContent />
-			)}
+			<AssistantMessageContent />
 
 			<AuiIf
 				condition={(s) => s.thread.isRunning && s.message.content.length === 0}
 			>
-				<div className="flex items-center gap-2 text-muted-foreground px-2 mt-2">
-					<LoaderIcon className="size-4 animate-spin" />
-					<span className="text-sm">
-						Thinking
-						<ThinkingIndicator symbol="." className="ml-1" />
-					</span>
-				</div>
+				<ThinkingIndicator />
 			</AuiIf>
 
 			<div
