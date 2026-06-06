@@ -11,7 +11,6 @@ import {
 	type LangChainMessage,
 	useLangGraphRuntime,
 } from "@assistant-ui/react-langgraph";
-import type { RunsInvokePayload } from "@langchain/langgraph-sdk";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { GraphStateContext } from "@/hooks/use-graph-state-context";
@@ -278,11 +277,6 @@ export function AssistantRuntimeProviderWrapper({
 						: { subgraphs: true },
 				);
 
-				// TODO: Map your history array to match the standard LangChain shape
-				// const formattedMessages = (state.values?.messages || []).map((msg: any) => {
-				// 	return convertLangChainMessages(msg, null);
-				// });
-
 				return {
 					messages: state.values?.messages || [],
 					interrupts: state.tasks?.[0]?.interrupts || [],
@@ -360,17 +354,17 @@ export function AssistantRuntimeProviderWrapper({
 			},
 			onSubgraphUpdates: (namespace: string, updates: any) => {
 				console.debug(`[UOM] Subgraph updates [${namespace}]:`, updates);
-				if (updates) {
-					setGraphState((prev: any) => {
-						const next = { ...prev };
-						for (const [nodeName, nodeState] of Object.entries(updates)) {
-							if (nodeState && typeof nodeState === "object") {
-								Object.assign(next, nodeState);
-							}
-						}
-						return next;
-					});
-				}
+				// if (updates) {
+				// 	setGraphState((prev: any) => {
+				// 		const next = { ...prev };
+				// 		for (const [nodeName, nodeState] of Object.entries(updates)) {
+				// 			if (nodeState && typeof nodeState === "object") {
+				// 				Object.assign(next, nodeState);
+				// 			}
+				// 		}
+				// 		return next;
+				// 	});
+				// }
 			},
 			onError: (error: any) => {
 				console.error("[UOM] Runtime error:", error);

@@ -472,12 +472,8 @@ const ThinkingIndicator = ({
 			aria-label="Assistant is working"
 			{...props}
 		>
-			<span className="animate-bounce [animation-delay:-0.2s]">
-				{symbol || "•"}
-			</span>
-			<span className="animate-bounce [animation-delay:-0.1s]">
-				{symbol || "•"}
-			</span>
+			<span className="animate-bounce delay-[0.2s]">{symbol || "•"}</span>
+			<span className="animate-bounce delay-[0.1s]">{symbol || "•"}</span>
 			<span className="animate-bounce">{symbol || "•"}</span>
 		</span>
 	);

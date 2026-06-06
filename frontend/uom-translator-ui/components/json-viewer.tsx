@@ -4,8 +4,8 @@ import type { JsonViewProps } from "@uiw/react-json-view";
 import JsonView from "@uiw/react-json-view";
 import { githubDarkTheme } from "@uiw/react-json-view/githubDark";
 import { githubLightTheme } from "@uiw/react-json-view/githubLight";
+import { useTheme } from "next-themes";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { useTheme } from "@/components/theme-provider";
 import { SkeletonText } from "@/components/ui/skeleton";
 
 export function JsonViewer({ value, ...props }: JsonViewProps<object>) {

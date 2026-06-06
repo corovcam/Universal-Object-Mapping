@@ -40,7 +40,7 @@ export function Assistant({
 						<ComponentErrorBoundary title="An error occurred while loading the thread.">
 							<Tooltip>
 								<TooltipTrigger asChild>
-									<SidebarTrigger className="absolute top-5 left-5 z-20" />
+									<SidebarTrigger className="absolute top-5 left-5 z-20 text-primary" />
 								</TooltipTrigger>
 								<TooltipContent side="right">
 									<p>Toggle Sidebar</p>

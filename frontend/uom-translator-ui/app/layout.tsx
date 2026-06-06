@@ -17,9 +17,22 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-	title: "Universal Object Mapping (UOM) Translator",
+	title: "Universal Object Mapping Assistant",
 	description:
 		"Advanced paradigm migrator translating C# Entity Framework relational schemas and queries to Java Spring Data MongoDB/Neo4j NoSQL schemas and queries.",
+	authors: [
+		{
+			name: "Martin Čorovčák",
+			url: "https://github.com/corovcam",
+		},
+	],
+	creator: "Martin Čorovčák",
+	openGraph: {
+		title: "Universal Object Mapping Assistant",
+		description:
+			"Advanced paradigm migrator translating C# Entity Framework relational schemas and queries to Java Spring Data MongoDB/Neo4j NoSQL schemas and queries.",
+		siteName: "Universal Object Mapping Assistant",
+	},
 };
 
 export default function RootLayout({
@@ -28,20 +41,20 @@ export default function RootLayout({
 	children: React.ReactNode;
 }>) {
 	return (
-		<html
-			lang="en"
-			className="dark"
-			style={{ colorScheme: "dark" }}
-			suppressHydrationWarning
-		>
+		<html lang="en" suppressHydrationWarning>
 			<body
 				className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-950 text-slate-100`}
 				suppressHydrationWarning
 			>
-				<ThemeProvider defaultTheme="dark">
+				<ThemeProvider
+					defaultTheme="dark"
+					attribute="class"
+					enableSystem
+					disableTransitionOnChange
+				>
 					<TooltipProvider>{children}</TooltipProvider>
+					<Toaster position="top-center" />
 				</ThemeProvider>
-				<Toaster />
 			</body>
 		</html>
 	);

@@ -9,6 +9,7 @@ export default function Home() {
 
 	const cwd = process.cwd();
 	try {
+		// TODO: use getStaticProps
 		efcoreToMongoInput = fs.readFileSync(
 			cwd + "/app/data/input-efcore-mongodb.txt",
 			"utf-8",
