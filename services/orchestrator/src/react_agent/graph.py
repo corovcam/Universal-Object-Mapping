@@ -856,28 +856,29 @@ Source Code:
     }
 
     if "structured_response" not in response:
-        logger.warning("LLM did not return TranslationOutput properly.")
+        logger.error("LLM did not return TranslationOutput properly.")
         messages = [
             *response["messages"],
             AIMessage(
                 content="Failed to generate translation. LLM did not return structured response in expected format."
             ),
         ]
-        updates["messages"] = messages
-        updates["translation_messages"] = messages
-        return updates
+        raise Exception("\n".join([str(msg.content) for msg in messages]))
+        # updates["messages"] = messages
+        # updates["translation_messages"] = messages
+        # return updates
 
     output = response["structured_response"]
     updates.update(output.model_dump(warnings="error", exclude_unset=True))
 
-    messages = [
-        *response["messages"],
-        AIMessage(
-            content="Generated translation. Commencing deterministic validation..."
-        ),
-    ]
-    updates["messages"] = messages
-    updates["translation_messages"] = messages
+    msg = AIMessage(content=f"""Translation generated successfully on attempt {state.translation_loop_count + 1}.
+                    
+```json
+{orjson.dumps(output.model_dump(mode="json", exclude_unset=False), option=orjson.OPT_INDENT_2).decode('utf-8')}
+```
+""")
+    updates["messages"] = msg
+    updates["translation_messages"] = msg
 
     return updates
 
@@ -1332,27 +1333,26 @@ Is the translation logically equivalent and syntactically valid? Provide your re
     )
 
     response = None
-    try:
-        response = await agent.ainvoke({"messages": [HumanMessage(content=prompt)]})
-        messages = response["messages"] if response and response.get("messages") else []
-        if "structured_response" not in response:
-            messages = [
-                *messages,
-                AIMessage(
-                    content="Failed to evaluate translation. LLM did not return structured response in expected format."
-                ),
-            ]
-            return {
-                "messages": messages,
-                "translation_messages": messages,
-            }
+    response = await agent.ainvoke({"messages": [HumanMessage(content=prompt)]})
+    messages = response["messages"] if response and response.get("messages") else []
+    if "structured_response" not in response:
+        messages = [
+            *messages,
+            AIMessage(
+                content="[Structured Output Error] Evaluation may have failed: LLM did not return structured response in expected format. Check translated code manually."
+            ),
+        ]
+        return {
+            "messages": messages,
+            "translation_messages": messages,
+        }
 
-        assert state.translation_type is not None and state.destination_target is not None
-        output: EvaluationOutput = response["structured_response"]
-        if (output.decision == "ACCEPT"):
-            markdown_lang = FRAMEWORK_TO_LANGUAGE_TYPE[state.destination_target].value
-            messages = [
-                AIMessage(content=f"""The translation is accepted. Here is the final translated code:
+    assert state.translation_type is not None and state.destination_target is not None
+    output: EvaluationOutput = response["structured_response"]
+    if (output.decision == "ACCEPT"):
+        markdown_lang = FRAMEWORK_TO_LANGUAGE_TYPE[state.destination_target].value
+        messages = [
+            AIMessage(content=f"""The translation is accepted. Here is the final translated code:
 
 Translated schema:
 ```{markdown_lang}
@@ -1363,29 +1363,17 @@ Translated schema:
 Evaluation:
 {output.explanation}
 """)
-            ]
-        else:
-            messages = [
-                AIMessage(content=f"[{output.decision}] {output.explanation}"),
-            ]
-            
-        return {
-            "explanation_message": output.explanation,
-            "messages": messages,
-            "translation_messages": messages,
-        }
-    except Exception as e:  # TODO: narrow exception type OR remove these try-except blocks from all nodes - errors are handled by LangGraph already (retried)
-        logger.error(f"Evaluation node failed: {e}")
-        messages = [
-            *(response["messages"] if response and response.get("messages") else []),
-            AIMessage(
-                content=f"[Evaluation Error] An error occurred during evaluation: {e}"
-            ),
         ]
-        return {
-            "messages": messages,
-            "translation_messages": messages,
-        }
+    else:
+        messages = [
+            AIMessage(content=f"[{output.decision}] {output.explanation}"),
+        ]
+        
+    return {
+        "explanation_message": output.explanation,
+        "messages": messages,
+        "translation_messages": messages,
+    }
 
 
 def route_post_evaluation(
@@ -1410,10 +1398,12 @@ def route_post_evaluation(
         "[REJECT]" in last_msg
         or "[Evaluation Failed]" in last_msg
         or "[Evaluation Error]" in last_msg
+        or "[Structured Output Error]" in last_msg
     ):
         # We check the translation_loop_count to prevent infinite loops of failing compilation.
+        # If [Structured Output Error] occured in this last evaluation stage, we don't want to run expensive translation again, we let the user decide.
         # If it exceeds the maximum (typically 3), we route to 'human_intervention_node' to let the user fix the issue manually.
-        if state.translation_loop_count >= MAX_TRANSLATION_LOOPS:
+        if state.translation_loop_count >= MAX_TRANSLATION_LOOPS or "[Structured Output Error]" in last_msg:
             return "human_intervention_node"
         return "generate_translation_node"
     return "__end__"
