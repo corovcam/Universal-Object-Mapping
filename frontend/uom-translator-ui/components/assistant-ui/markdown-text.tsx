@@ -77,6 +77,27 @@ const useCopyToClipboard = ({
 };
 
 const SyntaxHighlighterImpl: FC<HighlighterProps> = (props) => {
+	const codeString = String(props.code || "")
+		.trim()
+		.replace(/^"|"$/g, "");
+	if (props.language === "json" && codeString.startsWith("{")) {
+		console.debug("Parsing partial JSON code block:", codeString);
+		try {
+			const parsed = parsePartialJson(codeString, Allow.ALL);
+			return (
+				<AutoScrollJsonViewer
+					value={parsed}
+					containerClassName={cn(
+						"border p-4 max-h-[500px] w-full overflow-y-auto custom-scrollbar",
+						props?.className,
+					)}
+				/>
+			);
+		} catch {
+			// Fall back to default rendering if parsing exception occurs
+		}
+	}
+
 	return (
 		<SyntaxHighlighter
 			className={`${props?.className || ""} [&_pre]:overflow-auto!`}
@@ -250,28 +271,6 @@ const defaultComponents = memoizeMarkdownComponents({
 	),
 	code: function Code({ className, ...props }) {
 		const isCodeBlock = useIsMarkdownCodeBlock();
-		if (isCodeBlock) {
-			const codeString = String(props.children || "")
-				.trim()
-				.replace(/^"|"$/g, "");
-			if (codeString.startsWith("{")) {
-				console.debug("Parsing partial JSON code block:", codeString);
-				try {
-					const parsed = parsePartialJson(codeString, Allow.ALL);
-					return (
-						<AutoScrollJsonViewer
-							value={parsed}
-							containerClassName={cn(
-								"border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar",
-								className,
-							)}
-						/>
-					);
-				} catch {
-					// Fall back to default rendering if parsing exception occurs
-				}
-			}
-		}
 		return (
 			<code
 				className={cn(

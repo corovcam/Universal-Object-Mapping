@@ -7,6 +7,7 @@ import {
 	ComposerPrimitive,
 	ErrorPrimitive,
 	groupPartByType,
+	MessagePartPrimitive,
 	MessagePrimitive,
 	SuggestionPrimitive,
 	ThreadPrimitive,
@@ -333,13 +334,19 @@ const MessageError: FC = () => {
 	);
 };
 
-const CollapsiblePrompt: FC<{ title: string; children: React.ReactNode }> = ({
-	title,
-	children,
-}) => {
+const CollapsiblePrompt: FC<{
+	title: string;
+	className?: string;
+	children: React.ReactNode;
+}> = ({ title, className, children }) => {
 	const [isOpen, setIsOpen] = useState(false);
 	return (
-		<div className="border rounded-xl bg-accent text-accent-foreground my-2 overflow-hidden">
+		<div
+			className={cn(
+				"border rounded-xl bg-accent text-accent-foreground my-2 overflow-hidden",
+				className,
+			)}
+		>
 			<Button
 				variant="ghost"
 				onClick={() => setIsOpen(!isOpen)}
@@ -367,7 +374,7 @@ const CollapsiblePrompt: FC<{ title: string; children: React.ReactNode }> = ({
 	);
 };
 
-const parsePartialStructuredOutput = (text: string): any => {
+const parsePartialStructuredOutput = (text: string | null): any => {
 	if (!text) return null;
 	const trimmed = text.trim();
 	if (trimmed.startsWith("{")) {
@@ -379,15 +386,15 @@ const parsePartialStructuredOutput = (text: string): any => {
 	return null;
 };
 
-const UserMessageContent: FC = () => {
-	const content = useAuiState((s) => s.message.content);
+const PartialJsonMessageRenderer = ({ FallbackComp }: { FallbackComp: FC }) => {
+	const text = useAuiState((s) => {
+		if (s.part.type !== "text" && s.part.type !== "reasoning") return null;
+		return s.part.text;
+	});
 
-	const fullText = content
-		.filter((part) => part.type === "text")
-		.map((part) => (part as any).text || "")
-		.join("\n");
+	if (!text) return <FallbackComp />;
 
-	const partialStructuredOutput = parsePartialStructuredOutput(fullText);
+	const partialStructuredOutput = parsePartialStructuredOutput(text);
 	if (partialStructuredOutput) {
 		return (
 			<AutoScrollJsonViewer
@@ -395,14 +402,19 @@ const UserMessageContent: FC = () => {
 				containerClassName="border p-4 mt-2 mb-2 max-h-[600px] w-full overflow-y-auto custom-scrollbar"
 			/>
 		);
+	} else {
+		return <FallbackComp />;
 	}
-
-	return (
-		<div className="aui-user-message-content wrap-break-word peer rounded-2xl bg-muted px-4 py-2.5 text-foreground">
-			<MessagePrimitive.Parts />
-		</div>
-	);
 };
+
+const DefaultTextComponent: FC = () => (
+	<p style={{ whiteSpace: "pre-line" }}>
+		<MessagePartPrimitive.Text />
+		<MessagePartPrimitive.InProgress>
+			<span style={{ fontFamily: "revert" }}>{" \u25CF"}</span>
+		</MessagePartPrimitive.InProgress>
+	</p>
+);
 
 const AssistantMessageContent: FC = () => {
 	return (
@@ -441,7 +453,7 @@ const AssistantMessageContent: FC = () => {
 								</ToolGroupRoot>
 							);
 						case "text":
-							return <MarkdownText />;
+							return <PartialJsonMessageRenderer FallbackComp={MarkdownText} />;
 						case "reasoning":
 							return <Reasoning {...part} />;
 						case "tool-call":
@@ -562,6 +574,37 @@ const AssistantActionBar: FC = () => {
 	);
 };
 
+const UserMessageContent: FC = () => {
+	const isFirstMessage = useAuiState(
+		(s) => s.thread.messages[0]?.id === s.message.id,
+	);
+
+	return (
+		<div className="aui-user-message-content wrap-break-word peer rounded-2xl bg-muted px-4 py-2.5 text-foreground">
+			<MessagePrimitive.Parts>
+				{({ part }) => {
+					switch (part.type) {
+						case "text":
+							return isFirstMessage ? (
+								<DefaultTextComponent />
+							) : (
+								<PartialJsonMessageRenderer
+									FallbackComp={DefaultTextComponent}
+								/>
+							);
+						case "reasoning":
+							return <Reasoning {...part} />;
+						case "tool-call":
+							return part.toolUI ?? <ToolFallback {...part} />;
+						default:
+							return null;
+					}
+				}}
+			</MessagePrimitive.Parts>
+		</div>
+	);
+};
+
 const UserMessage: FC = () => {
 	const content = useAuiState((s) => s.message.content);
 	const fullText = content
@@ -578,25 +621,27 @@ const UserMessage: FC = () => {
 			className="fade-in slide-in-from-bottom-1 grid animate-in auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 px-2 duration-150 [contain-intrinsic-size:auto_60px] [content-visibility:auto] [&:where(>*)]:col-start-2"
 			data-role="user"
 		>
-			<div className="col-span-full col-start-1 row-start-1 flex w-full flex-row justify-end">
-				<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-					<UserIcon className="size-4" />
+			{!isIntermediate && (
+				<div className="col-span-full col-start-1 row-start-1 flex w-full flex-row justify-end">
+					<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+						<UserIcon className="size-4" />
+					</div>
 				</div>
-			</div>
+			)}
 
 			<UserMessageAttachments />
 
-			<div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
-				{isIntermediate ? (
+			{isIntermediate ? (
+				<div className="aui-user-message-content-wrapper relative col-start-1 min-w-0">
 					<CollapsiblePrompt title={promptTitle}>
 						<UserMessageContent />
 					</CollapsiblePrompt>
-				) : (
-					<div className="aui-user-message-content wrap-break-word peer rounded-2xl bg-muted px-4 py-2.5 text-foreground empty:hidden">
-						<MessagePrimitive.Parts />
-					</div>
-				)}
-			</div>
+				</div>
+			) : (
+				<div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
+					<UserMessageContent />
+				</div>
+			)}
 			<MessageError />
 		</MessagePrimitive.Root>
 	);
