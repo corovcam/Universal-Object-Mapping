@@ -8,6 +8,14 @@ import { useTheme } from "next-themes";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { SkeletonText } from "@/components/ui/skeleton";
 
+/**
+ * React Component that visualizes objects as formatted, interactive JSON trees.
+ * Automatically supports light and dark themes using next-themes.
+ * Incorporates custom string node formatting to preserve line breaks and white spaces.
+ *
+ * @param {JsonViewProps<object>} props - Props passed down to the underlying `@uiw/react-json-view` component.
+ * @returns {React.JSX.Element} Interactive JSON tree element.
+ */
 export function JsonViewer({ value, ...props }: JsonViewProps<object>) {
 	const { theme } = useTheme();
 
@@ -56,12 +64,25 @@ export function JsonViewer({ value, ...props }: JsonViewProps<object>) {
 	);
 }
 
+/**
+ * Prop types for the AutoScrollJsonViewer component.
+ */
 interface AutoScrollJsonViewerProps
 	extends Omit<JsonViewProps<object>, "value"> {
+	/** JSON value or object payload to render. */
 	value: unknown;
+	/** Optional tailwind CSS wrapper container class name. */
 	containerClassName?: string;
 }
 
+/**
+ * Enhanced JSON tree viewer wrapper that handles automatic scroll locking.
+ * Keeps the scroll position pinned to the bottom of the container while JSON is streaming,
+ * unless the user manually scrolls upwards to view historical lines.
+ *
+ * @param {AutoScrollJsonViewerProps} props - Component properties.
+ * @returns {React.JSX.Element} Scroll-aware container wrapping the JSON tree.
+ */
 export function AutoScrollJsonViewer({
 	value,
 	containerClassName,

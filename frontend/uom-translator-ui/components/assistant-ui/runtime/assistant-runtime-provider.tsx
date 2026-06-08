@@ -7,7 +7,6 @@ import {
 	useAui,
 } from "@assistant-ui/react";
 import {
-	convertLangChainMessages,
 	type LangChainMessage,
 	useLangGraphRuntime,
 } from "@assistant-ui/react-langgraph";
@@ -17,29 +16,59 @@ import { GraphStateContext } from "@/hooks/use-graph-state-context";
 import { createClient } from "@/lib/chatApi";
 import type { BackendState, UomConfig } from "@/lib/types";
 
+/**
+ * LangGraph Assistant ID for routing queries to the correct graph execution.
+ * Configurable via `NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID` env variable.
+ */
 const ASSISTANT_ID =
 	process.env.NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID ||
 	"universal-object-mapping-translator";
 
+/**
+ * Mapping of LangGraph node execution IDs to human-friendly description titles.
+ * Used in the UI sidebar/header to show the user the active step of the migration process.
+ */
 export const NODE_NAME_MAP = {
+	/** Node responsible for using Pydantic schemas to extract framework specifications from C# inputs */
 	extract_input: "Extracting Input",
+	/** Node checking database schemas using MCP server tools */
 	schema_inspection: "Inspecting Database Schema",
+	/** Node executing LLM translation of source mappings to target entities/queries */
 	generate_translation_node: "Translating Code",
+	/** Node setting up workspace schemas for .csproj or pom.xml builds */
 	prep_schema_validation: "Validating Schema (.NET & Java)",
+	/** Node executing isolated container compilation via Daytona */
 	validate_schema_node: "Validating Schema (.NET & Java)",
+	/** Node preparing target query validation payloads */
 	prep_query_validation: "Validating Query Logic",
+	/** Node executing target query compilations inside sandboxes */
 	validate_query_node: "Validating Query Logic",
+	/** Node preparing SQL Server vs MongoDB/Neo4j query results comparison */
 	prep_query_equivalence: "Evaluating Translation (Query Equivalence Check)",
+	/** Node calculating DeepDiff semantic difference for outputs */
 	check_query_equivalence_node:
 		"Evaluating Translation (Query Equivalence Check)",
+	/** Node executing LLM Judge evaluation for compile stdout/stderr and query equivalence */
 	evaluation_node: "Evaluating Translation (Query Equivalence Check)",
+	/** Suspended state graph node waiting for manual user intervention */
 	human_intervention_node: "Manual Intervention",
 };
 
-const EXCLUDED_ERRORS = [
-	"signal is aborted without reason", // This is a common message when aborting a run, and doesn't indicate an actual error (mostly happens in development environment)
-];
+/**
+ * Errors that should be filtered out from showing up as global red error alerts.
+ * Often happens when user cancels a running stream or browser environment discards requests.
+ */
+const EXCLUDED_ERRORS = ["signal is aborted without reason"];
 
+/**
+ * Wrapper component that sets up the LangGraph client, manages local React state for execution tracking,
+ * and configures the `@assistant-ui/react-langgraph` runtime with hooks, streams, and thread lists.
+ *
+ * @param {object} props - Component properties.
+ * @param {any} props.inputSuggestions - Array of onboarding query templates read from txt files.
+ * @param {React.ReactNode} props.children - Child components to render within the state provider.
+ * @returns {React.JSX.Element} The runtime provider and state provider context wrapper.
+ */
 export function AssistantRuntimeProviderWrapper({
 	inputSuggestions,
 	children,
@@ -60,7 +89,16 @@ export function AssistantRuntimeProviderWrapper({
 		keyof typeof NODE_NAME_MAP | null
 	>(null);
 
-	// Custom stream callback that works end-to-end with our LangGraph server
+	/**
+	 * Custom LangGraph stream connection handler.
+	 * Invoked by assistant-ui when a user triggers a message.
+	 * Fetches local database, Daytona sandbox, and LLM configuration keys from localStorage
+	 * and yields streamable event updates from the backend client.
+	 *
+	 * @param {any[]} messages - Current list of conversational messages.
+	 * @param {any} config - Client runtime stream config hooks.
+	 * @returns {Promise<any>} An event stream promise containing LangGraph execution logs.
+	 */
 	const stream = useMemo(() => {
 		return async (messages: any[], config: any) => {
 			const { externalId } = await config.initialize();
@@ -118,34 +156,13 @@ export function AssistantRuntimeProviderWrapper({
 				payload as any,
 			);
 			return eventStream;
-
-			// const cleanChunk = (val: any): any => {
-			// 	if (val === null || typeof val !== "object") {
-			// 		return val;
-			// 	}
-			// 	if (Array.isArray(val)) {
-			// 		return val.map(cleanChunk);
-			// 	}
-			// 	const copy = { ...val };
-			// 	for (const key in copy) {
-			// 		if (key === "argsText" && copy[key] === "{}") {
-			// 			copy[key] = "";
-			// 		} else {
-			// 			copy[key] = cleanChunk(copy[key]);
-			// 		}
-			// 	}
-			// 	return copy;
-			// };
-
-			// async function* cleanStream() {
-			// 	for await (const chunk of eventStream) {
-			// 		yield cleanChunk(chunk);
-			// 	}
-			// }
-			// return cleanStream();
 		};
 	}, [client]);
 
+	/**
+	 * Standardized error handling handler. Logs error stack traces to console and sets UI alerts.
+	 * Filters out typical canceled request warnings.
+	 */
 	const handleError = useCallback((message: string, error: any) => {
 		if (EXCLUDED_ERRORS.includes(error?.message)) {
 			console.warn("Excluded error occurred:", error);
@@ -158,8 +175,18 @@ export function AssistantRuntimeProviderWrapper({
 		});
 	}, []);
 
+	/**
+	 * Adapter conforming to RemoteThreadListAdapter from assistant-ui.
+	 * Binds thread-level UI actions (new thread, deletion, renaming, fetching details)
+	 * directly to corresponding LangGraph client SDK methods.
+	 */
 	const threadListAdapter = useMemo<RemoteThreadListAdapter>(() => {
 		return {
+			/**
+			 * Queries active conversation history from LangGraph database.
+			 *
+			 * @returns {Promise<{ threads: any[] }>} List of simplified remote thread metadata objects.
+			 */
 			async list() {
 				try {
 					const list = await client.threads.search({
@@ -183,6 +210,12 @@ export function AssistantRuntimeProviderWrapper({
 					throw error;
 				}
 			},
+			/**
+			 * Renames a thread by updating metadata key-value values on the backend.
+			 *
+			 * @param {string} remoteId - Unique ID of the target thread.
+			 * @param {string} newTitle - The new human-readable title.
+			 */
 			async rename(remoteId, newTitle) {
 				try {
 					await client.threads.update(remoteId, {
@@ -195,9 +228,19 @@ export function AssistantRuntimeProviderWrapper({
 			},
 			async archive() {},
 			async unarchive() {},
+			/**
+			 * Deletes the specified conversation history completely from the server storage.
+			 *
+			 * @param {string} remoteId - ID of the thread to delete.
+			 */
 			async delete(remoteId) {
 				await client.threads.delete(remoteId);
 			},
+			/**
+			 * Pre-allocates a new thread ID with a localized timestamp placeholder title.
+			 *
+			 * @returns {Promise<{ remoteId: string, externalId: string }>} Initialized thread references.
+			 */
 			async initialize() {
 				try {
 					const defaultTitle = `Migration ${new Date().toLocaleTimeString([], {
@@ -213,6 +256,12 @@ export function AssistantRuntimeProviderWrapper({
 					throw error;
 				}
 			},
+			/**
+			 * Fetches metadata details for a single thread.
+			 *
+			 * @param {string} threadId - ID of the thread to fetch.
+			 * @returns {Promise<any>} Thread configuration details.
+			 */
 			async fetch(threadId) {
 				try {
 					const t = await client.threads.get(threadId, {
@@ -231,14 +280,11 @@ export function AssistantRuntimeProviderWrapper({
 					throw error;
 				}
 			},
+			/**
+			 * Generates an automated title for the thread.
+			 * Currently stubbed out to bypass additional LLM lookups.
+			 */
 			async generateTitle() {
-				// return createAssistantStream(async (controller) => {
-				// 	const { title } = await fetch(`/api/threads/${remoteId}/title`, {
-				// 		method: "POST",
-				// 		body: JSON.stringify({ messages }),
-				// 	}).then((r) => r.json());
-				// 	controller.appendText(title);
-				// });
 				return new ReadableStream({
 					start(controller) {
 						controller.close();
@@ -248,10 +294,24 @@ export function AssistantRuntimeProviderWrapper({
 		};
 	}, [client, handleError]);
 
+	/**
+	 * Configures and hooks into the LangGraph client state manager.
+	 * Synchronizes local conversational lists with the LangGraph backend,
+	 * mapping events like onMessageChunk and onUpdates to the React state.
+	 */
 	const runtime = useLangGraphRuntime({
+		/** Enables user to cancel long-running agent loops manually. */
 		unstable_allowCancellation: true,
+		/** Core event stream callback. */
 		stream,
+		/** Thread list adapter for synchronization. */
 		unstable_threadListAdapter: threadListAdapter,
+		/**
+		 * Handler to create a new thread with default title and persist it on the server.
+		 * Called by assistant-ui when a new chat starts.
+		 *
+		 * @returns {Promise<{ externalId: string }>} Resolves to the newly created thread ID.
+		 */
 		create: async () => {
 			try {
 				const defaultTitle = `Migration ${new Date().toLocaleTimeString([], {
@@ -267,6 +327,14 @@ export function AssistantRuntimeProviderWrapper({
 				throw error;
 			}
 		},
+		/**
+		 * Loads full conversational messages and active interrupts for the specified thread.
+		 * Called by assistant-ui when switching between threads.
+		 *
+		 * @param {string} externalId - Unique thread ID.
+		 * @param {any} [config] - Config options including abort signals.
+		 * @returns {Promise<{ messages: LangChainMessage[], interrupts: any[] }>} Messages and interrupts.
+		 */
 		load: async (externalId, config) => {
 			try {
 				const state = await client.threads.getState<{
@@ -288,6 +356,14 @@ export function AssistantRuntimeProviderWrapper({
 				return { messages: [], interrupts: [] };
 			}
 		},
+		/**
+		 * Retrieves the matching checkpoint ID for a thread state matching parent messages.
+		 * Enables history-aware updates and backtracking.
+		 *
+		 * @param {string} threadId - Unique ID of the thread.
+		 * @param {any[]} parentMessages - List of parent messages to match.
+		 * @returns {Promise<string | null>} The resolved checkpoint ID, or null.
+		 */
 		getCheckpointId: async (threadId, parentMessages) => {
 			try {
 				const history = await client.threads.getHistory<BackendState>(threadId);
@@ -316,52 +392,58 @@ export function AssistantRuntimeProviderWrapper({
 				return null;
 			}
 		},
+		/**
+		 * Event handlers triggered as LangGraph processes nodes and streams chunks.
+		 */
 		eventHandlers: {
-			onMessageChunk: (chunk: any, metadata: any) => {
+			/**
+			 * Triggered when a new token or structured data chunk is streamed from a node.
+			 * Used to set the currently active node dynamically in the UI.
+			 */
+			onMessageChunk: (_chunk: any, metadata: any) => {
 				const nodeName = metadata?.langgraph_node;
 				console.debug(`[UOM] Node: ${nodeName}`);
 				if (NODE_NAME_MAP[nodeName as keyof typeof NODE_NAME_MAP]) {
 					setActiveNode(nodeName as keyof typeof NODE_NAME_MAP);
 				}
 			},
+			/**
+			 * Triggered when the full values of the state graph are updated.
+			 */
 			onValues: (values: any) => {
 				if (values) {
 					console.debug("[UOM] Values:", values);
 					setGraphState(values);
 				}
 			},
+			/**
+			 * Triggered when incremental state updates are broadcasted.
+			 */
 			onUpdates: (updates: any) => {
 				if (updates) {
 					console.debug("[UOM] Updates:", updates);
 					setGraphState((prev) => ({ ...prev, ...updates }));
-					// for (const [nodeName, nodeState] of Object.entries(updates)) {
-					// 	console.debug(`[UOM] Node: ${nodeName}`);
-					// 	if (NODE_NAME_MAP[nodeName as keyof typeof NODE_NAME_MAP]) {
-					// 		setActiveNode(nodeName as keyof typeof NODE_NAME_MAP);
-					// 	}
-					// }
 				}
 			},
+			/**
+			 * Triggered when sub-graphs values update.
+			 */
 			onSubgraphValues: (namespace: string, values: any) => {
 				console.debug(`[UOM] Subgraph values [${namespace}]:`, values);
 				if (values) {
 					setGraphState((prev) => ({ ...prev, ...values }));
 				}
 			},
+			/**
+			 * Triggered when incremental sub-graph updates are broadcasted.
+			 */
 			onSubgraphUpdates: (namespace: string, updates: any) => {
 				console.debug(`[UOM] Subgraph updates [${namespace}]:`, updates);
-				// if (updates) {
-				// 	setGraphState((prev: any) => {
-				// 		const next = { ...prev };
-				// 		for (const [nodeName, nodeState] of Object.entries(updates)) {
-				// 			if (nodeState && typeof nodeState === "object") {
-				// 				Object.assign(next, nodeState);
-				// 			}
-				// 		}
-				// 		return next;
-				// 	});
-				// }
 			},
+			/**
+			 * Catch-all error reporter for execution loops.
+			 * Dispatches visual alerts via Sonner toast components.
+			 */
 			onError: (error: any) => {
 				console.error("[UOM] Runtime error:", error);
 				setRunError({
@@ -372,17 +454,26 @@ export function AssistantRuntimeProviderWrapper({
 					description: error?.message || String(error),
 				});
 			},
+			/**
+			 * Catch-all error reporter for sub-graphs.
+			 */
 			onSubgraphError: (namespace: string, error: any) => {
 				console.error(`[UOM] Subgraph [${namespace}] error:`, error);
 			},
+			/**
+			 * Custom event receiver. Receives custom container build stdout/stderr streams
+			 * and snapshot logs dispatched from the Python orchestrator in real-time.
+			 */
 			onCustomEvent: (type: string, data: any) => {
 				console.log(`[UOM] Custom event [${type}]:`, data);
 			},
 		},
 	});
 
+	/**
+	 * Configures assistant-ui wrapper context, initializing query suggestion templates.
+	 */
 	const aui = useAui({
-		// tools: Tools({ toolkit: uomToolkit }),
 		suggestions: Suggestions(inputSuggestions),
 	});
 

@@ -58,6 +58,13 @@ import { SkeletonText } from "@/components/ui/skeleton";
 import { useGraphStateContext } from "@/hooks/use-graph-state-context";
 import { cn } from "@/lib/utils";
 
+/**
+ * React Component representing the main message thread workspace.
+ * Uses `@assistant-ui/react` primitives combined with customized loaders,
+ * JSON message viewers, and custom error boundaries.
+ *
+ * @returns {React.JSX.Element} The thread chat interface.
+ */
 export const Thread: FC = () => {
 	return (
 		<ScrollAreaPrimitive.Root asChild>
@@ -110,6 +117,9 @@ export const Thread: FC = () => {
 	);
 };
 
+/**
+ * React Component displaying critical errors from the state graph runtime in a dismissible banner.
+ */
 const GlobalErrorMessage: FC = () => {
 	const { error, setError } = useGraphStateContext();
 	if (!error) return null;
@@ -132,18 +142,14 @@ const GlobalErrorMessage: FC = () => {
 	);
 };
 
+/**
+ * RegEx helper to classify whether a system-level message represents an intermediate prompt template.
+ * Used to filter out dry prompt structures from standard user chat logs.
+ */
 const isIntermediatePrompt = (text: string): boolean => {
 	if (!text) return false;
 	const lower = text.toLowerCase();
 	return (
-		// lower.includes("commencing validation") ||
-		// lower.includes("commencing parallel validation") ||
-		// lower.includes("commencing query equivalence") ||
-		// lower.includes("successfully extracted inputs") ||
-		// lower.includes(
-		// 	"generated translation. commencing deterministic validation",
-		// ) ||
-		// lower.includes("schema inspection completed successfully") ||
 		lower.includes("inspect the database schemas") ||
 		lower.includes("evaluate the following validation results") ||
 		lower.includes("analyze the following conversation") ||
@@ -151,6 +157,9 @@ const isIntermediatePrompt = (text: string): boolean => {
 	);
 };
 
+/**
+ * Maps prompt strings to readable segment titles for rendering collapsible code cards.
+ */
 const getPromptTitle = (text: string): string => {
 	const lowerText = text.toLowerCase();
 	if (lowerText.includes("inspect the database schemas")) {
@@ -168,6 +177,9 @@ const getPromptTitle = (text: string): string => {
 	return "System Prompt";
 };
 
+/**
+ * React Component router that dynamically picks a rendering layout based on the message role.
+ */
 const ThreadMessage = () => {
 	const isEditing = useAuiState((s) => s.message.composer.isEditing);
 	const role = useAuiState((s) => s.message.role);
@@ -178,6 +190,9 @@ const ThreadMessage = () => {
 	return <AssistantMessage />;
 };
 
+/**
+ * Simple icon button that scrolls the thread viewport down to reveal new messages.
+ */
 const ThreadScrollToBottom: FC = () => {
 	return (
 		<ThreadPrimitive.ScrollToBottom asChild>

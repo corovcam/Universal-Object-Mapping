@@ -15,9 +15,20 @@ import {
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
+/**
+ * React Component to handle LangGraph Suspended state.
+ * Intercepts human-in-the-loop validation checkpoints when the orchestrator
+ * hits compiler failures or equivalence warnings, rendering the errors and
+ * providing buttons to Accept or Reject & Correct the translation.
+ *
+ * @returns {React.JSX.Element | null} The interrupt control card, or null if execution is not suspended.
+ */
 export function InterruptHandler() {
+	/** Retrieve current graph execution suspend payload and status. */
 	const interrupt = useLangGraphInterruptState();
+	/** Hook to submit user correction inputs or confirmation to resume the LangGraph flow. */
 	const sendCommand = useLangGraphSendCommand();
+
 	const [decision, setDecision] = useState<"accept" | "reject" | null>(null);
 	const [feedback, setFeedback] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -28,6 +39,12 @@ export function InterruptHandler() {
 	const validationErrors = payload?.validation_errors || payload?.error || null;
 	const deepdiffText = payload?.query_equivalence_deep_diffs || null;
 
+	/**
+	 * Form submit handler. Submits the decision and feedback back to the LangGraph graph
+	 * via the `sendCommand` hook, which triggers a resume action.
+	 *
+	 * @param {React.FormEvent} e - Form event.
+	 */
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		if (!decision) return;
@@ -131,11 +148,15 @@ export function InterruptHandler() {
 
 				{decision === "reject" && (
 					<div className="space-y-1.5 animate-in fade-in duration-200">
-						<label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+						<label
+							htmlFor="correction-textarea"
+							className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
+						>
 							<MessageSquare className="size-3.5 text-primary" />
 							Targeted Agent Correction Pointers
 						</label>
 						<textarea
+							id="correction-textarea"
 							required
 							rows={3}
 							value={feedback}

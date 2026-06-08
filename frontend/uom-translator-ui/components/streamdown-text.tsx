@@ -27,6 +27,14 @@ const StreamdownTextPrimitive = dynamic(
 	{ ssr: false },
 );
 
+/**
+ * React Component to render streaming Markdown text with typing animations and carets.
+ * Plugs into `@assistant-ui/react-streamdown` and supports code syntax highlighting
+ * (using Shiki) and Mermaid diagram parsing dynamically.
+ *
+ * @param {object} props - Pass-through props.
+ * @returns {React.JSX.Element} The streaming Markdown rendering primitive.
+ */
 export const StreamdownText = ({ ...props }) => {
 	"use-client";
 
@@ -38,11 +46,6 @@ export const StreamdownText = ({ ...props }) => {
 			linkSafety={{
 				enabled: true,
 			}}
-			// componentsByLanguage={{
-			// 	json: {
-			// 		SyntaxHighlighter: JsonCodeComponent,
-			// 	},
-			// }}
 			containerProps={{
 				suppressHydrationWarning: true,
 			}}
@@ -51,6 +54,10 @@ export const StreamdownText = ({ ...props }) => {
 	);
 };
 
+/**
+ * Custom renderer for syntax highlighted inline code and code blocks.
+ * Determines block-level vs inline presentation using the `useIsStreamdownCodeBlock` hook.
+ */
 export const CodeComponent = ({
 	components,
 	node,
@@ -82,6 +89,11 @@ export const CodeComponent = ({
 	);
 };
 
+/**
+ * Custom code block renderer specialized for JSON formatting.
+ * Intercepts text strings in JSON blocks, uses partial JSON decoding to process
+ * incomplete/streaming payloads, and renders them inside an AutoScrollJsonViewer tree.
+ */
 export const JsonCodeComponent = ({
 	node,
 	components,
@@ -99,7 +111,7 @@ export const JsonCodeComponent = ({
 				containerClassName="border p-4 mt-2 mb-2 max-h-[500px] w-full overflow-y-auto custom-scrollbar"
 			/>
 		);
-	} catch (e) {
+	} catch (_e) {
 		// Fall back to default rendering if parsing exception occurs
 	}
 	return (
@@ -113,6 +125,13 @@ export const JsonCodeComponent = ({
 	);
 };
 
+/**
+ * React Component for static, non-animated markdown document presentations.
+ * Normalizes carriage returns and processes custom json blocks on-the-fly.
+ *
+ * @param {Omit<StreamdownProps, "children"> & { markdownText: string }} props - Wrapper parameters.
+ * @returns {React.JSX.Element} Static markdown document element.
+ */
 export const StaticStreamdownWrapper = ({
 	markdownText,
 	...props
@@ -136,6 +155,9 @@ export const StaticStreamdownWrapper = ({
 	);
 };
 
+/**
+ * Internal custom JSON renderer plugin implementation.
+ */
 const JsonRendererImpl = ({
 	code,
 	language,

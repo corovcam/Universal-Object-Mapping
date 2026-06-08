@@ -8,24 +8,44 @@ import {
 	ExternalLink,
 	RefreshCw,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useGraphStateContext } from "@/hooks/use-graph-state-context";
 import { FrameworkType, LanguageType } from "@/lib/types";
 import { getFrameworkTypeByName } from "@/lib/utils";
 
+/**
+ * Supported IDE protocols that can hook into remote sandboxes.
+ */
 export enum SupportedIDEs {
+	/** Visual Studio Code (vscode:// scheme) */
 	vscode = "vscode",
+	/** Cursor AI Editor (cursor:// scheme) */
 	cursor = "cursor",
+	/** JetBrains Gateway client (jetbrains-gateway:// scheme) */
 	jetbrains = "jetbrains",
 }
 
+/**
+ * Sandbox authentication details and SSH endpoints retrieved from Daytona client API.
+ */
 export interface SandboxInfo {
+	/** Active compilation framework (e.g. dotnet_efcore, java_spring_data_mongodb). */
 	framework: FrameworkType | null;
+	/** Container instance ID allocated by Daytona. */
 	sandboxId: string;
+	/** Standard SSH connection command. */
 	sshCommand: string;
+	/** Ephemeral API token for connection handshake. */
 	token: string;
 }
 
+/**
+ * React Component providing deep links and SSH credentials for IDEs.
+ * Enables developers to connect VS Code, Cursor, or JetBrains Gateway directly into
+ * the Daytona container compilation sandboxes in order to examine build environments or debug code.
+ *
+ * @returns {React.JSX.Element} Remote workspace linking controls.
+ */
 export function IdeLink() {
 	const { graphState } = useGraphStateContext();
 
@@ -52,7 +72,11 @@ export function IdeLink() {
 	const activeFramework =
 		activePlatform === LanguageType.DOTNET ? sourceFramework : destFramework;
 
-	const fetchSandboxSsh = async () => {
+	/**
+	 * Fetches the active workspace container references and SSH credentials from the LangGraph dev server.
+	 * Dispatches requests to `/sandboxes/framework/[framework]` and `/sandbox/[id]/ssh-token` endpoints.
+	 */
+	const fetchSandboxSsh = useCallback(async () => {
 		setLoading(true);
 		try {
 			const apiUrl =
@@ -91,11 +115,11 @@ export function IdeLink() {
 		} finally {
 			setLoading(false);
 		}
-	};
+	}, [activeFramework]);
 
 	useEffect(() => {
 		fetchSandboxSsh();
-	}, [activeFramework]);
+	}, [fetchSandboxSsh]);
 
 	useEffect(() => {
 		const handleClickOutside = (event: MouseEvent) => {
@@ -110,6 +134,13 @@ export function IdeLink() {
 		return () => document.removeEventListener("mousedown", handleClickOutside);
 	}, []);
 
+	/**
+	 * RegEx parser utility to extract the user, host, and port components from a raw SSH command string.
+	 *
+	 * @param {string} [cmd] - Raw SSH command (e.g. "ssh -p 2222 root@127.0.0.1").
+	 * @param {string} [token] - Handshake access token.
+	 * @returns {{ user: string | null, host: string, port: string }} Object holding extracted SSH details.
+	 */
 	const parseSshCommand = (cmd?: string, token?: string) => {
 		let user = null;
 		let host = "localhost";

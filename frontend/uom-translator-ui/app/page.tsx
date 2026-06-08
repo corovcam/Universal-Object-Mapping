@@ -1,4 +1,4 @@
-import fs from "fs";
+import fs from "node:fs";
 import { Assistant } from "./assistant";
 
 export default function Home() {
@@ -11,19 +11,19 @@ export default function Home() {
 	try {
 		// TODO: use getStaticProps
 		efcoreToMongoInput = fs.readFileSync(
-			cwd + "/app/data/input-efcore-mongodb.txt",
+			`${cwd}/app/data/input-efcore-mongodb.txt`,
 			"utf-8",
 		);
 		efcoreToNeo4jInput = fs.readFileSync(
-			cwd + "/app/data/input-efcore-neo4j.txt",
+			`${cwd}/app/data/input-efcore-neo4j.txt`,
 			"utf-8",
 		);
 		dapperToMongoInput = fs.readFileSync(
-			cwd + "/app/data/input-dapper-mongodb.txt",
+			`${cwd}/app/data/input-dapper-mongodb.txt`,
 			"utf-8",
 		);
 		nhibernateToMongoInput = fs.readFileSync(
-			cwd + "/app/data/input-nhibernate-mongodb.txt",
+			`${cwd}/app/data/input-nhibernate-mongodb.txt`,
 			"utf-8",
 		);
 	} catch (error) {

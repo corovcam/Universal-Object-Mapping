@@ -1,11 +1,10 @@
 "use-client";
 
 import { BookOpen, Settings } from "lucide-react";
-import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useTheme } from "next-themes";
 import type * as React from "react";
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { ThemeToggle } from "@/components/buttons";
 import { GitHubIcon } from "@/components/icons/github";
