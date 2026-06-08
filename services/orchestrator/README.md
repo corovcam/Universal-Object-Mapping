@@ -68,14 +68,14 @@ graph TD
 
 ## Documentation Index
 
-The UOM Orchestrator is comprehensively documented. Review the following modular documentation files under the [docs](docs) directory for extensive, verbose analyses of the internal logic, algorithms, and modules:
+The UOM Orchestrator is comprehensively documented. Review the following modular documentation files under the global [docs](../../docs) directory for extensive, verbose analyses of the internal logic, algorithms, and modules:
 
-1. **[docs/architecture.md](docs/architecture.md)**: Overarching architecture topology, node-by-node functional matrix, conditional transition logic, and a detailed StateGraph diagram.
-2. **[docs/state_and_context.md](docs/state_and_context.md)**: LangGraph state representations, Pydantic field specifications, configuration context (`Context`), reflective environment loading (`__post_init__`), and our custom message isolation boundaries (`translation_messages` vs `messages`).
-3. **[docs/sandbox_environment.md](docs/sandbox_environment.md)**: Isolation container specs (SDK 10.0 and OpenJDK 25 CDS), Daytona snapshots provisioning, exponential wait backoffs, container state recovery routines, real-time log streaming custom events, and remote file retrieval.
-4. **[docs/validators_and_equivalence.md](docs/validators_and_equivalence.md)**: Compilation harnesses creation, Base64 payload packaging, Maven and .csproj builds, reverse-parsing stdout shell streams, DeepDiff tolerance configuration, background thread scheduling, and the swapped sorting orders algorithm.
-5. **[docs/deep_agent_and_acp.md](docs/deep_agent_and_acp.md)**: ACP DeepAgent build configurations, composite environment routing, local monorepo context detection using parallel bash subshells, summarization index cutoffs, and session authorization modes (`ask_before_edits`, `accept_edits`, `accept_everything`).
-6. **[docs/mcp_integration.md](docs/mcp_integration.md)**: Model Context Protocol (MCP) integrations, Database Toolbox and MongoDB MCP server client binding, SSE and streamable HTTP connections, host gateway translations (`localhost` to host-gateway IP), and graceful catch-and-fallback policies.
+1. **[docs/backend/architecture.md](../../docs/backend/architecture.md)**: Overarching architecture topology, node-by-node functional matrix, conditional transition logic, and a detailed StateGraph diagram.
+2. **[docs/backend/state_and_context.md](../../docs/backend/state_and_context.md)**: LangGraph state representations, Pydantic field specifications, configuration context (`Context`), reflective environment loading (`__post_init__`), and our custom message isolation boundaries (`translation_messages` vs `messages`).
+3. **[docs/backend/sandbox_environment.md](../../docs/backend/sandbox_environment.md)**: Isolation container specs (SDK 10.0 and OpenJDK 25 CDS), Daytona snapshots provisioning, exponential wait backoffs, container state recovery routines, real-time log streaming custom events, and remote file retrieval.
+4. **[docs/backend/validators_and_equivalence.md](../../docs/backend/validators_and_equivalence.md)**: Compilation harnesses creation, Base64 payload packaging, Maven and .csproj builds, reverse-parsing stdout shell streams, DeepDiff tolerance configuration, background thread scheduling, and the swapped sorting orders algorithm.
+5. **[docs/backend/deep_agent_and_acp.md](../../docs/backend/deep_agent_and_acp.md)**: ACP DeepAgent build configurations, composite environment routing, local monorepo context detection using parallel bash subshells, summarization index cutoffs, and session authorization modes (`ask_before_edits`, `accept_edits`, `accept_everything`).
+6. **[docs/backend/mcp_integration.md](../../docs/backend/mcp_integration.md)**: Model Context Protocol (MCP) integrations, Database Toolbox and MongoDB MCP server client binding, SSE and streamable HTTP connections, host gateway translations (`localhost` to host-gateway IP), and graceful catch-and-fallback policies.
 
 
 ## Quick Setup & Run
