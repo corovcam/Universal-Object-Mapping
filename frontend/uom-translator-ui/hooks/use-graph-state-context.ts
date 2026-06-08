@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import type { NODE_NAME_MAP } from "@/components/assistant-ui/runtime/assistant-runtime-provider";
 import type { BackendState } from "@/lib/types";
 
 export const GraphStateContext = createContext<{
@@ -7,12 +8,14 @@ export const GraphStateContext = createContext<{
 	setError: (error: { message: string; error?: any } | null) => void;
 	runError: { message: string; error?: any } | null;
 	setRunError: (error: { message: string; error?: any } | null) => void;
+	activeNode: keyof typeof NODE_NAME_MAP | null;
 }>({
 	graphState: {},
 	error: null,
 	runError: null,
 	setError: () => {},
 	setRunError: () => {},
+	activeNode: null,
 });
 
 export const useGraphStateContext = () => {

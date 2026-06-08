@@ -21,7 +21,7 @@ const ASSISTANT_ID =
 	process.env.NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID ||
 	"universal-object-mapping-translator";
 
-const NODE_NAME_MAP: Record<string, string> = {
+export const NODE_NAME_MAP = {
 	extract_input: "Extracting Input",
 	schema_inspection: "Inspecting Database Schema",
 	generate_translation_node: "Translating Code",
@@ -56,7 +56,9 @@ export function AssistantRuntimeProviderWrapper({
 		message: string;
 		error?: any;
 	} | null>(null);
-	// const [serverActive, setServerActive] = useState(true);
+	const [activeNode, setActiveNode] = useState<
+		keyof typeof NODE_NAME_MAP | null
+	>(null);
 
 	// Custom stream callback that works end-to-end with our LangGraph server
 	const stream = useMemo(() => {
@@ -317,9 +319,9 @@ export function AssistantRuntimeProviderWrapper({
 		eventHandlers: {
 			onMessageChunk: (chunk: any, metadata: any) => {
 				const nodeName = metadata?.langgraph_node;
-				if (nodeName && NODE_NAME_MAP[nodeName]) {
-					console.debug(`[UOM] Node: ${NODE_NAME_MAP[nodeName]}`);
-					// setActiveNode(NODE_NAME_MAP[nodeName]);
+				console.debug(`[UOM] Node: ${nodeName}`);
+				if (NODE_NAME_MAP[nodeName as keyof typeof NODE_NAME_MAP]) {
+					setActiveNode(nodeName as keyof typeof NODE_NAME_MAP);
 				}
 			},
 			onValues: (values: any) => {
@@ -331,19 +333,13 @@ export function AssistantRuntimeProviderWrapper({
 			onUpdates: (updates: any) => {
 				if (updates) {
 					console.debug("[UOM] Updates:", updates);
-					setGraphState((prev: any) => {
-						const next = { ...prev };
-						for (const [nodeName, nodeState] of Object.entries(updates)) {
-							if (nodeState && typeof nodeState === "object") {
-								Object.assign(next, nodeState);
-							}
-							if (NODE_NAME_MAP[nodeName]) {
-								console.debug(`[UOM] Node: ${NODE_NAME_MAP[nodeName]}`);
-								// setActiveNode(NODE_NAME_MAP[nodeName]);
-							}
-						}
-						return next;
-					});
+					setGraphState((prev) => ({ ...prev, ...updates }));
+					// for (const [nodeName, nodeState] of Object.entries(updates)) {
+					// 	console.debug(`[UOM] Node: ${nodeName}`);
+					// 	if (NODE_NAME_MAP[nodeName as keyof typeof NODE_NAME_MAP]) {
+					// 		setActiveNode(nodeName as keyof typeof NODE_NAME_MAP);
+					// 	}
+					// }
 				}
 			},
 			onSubgraphValues: (namespace: string, values: any) => {
@@ -392,7 +388,7 @@ export function AssistantRuntimeProviderWrapper({
 
 	return (
 		<GraphStateContext
-			value={{ graphState, error, setError, runError, setRunError }}
+			value={{ graphState, error, setError, runError, setRunError, activeNode }}
 		>
 			<AssistantRuntimeProvider aui={aui} runtime={runtime}>
 				{children}
