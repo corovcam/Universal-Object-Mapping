@@ -7,6 +7,7 @@ from typing import Sequence
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
+from langgraph.graph.ui import AnyUIMessage, ui_message_reducer
 from langgraph.managed import IsLastStep
 from typing_extensions import Annotated
 
@@ -120,7 +121,15 @@ class State(InputState, OutputState):
     This is a 'managed' variable, controlled by the state machine rather than user code.
     It is set to 'True' when the step count reaches recursion_limit - 1.
     """
-
+    
+    ui: Annotated[Sequence[AnyUIMessage], ui_message_reducer] = field(
+        default_factory=list
+    )
+    """
+    A sequence of UI messages representing the user interface state.
+    This is a 'managed' variable that accumulates messages intended for the UI layer.
+    """
+    
     # Core variables
     source_validation_entry_type_name: str | None = field(default=None)
     """

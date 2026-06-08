@@ -473,6 +473,8 @@ const AssistantMessageContent: FC = () => {
 							return <Reasoning {...part} />;
 						case "tool-call":
 							return part.toolUI ?? <ToolFallback {...part} />;
+						case "data":
+							return part.dataRendererUI ?? null;
 						case "indicator":
 							return <LoaderIcon className="size-4 animate-spin mt-2" />;
 						default:

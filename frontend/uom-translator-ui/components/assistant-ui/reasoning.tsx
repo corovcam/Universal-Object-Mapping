@@ -270,6 +270,96 @@ Reasoning.Fade = ReasoningFade;
 const ReasoningGroup = memo(ReasoningGroupImpl);
 ReasoningGroup.displayName = "ReasoningGroup";
 
+import { makeAssistantDataUI } from "@assistant-ui/react";
+import {
+	CheckCircle2Icon,
+	CircleIcon,
+	Loader2Icon,
+	XCircleIcon,
+} from "lucide-react";
+
+export type ReasoningStep = {
+	id: string;
+	label: string;
+	status: "pending" | "running" | "completed" | "failed";
+	details?: string;
+	type?: "thinking" | "step";
+};
+
+export type ReasoningProps = {
+	steps?: ReasoningStep[];
+};
+
+export const ReasoningDataUI = makeAssistantDataUI<ReasoningProps>({
+	name: "reasoning",
+	render: ({ data }) => {
+		const steps: ReasoningStep[] = data.steps || [];
+		const isRunning = steps.some((s: ReasoningStep) => s.status === "running");
+
+		return (
+			<div className="my-2">
+				<ReasoningRoot defaultOpen={isRunning}>
+					<ReasoningTrigger active={isRunning} />
+					<ReasoningContent aria-busy={isRunning}>
+						<ReasoningText>
+							<div className="flex flex-col gap-3 pt-2 pb-2">
+								{steps.map((step: ReasoningStep) => {
+									return (
+										<div key={step.id} className="flex flex-col gap-1.5">
+											<div className="flex items-center gap-2.5 text-sm">
+												{step.status === "running" && (
+													<Loader2Icon className="h-4 w-4 animate-spin text-primary shrink-0" />
+												)}
+												{step.status === "completed" && (
+													<CheckCircle2Icon className="h-4 w-4 text-green-500 fill-green-50/20 shrink-0" />
+												)}
+												{step.status === "failed" && (
+													<XCircleIcon className="h-4 w-4 text-red-500 fill-red-50/20 shrink-0" />
+												)}
+												{step.status === "pending" && (
+													<CircleIcon className="h-4 w-4 text-muted-foreground/30 shrink-0" />
+												)}
+												<span
+													className={cn(
+														"font-medium",
+														step.status === "running" && "text-foreground",
+														step.status === "completed" &&
+															"text-muted-foreground/85",
+														step.status === "pending" &&
+															"text-muted-foreground/35",
+														step.status === "failed" &&
+															"text-red-500 font-semibold",
+													)}
+												>
+													{step.label}
+												</span>
+											</div>
+											{step.details && (
+												<div className="pl-6.5 max-w-full">
+													<div
+														className={cn(
+															"text-xs whitespace-pre-wrap px-3 py-2.5 rounded border max-w-full overflow-x-auto",
+															step.type === "thinking"
+																? "text-muted-foreground/90 font-sans bg-muted/30 border-border/60 leading-relaxed"
+																: "text-muted-foreground/75 font-mono bg-muted/40 border-border",
+														)}
+													>
+														{step.details}
+													</div>
+												</div>
+											)}
+										</div>
+									);
+								})}
+							</div>
+						</ReasoningText>
+					</ReasoningContent>
+				</ReasoningRoot>
+			</div>
+		);
+	},
+});
+
 export {
 	Reasoning,
 	ReasoningContent,

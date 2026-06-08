@@ -12,6 +12,7 @@ import {
 } from "@assistant-ui/react-langgraph";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ReasoningDataUI } from "@/components/assistant-ui/reasoning";
 import { GraphStateContext } from "@/hooks/use-graph-state-context";
 import { createClient } from "@/lib/chatApi";
 import type { BackendState, UomConfig } from "@/lib/types";
@@ -306,6 +307,11 @@ export function AssistantRuntimeProviderWrapper({
 		stream,
 		/** Thread list adapter for synchronization. */
 		unstable_threadListAdapter: threadListAdapter,
+		uiComponents: {
+			renderers: {
+				reasoning: ReasoningDataUI,
+			},
+		},
 		/**
 		 * Handler to create a new thread with default title and persist it on the server.
 		 * Called by assistant-ui when a new chat starts.

@@ -13,18 +13,24 @@ import logfire
 import orjson
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
+    AgentMiddleware,
     ClearToolUsesEdit,
     ContextEditingMiddleware,
+    ExtendedModelResponse,
     ModelFallbackMiddleware,
+    ModelRequest,
+    ModelResponse,
     ModelRetryMiddleware,
     ToolRetryMiddleware,
 )
 from langchain.agents.structured_output import ProviderStrategy
 from langchain.messages import AIMessage
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.callbacks import AsyncCallbackHandler
+from langchain_core.messages import AnyMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.cache.memory import InMemoryCache
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.ui import push_ui_message
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
@@ -123,6 +129,198 @@ class ExtractionOutput(BaseModel):
         if isinstance(self.source_query_code, list):
             self.source_query_code = "\n".join(self.source_query_code)
         return self
+
+
+class ReasoningCallbackHandler(AsyncCallbackHandler):
+    """Callback handler to capture the run_id at the start of a model call and trigger reasoning updates."""
+
+    def __init__(self, middleware: "UIReasoningMiddleware"):
+        """Initialize the ReasoningCallbackHandler with the middleware instance."""
+        self.middleware = middleware
+
+    async def on_chat_model_start(
+        self,
+        serialized: dict[str, Any],
+        messages: list[list[Any]],
+        **kwargs: Any,
+    ) -> None:
+        """Capture run_id and initialize/emit the thinking step when the model call starts."""
+        run_id = kwargs.get("run_id")
+        if run_id:
+            message_id = f"lc_run--{run_id}-0"
+            self.middleware.start_thinking(message_id)
+
+
+class UIReasoningMiddleware(AgentMiddleware):
+    """Middleware to automatically stream agent reasoning and tool execution steps to the client UI."""
+
+    def __init__(self, agent_name: str):
+        """Initialize the UIReasoningMiddleware with an agent name."""
+        super().__init__()
+        self.agent_name = agent_name
+        self.steps = []
+        self.current_step_id = 0
+        self.active_message_id = None
+
+    async def abefore_agent(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        """Reset the reasoning steps list before agent execution starts."""
+        self.steps = []
+        self.current_step_id = 0
+        self.active_message_id = None
+        return None
+
+    def start_thinking(self, message_id: str):
+        """Start tracking a new thinking step with the captured message ID and emit to UI."""
+        self.active_message_id = message_id
+        step_id = f"llm-{self.current_step_id}"
+        self.current_step_id += 1
+
+        self.steps.append({
+            "id": step_id,
+            "type": "step",
+            "label": f"Thinking ({self.agent_name})",
+            "status": "running",
+            "details": None
+        })
+        self._emit(message_id)
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest[Any],
+        handler: Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]],
+    ) -> ModelResponse[Any] | AIMessage | ExtendedModelResponse[Any]:
+        """Wrap and track model calls, emitting thinking status to the client UI."""
+        from langchain_core.runnables.config import var_child_runnable_config
+        cb_handler = ReasoningCallbackHandler(self)
+        registered_callback = False
+        
+        try:
+            config = var_child_runnable_config.get()
+            if config and "callbacks" in config:
+                callback_manager = config["callbacks"]
+                if hasattr(callback_manager, "add_handler"):
+                    cast(Any, callback_manager).add_handler(cb_handler, inherit=True)
+                    registered_callback = True
+        except Exception as e:
+            logger.warning(f"Failed to register ReasoningCallbackHandler: {e}")
+
+        # Fallback to generated ID if callbacks couldn't be registered
+        if not registered_callback:
+            from uuid import uuid4
+            fallback_message_id = f"fallback-{uuid4()}"
+            self.start_thinking(fallback_message_id)
+
+        try:
+            response = await handler(request)
+            message_id = self.active_message_id
+
+            # Extract the last message from the response for reasoning detection
+            last_msg = None
+            if isinstance(response, ModelResponse) and response.result:
+                last_msg = response.result[-1]
+            elif isinstance(response, AIMessage):
+                last_msg = response
+            elif isinstance(response, ExtendedModelResponse) and response.model_response and response.model_response.result:
+                last_msg = response.model_response.result[-1]
+
+            # Detect reasoning content from content blocks
+            reasoning_texts = []
+            if last_msg and hasattr(last_msg, "content_blocks") and last_msg.content_blocks:
+                for block in last_msg.content_blocks:
+                    block_type = getattr(block, "type", None)
+                    if block_type in ("reasoning", "thinking"):
+                        block[]
+                        text = getattr(block, "text", None) or getattr(block, "reasoning", None)
+                        if text:
+                            reasoning_texts.append(str(text))
+
+            # Transition step to completed
+            step_id = f"llm-{self.current_step_id - 1}"
+            for step in self.steps:
+                if step["id"] == step_id:
+                    step["status"] = "completed"
+                    if reasoning_texts:
+                        step["type"] = "thinking"
+                        step["details"] = "\n\n".join(reasoning_texts)
+                    elif last_msg and last_msg.content:
+                        step["details"] = str(last_msg.content)
+                    break
+
+            # Override message ID only if we are in fallback mode
+            if not registered_callback and message_id:
+                if isinstance(response, ModelResponse) and response.result:
+                    response.result[-1].id = message_id
+                elif isinstance(response, AIMessage):
+                    response.id = message_id
+                elif isinstance(response, ExtendedModelResponse) and response.model_response and response.model_response.result:
+                    response.model_response.result[-1].id = message_id
+
+            if message_id:
+                self._emit(message_id)
+            return response
+        except Exception as e:
+            message_id = self.active_message_id
+            step_id = f"llm-{self.current_step_id - 1}"
+            for step in self.steps:
+                if step["id"] == step_id:
+                    step["status"] = "failed"
+                    step["details"] = f"Error: {e}"
+                    break
+            if message_id:
+                self._emit(message_id)
+            raise e
+
+    # async def awrap_tool_call(
+    #     self,
+    #     request: ToolCallRequest,
+    #     handler: Callable[[ToolCallRequest], Awaitable[Any]],
+    # ) -> Any:
+    #     """Wrap and track tool calls, emitting running status to the client UI."""
+    #     tool_name = request.tool_call["name"]
+    #     step_id = f"tool-{request.tool_call['id']}"
+
+    #     self.steps.append({
+    #         "id": step_id,
+    #         "label": f"Running tool: {tool_name}",
+    #         "status": "running",
+    #         "details": f"Arguments: {json.dumps(request.tool_call['args'])}"
+    #     })
+
+    #     message_id = self.active_message_id
+    #     if not message_id and request.state and request.state.get("messages"):
+    #         message_id = request.state["messages"][-1].id
+
+    #     if message_id:
+    #         self._emit(message_id)
+
+    #     try:
+    #         res = await handler(request)
+    #         for step in self.steps:
+    #             if step["id"] == step_id:
+    #                 step["status"] = "completed"
+    #                 if hasattr(res, "content"):
+    #                     step["details"] = str(res.content)
+    #                 break
+    #         if message_id:
+    #             self._emit(message_id)
+    #         return res
+    #     except Exception as e:
+    #         for step in self.steps:
+    #             if step["id"] == step_id:
+    #                 step["status"] = "failed"
+    #                 step["details"] = f"Error: {e}"
+    #                 break
+    #         if message_id:
+    #             self._emit(message_id)
+    #         raise e
+
+    def _emit(self, message_id: str):
+        push_ui_message(
+            name="reasoning",
+            props={"steps": self.steps},
+            message=cast(AnyMessage, {"id": message_id}),
+        )
+
 
 
 class BaseTranslationOutput(BaseModel):
@@ -427,9 +625,6 @@ async def extract_input(
         dict[str, Any] | Command: State updates with extracted parameters or a Command to
         terminate the graph on failure.
     """
-    # model = await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B)
-    # structured_llm = model.with_structured_output(ExtractionOutput)
-
     system_prompt = SYSTEM_PROMPT_EXTRACTION.format(
         origin_frameworks=[f.value for f in SourceFramework],
         destination_frameworks=[f.value for f in TargetFramework],
@@ -442,6 +637,9 @@ async def extract_input(
         system_prompt=system_prompt,
         response_format=ProviderStrategy(ExtractionOutput, strict=True),
         middleware=[
+            UIReasoningMiddleware(
+                agent_name="Extractor",
+            ),
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
                 await get_model(
@@ -492,7 +690,9 @@ Conversation:
         return {
             "messages": [
                 *response["messages"],
-                AIMessage(content="Extraction agent did not return structured response.")],
+                AIMessage(
+                    content="Extraction agent did not return structured response."
+                )],
             "extraction_loop_count": state.extraction_loop_count + 1,
         }
 
@@ -502,7 +702,9 @@ Conversation:
             update={
                 "messages": [
                     *response["messages"],
-                    AIMessage(content=extraction.error),
+                    AIMessage(
+                        content=extraction.error
+                    ),
                 ],
                 "extraction_loop_count": state.extraction_loop_count + 1,
             },
@@ -513,7 +715,7 @@ Conversation:
     # (framework targets and source code) to actually perform a translation.
     if is_input_extracted(extraction):
         msg = [
-            *response["messages"],
+            *response["messages"][:-1],
             AIMessage(
                 content=f"""Successfully extracted inputs:
 
@@ -528,12 +730,19 @@ Conversation:
                 update={
                     "messages": [
                         *response["messages"],
-                        AIMessage(content=f"Extraction agent has reached the maximum number of {MAX_EXTRACTION_LOOPS} loops. Please fix your input message or provide the structured input manually."),
+                        AIMessage(
+                            content=f"Extraction agent has reached the maximum number of {MAX_EXTRACTION_LOOPS} loops. Please fix your input message or provide the structured input manually."
+                        ),
                     ]
                 },
                 goto=END,
             )
-        msg = [*response["messages"], AIMessage(content="Extraction agent could not extract inputs.")]
+        msg = [
+            *response["messages"],
+            AIMessage(
+                content="Extraction agent could not extract inputs."
+            )
+        ]
     
     updates = {
         "messages": [
@@ -594,6 +803,9 @@ async def schema_inspection(
             tools=db_tools,
             system_prompt=SYSTEM_PROMPT_SCHEMA_INSPECTOR,
             middleware=[
+                UIReasoningMiddleware(
+                    agent_name="Schema Inspector",
+                ),
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
                     await get_model(
@@ -649,9 +861,8 @@ Source code being translated:
             return {
                 "schema_context": str(schema_summary),
                 "messages": [
-                    *response["messages"][:-1],
                     AIMessage(
-                        content=f"Schema inspection completed successfully:\n\n{schema_summary}"
+                        content="Schema inspection completed successfully."
                     )
                 ],
             }
@@ -829,6 +1040,9 @@ Source Code:
         response_format=ProviderStrategy(TranslationOutput, strict=True),
         system_prompt=system_prompt,
         middleware=[
+            UIReasoningMiddleware(
+                agent_name="Translator",
+            ),
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
                 await get_model(
@@ -871,8 +1085,9 @@ Source Code:
     output = response["structured_response"]
     updates.update(output.model_dump(warnings="error", exclude_unset=True))
 
-    msg = AIMessage(content=f"""Translation generated successfully on attempt {state.translation_loop_count + 1}.
-                    
+    msg = AIMessage(
+        content=f"""Translation generated successfully on attempt {state.translation_loop_count + 1}.
+
 ```json
 {orjson.dumps(output.model_dump(mode="json", exclude_unset=False), option=orjson.OPT_INDENT_2).decode('utf-8')}
 ```
@@ -1322,6 +1537,9 @@ Is the translation logically equivalent and syntactically valid? Provide your re
         model,
         response_format=ProviderStrategy(EvaluationOutput, strict=True),
         middleware=[
+            UIReasoningMiddleware(
+                agent_name="Evaluator",
+            ),
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
                 await get_model(config, runtime, AvailableModel.EINFRA_THINKER),
@@ -1352,7 +1570,9 @@ Is the translation logically equivalent and syntactically valid? Provide your re
     if (output.decision == "ACCEPT"):
         markdown_lang = FRAMEWORK_TO_LANGUAGE_TYPE[state.destination_target].value
         messages = [
-            AIMessage(content=f"""The translation is accepted. Here is the final translated code:
+            *messages[:-1],
+            AIMessage(
+                content=f"""The translation is accepted. Here is the final translated code:
 
 Translated schema:
 ```{markdown_lang}
@@ -1366,7 +1586,10 @@ Evaluation:
         ]
     else:
         messages = [
-            AIMessage(content=f"[{output.decision}] {output.explanation}"),
+            *messages[:-1],
+            AIMessage(
+                content=f"[{output.decision}] {output.explanation}"
+            ),
         ]
         
     return {
