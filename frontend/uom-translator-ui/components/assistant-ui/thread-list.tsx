@@ -47,16 +47,19 @@ const ThreadListNew: FC = () => {
 const ThreadListSkeleton: FC = () => {
 	return (
 		<div className="flex flex-col gap-1">
-			{Array.from({ length: 5 }, (_, i) => (
-				<div
-					key={i}
-					role="status"
-					aria-label="Loading threads"
-					className="aui-thread-list-skeleton-wrapper flex h-9 items-center px-3"
-				>
-					<Skeleton className="aui-thread-list-skeleton h-4 w-full" />
-				</div>
-			))}
+			{Array.from({ length: 5 }, (_, i) => {
+				return (
+					<div
+						// biome-ignore lint/suspicious/noArrayIndexKey: skeleton elements are static and order never changes
+						key={i}
+						role="status"
+						aria-label="Loading threads"
+						className="aui-thread-list-skeleton-wrapper flex h-9 items-center px-3"
+					>
+						<Skeleton className="aui-thread-list-skeleton h-4 w-full" />
+					</div>
+				);
+			})}
 		</div>
 	);
 };

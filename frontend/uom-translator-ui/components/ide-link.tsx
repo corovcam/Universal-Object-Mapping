@@ -146,7 +146,7 @@ export function IdeLink() {
 		let host = "localhost";
 		let port = "2222";
 		if (!cmd && !token) return { user, host, port };
-		const match = cmd?.match(/ssh\s+(?:\s+-p\s+(\d+))?\s+([^@\s]+)@([^\s]+)/);
+		const match = cmd?.match(/ssh\s+(?:-p\s+(\d+)\s+)?([^@\s]+)@([^\s]+)/);
 		if (match) {
 			if (match[1]) port = match[1];
 			user = match[2];

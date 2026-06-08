@@ -156,6 +156,7 @@ const AttachmentUI: FC = () => {
 			>
 				<AttachmentPreviewDialog>
 					<TooltipTrigger asChild>
+						{/* biome-ignore lint/a11y/useSemanticElements: using div for custom styling inside TooltipTrigger */}
 						<div
 							className="aui-attachment-tile size-14 cursor-pointer overflow-hidden rounded-[calc(var(--composer-radius)-var(--composer-padding))] border bg-muted transition-opacity hover:opacity-75"
 							role="button"
