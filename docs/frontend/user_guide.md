@@ -24,16 +24,9 @@ For new sessions, the chat workspace displays four pre-configured translation su
 3.  **Dapper to Spring Data MongoDB**: Translates Dapper SQL queries into MongoDB document aggregation pipelines.
 4.  **NHibernate to Spring Data MongoDB**: Translates NHibernate XML mappings or fluent class structures to target MongoDB collections.
 
-<div style="display: flex; justify-content: center; gap: 10px;">
-  <img src="img/uom-newthreadpage-filled.png" width="50%" alt="Translation Run - Step 2.1: Tool Calls Detailed View" title="Translation Run - Step 2.1: Tool Calls Detailed View" />
-  <img src="img/uom-newthreadpage-filled-light.png" width="50%" alt="Translation Run - Step 2.2: Schema Inspection Summary" title="Translation Run - Step 2.2: Schema Inspection Summary" /> 
-</div>
+![Translation Run - Step 2.1: Tool Calls Detailed View](img/uom-newthreadpage-filled.png "Translation Run - Step 2.1: Tool Calls Detailed View")
 
-````carousel
-![UOM Translation Workspace - Suggestions Filled (Dark Theme)](img/uom-newthreadpage-filled.png)
-<!-- slide -->
-![UOM Translation Workspace - Suggestions Filled (Light Theme)](img/uom-newthreadpage-filled-light.png)
-````
+![Translation Run - Step 2.2: Schema Inspection Summary](img/uom-newthreadpage-filled-light.png "Translation Run - Step 2.2: Schema Inspection Summary")
 
 ---
 
@@ -98,23 +91,18 @@ To execute a migration, paste your C# source schema and query code in the compos
   <img src="img/uom-threadrun-start-dark.png" alt="Translation Run - Step 1: Submitting Input" title="Translation Run - Step 1: Submitting Input" />
 </p>
 
-### 3.2 Translation Run - DB Schema Inspection
+### 3.2 Translation Run - DB Schema Inspection Tool Calls (left) and Schema Inspection Summary (right)
 
-<div style="display: flex; justify-content: center; gap: 10px;">
-  <img src="img/uom-threadrun-toolcalls-schema.png" width="40%" alt="Translation Run - Step 2.1: Tool Calls Detailed View" title="Translation Run - Step 2.1: Tool Calls Detailed View" />
-  <img src="img/uom-threadrun-schema.png" width="40%" alt="Translation Run - Step 2.2: Schema Inspection Summary" title="Translation Run - Step 2.2: Schema Inspection Summary" /> 
-</div>
-
-### 3.3 Translation Run - Daytona Sandbox Code Compilation & Validation
-
-<p align="center">
-  <img src="img/uom-threadrun-translation-validation.png" width="40%" alt="Translation Run - Step 3: Daytona Sandbox Code Compilation" title="Translation Run - Step 3: Daytona Sandbox Code Compilation" />
+<p align="center" style="display: flex; justify-content: center; gap: 5px;">
+  <img src="img/uom-threadrun-toolcalls-schema.png" width="49%" alt="Translation Run - Step 2.1: Tool Calls Detailed View" title="Translation Run - Step 2.1: Tool Calls Detailed View" />
+  <img src="img/uom-threadrun-schema.png" width="49%" alt="Translation Run - Step 2.2: Schema Inspection Summary" title="Translation Run - Step 2.2: Schema Inspection Summary" /> 
 </p>
 
-### 3.4 Translation Run - DeepDiff Equivalence Evaluation
+### 3.3 Translation Run - Daytona Sandbox Code Compilation & Validation (left) and DeepDiff Equivalence Evaluation (right)
 
-<p align="center">
-  <img src="img/uom-threadrun-equivalence-evaluation.png" width="40%" alt="Translation Run - Step 4: DeepDiff Query Equivalence Check" title="Translation Run - Step 4: DeepDiff Query Equivalence Check" />
+<p align="center" style="display: flex; justify-content: center; gap: 5px">
+  <img src="img/uom-threadrun-translation-validation.png" width="49%" alt="Translation Run - Step 3: Daytona Sandbox Code Compilation" title="Translation Run - Step 3: Daytona Sandbox Code Compilation" />
+  <img src="img/uom-threadrun-equivalence-evaluation.png" width="49%" alt="Translation Run - Step 4: DeepDiff Query Equivalence Check" title="Translation Run - Step 4: DeepDiff Query Equivalence Check" />
 </p>
 
 ### 3.5 Translation Run - Completed Run with Final Output
