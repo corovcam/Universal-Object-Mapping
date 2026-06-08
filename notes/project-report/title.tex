@@ -1,0 +1,47 @@
+% the layout is mandatory, edit only in dire circumstances
+
+\pagestyle{empty}
+\hypersetup{pageanchor=false}
+\begin{center}
+
+% top part of the layout, this actually differs between faculties
+
+\vspace{-8mm}\vfill
+{\bf\Large\ProjectType}
+\vfill
+{\LARGE\StudentsFullName}\par
+\vspace{15mm}
+{\LARGE\bfseries\ProjectTitle}
+\vfill
+\Department
+
+% choose the correct page and print it
+% \csname ThesisTitleX\ThesisTitleStyle\endcsname
+% latex corner: X is the new @
+
+\vfill
+
+{
+\centerline{\vbox{\halign{\hbox to 0.45\hsize{\hfil #}&\hskip 0.5em\parbox[t]{0.45\hsize}{\raggedright #}\cr
+Supervisor:
+& \SupervisorFullName \cr
+\noalign{\vspace{2mm}}
+Consultants:
+& \ConsultantsFullName \cr
+\noalign{\vspace{2mm}}
+Study programme:
+& \StudyProgram \cr
+}}}}
+
+\vfill
+
+Prague
+2026
+
+\end{center}
+
+\newpage
+
+\pagestyle{plain}
+\pagenumbering{arabic}
+\setcounter{page}{1}
