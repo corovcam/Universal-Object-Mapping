@@ -21,8 +21,8 @@ debug:
 else
 install:
 	uv sync --all-extras
-	./scripts/setup_env.sh
-	./scripts/install_logdy.sh
+	./scripts/load_env.sh
+	./scripts/init_daytona_snapshots.sh
 
 dev:
 	uv run langgraph dev --allow-blocking --n-jobs-per-worker 20
@@ -62,6 +62,9 @@ extended_tests:
 record_requests:
 	npx -p @copilotkit/aimock llmock --record --watch --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock/
 # 	node ../../../aimock/dist/cli.js --record --watch --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock
+
+init_daytona_snaphosts:
+	./scripts/init_daytona_snapshots.sh
 
 ######################
 # LINTING AND FORMATTING

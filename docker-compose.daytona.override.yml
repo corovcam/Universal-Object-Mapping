@@ -10,12 +10,18 @@ services:
       # - OTEL_COLLECTOR_ENDPOINT_URL=http://jaeger:4318/v1
       - OTEL_ENABLED=false
       - PUBLIC_OIDC_DOMAIN=http://localhost:5356/dex
+      # - ADMIN_API_KEY=${DAYTONA_ADMIN_API_KEY}
+      # - DEFAULT_RUNNER_API_KEY=${DAYTONA_DEFAULT_RUNNER_API_KEY}
+      # - PROXY_API_KEY=${DAYTONA_PROXY_API_KEY}
+      # - SSH_GATEWAY_API_KEY=${DAYTONA_SSH_GATEWAY_API_KEY}
+      # - HEALTH_CHECK_API_KEY=${DAYTONA_HEALTH_CHECK_API_KEY}
     networks:
       - uom
 
   proxy:
     environment:
       - OIDC_PUBLIC_DOMAIN=http://localhost:5356/dex
+      # - PROXY_API_KEY=${DAYTONA_PROXY_API_KEY}
     networks:
       - uom
 
@@ -23,6 +29,7 @@ services:
     # build:
     #   context: ../../../services/daytona/runner
     # environment:
+    #   - DAYTONA_RUNNER_TOKEN=${DAYTONA_RUNNER_TOKEN}
     #   - CONTAINER_NETWORK=host
     #   - INTER_SANDBOX_NETWORK_ENABLED=true
     #   - RUNNER_API_KEY=secret_api_token
@@ -48,6 +55,8 @@ services:
       - 6058:6000
   
   ssh-gateway:
+    # environment:
+    #   - API_KEY=${DAYTONA_SSH_GATEWAY_API_KEY}
     networks:
       - uom
   

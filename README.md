@@ -115,12 +115,25 @@ For Neo4j, use the Neo4j ETL Tool UI to connect to Microsoft SQL Server and exec
 services/etl/neo4j/run-neo4j-etl.sh
 ```
 
-### Step 4: Start the LangGraph Server
+### Step 4: Create Daytona API Key
+To allow the Orchestrator to interact with the Daytona server, an API key must be generated and added to the environment variables.
+
+1. Go to [http://localhost:3000](http://localhost:3000) to access the Daytona dashboard. You'll be asked to authenticate. Use the default credentials:
+   * Username: `dev@daytona.io`
+   * Password: `password`
+2. Once logged in, navigate to the "API Keys" section on the left and create a new API key with "Create Key". Name it `default`, and make sure the "Permissions" is set to `Full Access`. 
+3. Copy the generated key and update the `DAYTONA_API_KEY` variable in both `.env.dev` and `.env` files in the `services/orchestrator` directory.
+4. Rebuild the orchestrator service/server after updating the API key.
+
+For more information, see [Daytona Docs](https://www.daytona.io/docs/), specifically the [Daytona API Keys](https://www.daytona.io/docs/en/api-keys/) section.
+
+### Step 5: Start the LangGraph Server
 Open a separate terminal window, sync the python dependencies, and boot the LangGraph development server:
 ```bash
 cd services/orchestrator
-uv sync --all-extras
-langgraph dev # or better `make dev` if you have Make (recommended), otherwise check the scripts in Makefile
+direnv allow # if you have direnv installed, otherwise ensure the environment variables are loaded
+uv sync --all-extras && ./scripts/load_env.sh && ./scripts/init_daytona_snapshots.sh # or better `make dev` if you have Make (recommended), otherwise check the scripts in Makefile
+langgraph dev --allow-blocking # or better `make dev`
 ```
 The server will start listening on `http://localhost:2024`. The LangSmith Agent Studio web dashboard should be automatically opened.
 
@@ -130,7 +143,7 @@ make record_requests
 ```
 This will record all LLM requests and responses to a local fixtures directory. Set the `.env.dev` endpoint accordingly.
 
-### Step 5: Launch the Next.js Frontend
+### Step 6: Launch the Next.js Frontend
 Open a third terminal, download the dependencies, and start the Next.js frontend:
 ```bash
 cd frontend/uom-translator-ui

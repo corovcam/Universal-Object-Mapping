@@ -12,6 +12,7 @@ from daytona import (
     Image,
     SandboxState,
 )
+from daytona_api_client import SnapshotState
 
 from react_agent.constants import LanggraphCustomEventKeys, SandboxType
 from react_agent.utils.utils import process_streaming_chunks
@@ -97,6 +98,25 @@ class ValidationSandbox:
             try:
                 try:
                     existing_snapshot = await daytona.snapshot.get(params.name)
+                    if existing_snapshot.state == SnapshotState.INACTIVE:
+                        logger.info(f"Snapshot '{params.name}' is inactive. Activating...")
+                        existing_snapshot = await daytona.snapshot.activate(existing_snapshot)
+                    if existing_snapshot.state != SnapshotState.ACTIVE:
+                        if existing_snapshot.state in (SnapshotState.BUILDING, SnapshotState.PENDING, SnapshotState.PULLING):
+                            logger.info(f"Snapshot '{params.name}' is currently in state: '{existing_snapshot.state.value}'. Waiting for it to become active...")
+                            for inner in range(max_retries):
+                                await asyncio.sleep(2 ** inner)  # Exponential backoff while waiting for snapshot to become active
+                                existing_snapshot = await daytona.snapshot.get(params.name)
+                                if existing_snapshot.state == SnapshotState.ACTIVE:
+                                    logger.info(f"Snapshot '{params.name}' is now active.")
+                                    break
+                                elif existing_snapshot.state in (SnapshotState.ERROR, SnapshotState.BUILD_FAILED):
+                                    logger.warning(f"Snapshot '{params.name}' failed to build. Deleting and retrying...")
+                                    await daytona.snapshot.delete(existing_snapshot)
+                                    raise Exception(f"Snapshot '{params.name}' build failed.")
+                                if inner == max_retries - 1:
+                                    await daytona.snapshot.delete(existing_snapshot)
+                                    raise Exception(f"Snapshot '{params.name}' did not become active after waiting.")
                     logger.info(f"Snapshot '{params.name}' already exists with ID: {existing_snapshot.id}")
                     return
                 except Exception as e:
