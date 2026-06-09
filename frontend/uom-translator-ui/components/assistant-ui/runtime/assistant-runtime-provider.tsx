@@ -116,7 +116,7 @@ export function AssistantRuntimeProviderWrapper({
 
 			const payload = {
 				input: messages.length ? { messages } : null,
-				streamMode: ["messages", "updates", "custom"],
+				streamMode: ["messages-tuple", "updates", "custom"],
 				streamSubgraphs: true,
 				...(config.abortSignal != null && { signal: config.abortSignal }),
 				onDisconnect: "cancel",
@@ -156,6 +156,53 @@ export function AssistantRuntimeProviderWrapper({
 				payload as any,
 			);
 			return eventStream;
+			// async function* makeGenerator() {
+			//   try {
+			//     for await (const chunk of eventStream) {
+			//       // Process chunk
+			//       if (chunk.event === "updates" && chunk.data) {
+			//         setGraphState((prev: any) => {
+			//           const next = { ...prev };
+			//           for (const [nodeName, nodeState] of Object.entries(chunk.data)) {
+			//             if (nodeState && typeof nodeState === "object") {
+			//               Object.assign(next, nodeState);
+			//             }
+			//             if (NODE_NAME_MAP[nodeName]) {
+			//               setActiveNode(NODE_NAME_MAP[nodeName]);
+			//             }
+			//           }
+			//           return next;
+			//         });
+			//       }
+			//       // not used
+			//       if (chunk.event === "values" && chunk.data) {
+			//         setGraphState((prev: any) => ({ ...prev, ...chunk.data }));
+			//       }
+			//       if (chunk.event === "messages/metadata" && chunk.data) {
+			//         const entry = Object.values(chunk.data)[0] as any;
+			//         const nodeName = entry?.metadata?.langgraph_node;
+			//         if (nodeName && NODE_NAME_MAP[nodeName]) {
+			//           setActiveNode(NODE_NAME_MAP[nodeName]);
+			//         }
+			//       }
+			//       if (chunk.event === "error") {
+			//         const errMsg = (chunk.data as any)?.message || JSON.stringify(chunk.data);
+			//         setRunError(errMsg);
+			//         setServerActive(false);
+			//       }
+			//       if (chunk.event === "custom") {
+			//         console.log("Custom event from LangGraph:", chunk.data);
+			//       }
+			//       yield chunk;
+			//     }
+			//   } catch (err: any) {
+			//     console.error("Error during LangGraph run stream:", err);
+			//     setRunError(err.message || String(err));
+			//     setServerActive(false);
+			//     throw err;
+			//   }
+			// }
+			// return makeGenerator();
 		};
 	}, [client]);
 
@@ -406,6 +453,8 @@ export function AssistantRuntimeProviderWrapper({
 			 * Used to set the currently active node dynamically in the UI.
 			 */
 			onMessageChunk: (_chunk: any, metadata: any) => {
+				console.debug("[UOM] Received message chunk:", _chunk);
+				console.debug("[UOM] Message chunk metadata:", metadata);
 				const nodeName = metadata?.langgraph_node;
 				console.debug(`[UOM] Node: ${nodeName}`);
 				if (NODE_NAME_MAP[nodeName as keyof typeof NODE_NAME_MAP]) {
@@ -444,6 +493,12 @@ export function AssistantRuntimeProviderWrapper({
 			 */
 			onSubgraphUpdates: (namespace: string, updates: any) => {
 				console.debug(`[UOM] Subgraph updates [${namespace}]:`, updates);
+			},
+			onMetadata: (metadata: any) => {
+				console.debug(`[UOM] Metadata:`, metadata);
+			},
+			onInfo: (info: any) => {
+				console.debug("[UOM] Info:", info);
 			},
 			/**
 			 * Catch-all error reporter for execution loops.

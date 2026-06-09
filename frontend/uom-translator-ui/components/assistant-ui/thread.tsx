@@ -437,7 +437,6 @@ const AssistantMessageContent: FC = () => {
 	const originalMessages = useAuiState((s) =>
 		getExternalStoreMessages(s.message),
 	);
-	console.debug("Original messages bound to this message:", originalMessages);
 	// bindExternalStoreMessage(threadMessage, originalMessage);
 	return (
 		<div
