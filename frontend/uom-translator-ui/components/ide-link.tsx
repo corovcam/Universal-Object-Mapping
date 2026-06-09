@@ -198,11 +198,13 @@ export function IdeLink() {
 					<button
 						type="button"
 						onClick={() => setActivePlatform(LanguageType.DOTNET)}
+						disabled={!sandboxInfo}
+						aria-disabled={!sandboxInfo}
 						className={
 							"h-full rounded px-2.5 text-[10px] font-bold uppercase tracking-wide transition-all border " +
 							(activePlatform === LanguageType.DOTNET
 								? "border-primary/30 bg-primary/10 text-primary"
-								: "border-transparent text-muted-foreground hover:text-foreground")
+								: `border-transparent text-muted-foreground${sandboxInfo ? " hover:text-foreground" : ""}`)
 						}
 					>
 						.NET
@@ -210,11 +212,13 @@ export function IdeLink() {
 					<button
 						type="button"
 						onClick={() => setActivePlatform(LanguageType.JAVA)}
+						disabled={!sandboxInfo}
+						aria-disabled={!sandboxInfo}
 						className={
 							"h-full rounded px-2.5 text-[10px] font-bold uppercase tracking-wide transition-all border " +
 							(activePlatform === LanguageType.JAVA
 								? "border-primary/30 bg-primary/10 text-primary"
-								: "border-transparent text-muted-foreground hover:text-foreground")
+								: `border-transparent text-muted-foreground${sandboxInfo ? " hover:text-foreground" : ""}`)
 						}
 					>
 						Java
@@ -224,6 +228,7 @@ export function IdeLink() {
 						href={sandboxInfo ? getDeepLink() : undefined}
 						target={sandboxInfo ? "_blank" : undefined}
 						rel="noreferrer"
+						aria-disabled={!sandboxInfo}
 						className={
 							"flex h-full items-center gap-1.5 border-r px-3 text-xs font-semibold transition-colors " +
 							(sandboxInfo
@@ -249,6 +254,7 @@ export function IdeLink() {
 							if (sandboxInfo) setShowDropdown((p) => !p);
 						}}
 						disabled={!sandboxInfo}
+						aria-disabled={!sandboxInfo}
 						className={
 							"h-full px-2 text-muted-foreground transition-colors " +
 							(sandboxInfo

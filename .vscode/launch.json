@@ -70,9 +70,13 @@
       "name": "Next.js: debug server-side",
       "type": "node-terminal",
       "request": "launch",
-      "command": "pnpm run dev",
+      "command": "pnpm run dev:frontend",
       "localRoot": "${workspaceFolder}/frontend/uom-translator-ui",
       "cwd": "${workspaceFolder}/frontend/uom-translator-ui",
+      "envFile": "${workspaceFolder}/frontend/uom-translator-ui/.env.development",
+      "env": {
+        "PORT": "3001",
+      },
     },
     {
       "name": "Next.js: debug client-side",
@@ -89,6 +93,10 @@
       "runtimeArgs": ["--inspect"],
       "skipFiles": ["<node_internals>/**"],
       "cwd": "${workspaceFolder}/frontend/uom-translator-ui",
+      "envFile": "${workspaceFolder}/frontend/uom-translator-ui/.env.development",
+      "env": {
+        "PORT": "3001",
+      },
       "serverReadyAction": {
         "action": "debugWithChrome",
         "killOnServerStop": true,

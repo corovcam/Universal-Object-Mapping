@@ -24,6 +24,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfigModal } from "../config-modal";
 import { IdeLink } from "../ide-link";
+import ComponentErrorBoundary from "@/app/component-error-boundary";
 
 export function ThreadListSidebar({
 	...props
@@ -92,7 +93,9 @@ export function ThreadListSidebar({
 			<SidebarGroup className="aui-sidebar-group border-t mt-auto">
 				<SidebarGroupLabel>Connect your IDE</SidebarGroupLabel>
 				<SidebarGroupContent>
-					<IdeLink />
+					<ComponentErrorBoundary title="An error occurred while loading the IDE integration.">
+						<IdeLink />
+					</ComponentErrorBoundary>
 					{/* <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
