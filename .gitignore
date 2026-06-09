@@ -14,3 +14,4 @@ frontend/uom-translator-ui-old*/
 frontend/assistant-ui-langgraph-example/
 misc/
 mockups/
+.devcontainer/*agent.sh

@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useGraphStateContext } from "@/hooks/use-graph-state-context";
 import { FrameworkType, LanguageType } from "@/lib/types";
 import { getFrameworkTypeByName } from "@/lib/utils";
+import { toast } from "sonner";
 
 /**
  * Supported IDE protocols that can hook into remote sandboxes.
@@ -109,8 +110,12 @@ export function IdeLink() {
 				sshCommand: tokenData.ssh_command,
 				token: tokenData.token,
 			});
-		} catch (err) {
-			console.error("Failed fetching sandbox SSH credentials from API", err);
+		} catch (error: any) {
+			console.error("Failed fetching sandbox SSH credentials from API", error);
+			toast.error("Unable to retrieve sandbox SSH credentials. Please try again later.", {
+				description: error?.message || String(error),
+				richColors: true,
+			});
 			setSandboxInfo(null);
 		} finally {
 			setLoading(false);

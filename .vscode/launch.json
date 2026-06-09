@@ -84,6 +84,7 @@
       "name": "Next.js: debug full stack",
       "type": "node",
       "request": "launch",
+      "runtimeExecutable": "/home/corovcak/.nvm/versions/node/v24.15.0/bin/node",
       "program": "${workspaceFolder}/frontend/uom-translator-ui/node_modules/next/dist/bin/next",
       "runtimeArgs": ["--inspect"],
       "skipFiles": ["<node_internals>/**"],
