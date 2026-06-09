@@ -13,6 +13,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel, ModelProfile
 from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_litellm import ChatLiteLLM
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
@@ -211,7 +212,36 @@ async def load_chat_model(
     # log_http_transport = llm_request_logger.LogTransport(httpx.HTTPTransport())
     # async_log_http_transport = llm_request_logger.AsyncLogTransport(httpx.AsyncHTTPTransport())
 
-    if provider == "openai" or provider == "einfra":
+    if provider == "einfra":
+        extra_body = config.get("extra_body")
+        extra_body_kwargs: dict[str, Any] = {}
+        if config.get("reasoning") is not None:
+            extra_body_kwargs["chat_template_kwargs"] = {
+                "enable_thinking": config["reasoning"]
+            }
+        if extra_body is not None:
+            extra_body_kwargs.get("chat_template_kwargs", {}).update(extra_body)
+        
+        litellm_api_base = config.get("openai_api_url", "").rstrip("/v1")
+        model_client = ChatLiteLLM(
+            model=f"openai/{model}",
+            api_base=litellm_api_base,
+            api_key=config.get("openai_api_key"),
+            openai_api_key=config.get("openai_api_key"),
+            streaming=True,
+            max_retries=10,
+            request_timeout=120,
+            **(
+                {"temperature": config.get("temperature", 1)}
+                if config.get("temperature") is not None
+                else {}
+            ),
+            model_kwargs={
+                "stream_usage": True,
+                **(extra_body_kwargs if extra_body_kwargs else {}),
+            },
+        )
+    elif provider == "openai":
         debug_kwargs = {}
         # if debugging:
         #     debug_kwargs = {

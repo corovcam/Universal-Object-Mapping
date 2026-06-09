@@ -41,6 +41,27 @@ async def test_load_chat_model(context: Context) -> None:
         },
     )
     assert model3 is not None
+    
+
+@pytest.mark.asyncio
+async def test_load_chat_model_and_execute(context: Context) -> None:
+    model1 = await load_chat_model(
+        AvailableModel.EINFRA_MINI.value,
+        {
+            "openai_api_url": context.openai_api_url,
+            "openai_api_key": context.openai_api_key,
+            "reasoning": True,
+            "temperature": 0.5,
+            "extra_body": {
+                "enable_thinking": True,
+            },
+        },
+    )
+    assert model1 is not None
+    res = await model1.ainvoke("Tell me a three sentence bedtime story about a unicorn.")
+    print(res)
+    for chunk in res.content_blocks:
+        print(chunk)
 
 
 @pytest.mark.asyncio

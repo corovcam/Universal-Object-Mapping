@@ -19,11 +19,8 @@
   "python.testing.autoTestDiscoverOnSavePattern": "${workspaceFolder}/services/orchestrator/tests/**/*.py",
   "python.terminal.useEnvFile": true,
   "python.testing.pytestPath": "${workspaceFolder}/services/orchestrator/.venv/bin/pytest",
-  "python.testing.pytestArgs": [
-    "-v",
-    "${workspaceFolder}/services/orchestrator/tests"
-  ],
   "python.analysis.inlayHints.pytestParameters": true,
+  "python.useEnvironmentsExtension": true,
   "python.languageServer": "Pylance",
   // if using Pylance in VSCode
   "ty.disableLanguageServices": true,
@@ -122,5 +119,14 @@
       "source.organizeImports.biome": "explicit",
       "source.fixAll.biome": "explicit"
     },
-  }
+  },
+  "python.testing.unittestArgs": [
+    "-v",
+    ".",
+    "-p",
+    "*test*.py"
+  ],
+  "python.testing.pytestArgs": [
+    "-v"
+  ]
 }
