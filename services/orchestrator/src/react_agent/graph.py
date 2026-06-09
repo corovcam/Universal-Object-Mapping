@@ -229,7 +229,6 @@ class UIReasoningMiddleware(AgentMiddleware):
                 for block in last_msg.content_blocks:
                     block_type = getattr(block, "type", None)
                     if block_type in ("reasoning", "thinking"):
-                        block[]
                         text = getattr(block, "text", None) or getattr(block, "reasoning", None)
                         if text:
                             reasoning_texts.append(str(text))
@@ -637,9 +636,9 @@ async def extract_input(
         system_prompt=system_prompt,
         response_format=ProviderStrategy(ExtractionOutput, strict=True),
         middleware=[
-            UIReasoningMiddleware(
-                agent_name="Extractor",
-            ),
+            # UIReasoningMiddleware(
+            #     agent_name="Extractor",
+            # ),
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
                 await get_model(
@@ -803,9 +802,9 @@ async def schema_inspection(
             tools=db_tools,
             system_prompt=SYSTEM_PROMPT_SCHEMA_INSPECTOR,
             middleware=[
-                UIReasoningMiddleware(
-                    agent_name="Schema Inspector",
-                ),
+                # UIReasoningMiddleware(
+                #     agent_name="Schema Inspector",
+                # ),
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
                     await get_model(
@@ -1040,9 +1039,9 @@ Source Code:
         response_format=ProviderStrategy(TranslationOutput, strict=True),
         system_prompt=system_prompt,
         middleware=[
-            UIReasoningMiddleware(
-                agent_name="Translator",
-            ),
+            # UIReasoningMiddleware(
+            #     agent_name="Translator",
+            # ),
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
                 await get_model(
@@ -1537,9 +1536,9 @@ Is the translation logically equivalent and syntactically valid? Provide your re
         model,
         response_format=ProviderStrategy(EvaluationOutput, strict=True),
         middleware=[
-            UIReasoningMiddleware(
-                agent_name="Evaluator",
-            ),
+            # UIReasoningMiddleware(
+            #     agent_name="Evaluator",
+            # ),
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
                 await get_model(config, runtime, AvailableModel.EINFRA_THINKER),
