@@ -100,19 +100,22 @@ cp .env.example .env.production # for production in frontend Next.js project
 ### Step 2: Spin Up the Container Stack
 Boot the databases, MCP adapters, relational migrator, Daytona stack, and/or Langgraph orchestrator backend in the background:
 ```bash
-scripts/init-project.sh
+./scripts/init-project.sh
 ```
 Ensure all healthchecks pass. If errors occur, reset with `./scripts/destroy-containers.sh`, fix the issues, and try again.
 
 ### Step 3: Configure the Databases (ETL)
 
 #### MongoDB
-Access the MongoDB Relational Migrator dashboard at `http://localhost:8091`, connect to the Microsoft SQL Server source, and configure the relational-to-document mapping to migrate the `WideWorldImporters` dataset into MongoDB. Pre-configured mappings/settings have been prepared in the [`services/etl/mongodb/UOM WideWorldImporters`](services/etl/mongodb/UOM%20WideWorldImporters.relmig) file for reference (import the project file in UI).
+Access the MongoDB Relational Migrator dashboard at [http://localhost:8091](http://localhost:8091), connect to the Microsoft SQL Server source, and configure the relational-to-document mapping to migrate the `WideWorldImporters` dataset into MongoDB. Pre-configured mappings/settings have been prepared in the [`services/etl/mongodb/UOM WideWorldImporters`](services/etl/mongodb/UOM%20WideWorldImporters.relmig) file for reference (import the project file in UI). For simpler execution, run the provided migration script:
+```bash
+./services/etl/mongodb/run_mongodb_etl.sh
+```
 
 #### Neo4j
 For Neo4j, use the Neo4j ETL Tool UI to connect to Microsoft SQL Server and execute the relational-to-graph migration. This approach may result in errors, since Neo4j ETL Tool UI hasn't been updated in a while: in that case, extract the generated mapping file and follow the CLI approach below.
 ```bash
-services/etl/neo4j/run-neo4j-etl.sh
+./services/etl/neo4j/run-neo4j-etl.sh
 ```
 
 ### Step 4: Create Daytona API Key
@@ -135,7 +138,7 @@ direnv allow # if you have direnv installed, otherwise ensure the environment va
 uv sync --all-extras && ./scripts/load_env.sh && ./scripts/init_daytona_snapshots.sh # or better `make dev` if you have Make (recommended), otherwise check the scripts in Makefile
 langgraph dev --allow-blocking # or better `make dev`
 ```
-The server will start listening on `http://localhost:2024`. The LangSmith Agent Studio web dashboard should be automatically opened.
+The server will start listening on [http://localhost:2024](http://localhost:2024). The LangSmith Agent Studio web dashboard should be automatically opened.
 
 For development, LLM request mocking is recommended to avoid hitting rate limits and speed up iterations. To enable LLM response mocking, run:
 ```bash
@@ -150,7 +153,7 @@ cd frontend/uom-translator-ui
 pnpm install
 pnpm dev:frontend
 ```
-Open your web browser to **`http://localhost:3001`** (since Daytona API is already running at `http://localhost:3000`) to access the UOM Assistant UI frontend and begin translating query code!
+Open your web browser to **[http://localhost:3001](http://localhost:3001)** (since Daytona API is already running at [http://localhost:3000](http://localhost:3000)) to access the UOM Assistant UI frontend and begin translating query code!
 
 ---
 
