@@ -7,6 +7,11 @@
         "turnIndex": 2,
         "hasToolResult": true
       },
+      "streamingProfile": {
+        "ttft": 200,
+        "tps": 100,
+        "jitter": 0.15
+      },
       "response": {
         "content": "Now let me inspect the source SQL Server tables and sample some data from both sides.\n\n",
         "toolCalls": [

@@ -7,6 +7,11 @@
         "turnIndex": 0,
         "hasToolResult": false
       },
+      "streamingProfile": {
+        "ttft": 200,
+        "tps": 100,
+        "jitter": 0.15
+      },
       "response": {
         "content": "Let me inspect both the source SQL Server and target Neo4j schemas. I'll start by examining the relevant tables and nodes in parallel.\n\n",
         "toolCalls": [

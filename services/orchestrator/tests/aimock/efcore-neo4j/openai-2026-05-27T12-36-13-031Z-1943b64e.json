@@ -7,6 +7,11 @@
         "turnIndex": 1,
         "hasToolResult": true
       },
+      "streamingProfile": {
+        "ttft": 200,
+        "tps": 100,
+        "jitter": 0.15
+      },
       "response": {
         "content": "Good, both databases are accessible. Let me now inspect the source SQL Server tables and the target Neo4j nodes/relationships in detail.\n\n",
         "toolCalls": [

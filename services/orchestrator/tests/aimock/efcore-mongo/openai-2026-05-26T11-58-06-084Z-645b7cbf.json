@@ -37,6 +37,11 @@
           }
         ]
       },
+      "streamingProfile": {
+        "ttft": 200,
+        "tps": 100,
+        "jitter": 0.15
+      },
       "recordedTimings": {
         "ttftMs": 1,
         "interChunkDelaysMs": [

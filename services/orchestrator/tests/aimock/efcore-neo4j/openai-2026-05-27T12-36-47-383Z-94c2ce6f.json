@@ -7,6 +7,11 @@
         "turnIndex": 3,
         "hasToolResult": true
       },
+      "streamingProfile": {
+        "ttft": 200,
+        "tps": 100,
+        "jitter": 0.15
+      },
       "response": {
         "content": "Let me now check the relationships and sample some SQL data to complete the picture.\n\n",
         "toolCalls": [

@@ -7,6 +7,11 @@
         "turnIndex": 4,
         "hasToolResult": true
       },
+      "streamingProfile": {
+        "ttft": 200,
+        "tps": 100,
+        "jitter": 0.15
+      },
       "response": {
         "content": "Let me verify the relationship directions more carefully and check the Order-Customer relationship.\n\n",
         "toolCalls": [
