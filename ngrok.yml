@@ -1,0 +1,21 @@
+version: "3"
+agent:
+  authtoken: 2WCmTVhUs67qqSr3FUbvksH3M0y_5TRgSrUBjJYazj6vt8wum
+
+endpoints:
+  - name: frontend
+    url: entrust-clamshell-tabasco.ngrok-free.dev
+    upstream:
+      url: 3020
+  - name: langgraph-api
+    url: entrust-clamshell-tabasco.ngrok-free.dev
+    upstream:
+      url: 8123
+  - name: daytona-api
+    url: entrust-clamshell-tabasco.ngrok-free.dev
+    upstream:
+      url: 3000
+  - name: relational-migrator
+    url: entrust-clamshell-tabasco.ngrok-free.dev
+    upstream:
+      url: 8091
