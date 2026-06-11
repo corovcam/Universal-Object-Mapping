@@ -276,6 +276,7 @@ async def load_chat_model(
             max_retries=10,
             request_timeout=120,  # type: ignore
             stream_usage=True,
+            reasoning={"summary": "auto"},
             **(
                 {"temperature": config.get("temperature", 1)}
                 if config.get("temperature") is not None
@@ -328,6 +329,7 @@ async def load_chat_model(
                 api_key=config.get("openai_api_key"),
                 reasoning=True,
                 stream_usage=True,
+                streaming=True,
                 max_retries=10,
                 timeout=120,
                 configurable_fields="any",
@@ -363,7 +365,9 @@ async def load_chat_model(
             model_client = init_chat_model(
                 model,
                 model_provider=provider,
+                reasoning=True,
                 stream_usage=True,
+                streaming=True,
                 max_retries=10,
                 timeout=120,
                 configurable_fields="any",

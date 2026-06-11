@@ -31,7 +31,6 @@ class AvailableModel(str, Enum):
     EINFRA_MULTILINGUAL_E5 = "einfra/multilingual-e5-large-instruct"
     EINFRA_NOMIC_EMBED_V2 = "einfra/nomic-embed-text-v2-moe"
     EINFRA_NOMIC_EMBED_V1_5 = "einfra/nomic-embed-text-v1.5"
-    EINFRA_DEEPSEEK_V3_2 = "einfra/deepseek-v3.2"
     EINFRA_DEEPSEEK_V4_PRO = "einfra/deepseek-v4-pro"
     EINFRA_DEEPSEEK_V4_PRO_THINKING = "einfra/deepseek-v4-pro-thinking"
     
@@ -42,7 +41,6 @@ class AvailableModel(str, Enum):
     EINFRA_QWEN3_5 = "einfra/qwen3.5"
     EINFRA_QWEN3_CODER_NEXT = "einfra/qwen3-coder-next"
     EINFRA_QWEN3_5_122B = "einfra/qwen3.5-122b"
-    EINFRA_GLM_4_7 = "einfra/glm-4.7"
     EINFRA_GLM_5 = "einfra/glm-5"
     EINFRA_GLM_5_1 = "einfra/glm-5.1"
 

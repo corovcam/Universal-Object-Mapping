@@ -175,3 +175,10 @@ class State(InputState, OutputState):
     Track the number of times we've retried a translation after sandbox failures or deepdiff failures.
     The graph uses this to branch to `human_intervention_node` if it exceeds the limit (e.g., > 3).
     """
+    
+    ui_messages: Annotated[Sequence[AnyMessage], add_messages] = field(
+        default_factory=list,
+    )
+    """
+    A separate message list intended for UI-only display purposes.
+    """

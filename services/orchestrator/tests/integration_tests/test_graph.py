@@ -104,6 +104,7 @@ class TestExtractInput:
 # ── schema_inspection Node ───────────────────────────────────────────────────
 
 
+@pytest.mark.asyncio
 class TestSchemaInspection:
     """Tests for the schema_inspection node function."""
 
@@ -128,6 +129,29 @@ class TestSchemaInspection:
         assert "schema_context" in result
         assert isinstance(result["schema_context"], str)
         assert len(result["schema_context"]) > 0
+
+
+    # @pytest.mark.integration
+    # async def test_with_real_llm(
+    #     self, sample_state: State, runnable_config: RunnableConfig, runtime: MagicMock
+    # ):
+    #     """Call schema_inspection with a real EINFRA_MINI model.
+
+    #     Asserts structural correctness of the output (valid FrameworkType,
+    #     non-empty schema_context) without checking exact content.
+    #     """
+    #     result = await cast(Awaitable, schema_inspection(sample_state, runnable_config, runtime))
+
+    #     assert "schema_context" in result
+    #     assert len(result["schema_context"]) > 0
+
+    #     assert "source_target" in result
+    #     assert isinstance(result["source_target"], FrameworkEnum)
+    #     assert result["source_target"] is not None
+
+    #     assert "destination_target" in result
+    #     assert isinstance(result["destination_target"], FrameworkEnum)
+    #     assert result["destination_target"] is not None
 
 
 # ── Partial Graph Execution ─────────────────────────────────────────────────

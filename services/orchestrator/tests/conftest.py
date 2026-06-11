@@ -10,7 +10,9 @@ from uuid import uuid4
 
 import orjson
 import pytest
+import pytest_asyncio
 from aiohttp.test_utils import TestClient
+from langchain.chat_models import BaseChatModel
 from langchain.tools import ToolRuntime
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -22,6 +24,7 @@ from react_agent.constants import AvailableModel, FrameworkEnum, TranslationType
 from react_agent.context import Context
 from react_agent.graph import graph
 from react_agent.state import State
+from react_agent.utils.utils import load_chat_model
 
 # @pytest.hookimpl
 # def pytest_configure(config):
@@ -197,6 +200,37 @@ def sample_efcore_results(config) -> dict:
 def sample_mongo_results(config) -> dict:
     """Sample MongoDB results for testing."""
     return orjson.loads((config["FIXTURES_DIR"] / "mongo_results.json").read_bytes())
+
+
+# ---------------------------------------------------------------------------
+# Agents
+# ---------------------------------------------------------------------------
+
+@pytest_asyncio.fixture()
+async def sample_chat_model(context: Context):
+    """A pre-loaded chat model for testing nodes that require it."""
+    model = await load_chat_model(
+        AvailableModel.EINFRA_MINI.value,
+        {
+            "openai_api_url": context.openai_api_url,
+            "openai_api_key": context.openai_api_key,
+            "reasoning": True,
+            "temperature": 0.5,
+            "extra_body": {
+                "enable_thinking": True,
+            },
+        },
+    )
+    return model
+
+@pytest_asyncio.fixture()
+async def sample_agent(sample_chat_model: BaseChatModel):
+    """A sample agent instance using the pre-loaded chat model."""
+    from langchain.agents import create_agent
+    agent = create_agent(
+        model=sample_chat_model,
+    )
+    return agent
 
 
 # ---------------------------------------------------------------------------

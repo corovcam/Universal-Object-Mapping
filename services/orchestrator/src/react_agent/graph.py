@@ -21,7 +21,7 @@ from langchain.agents.middleware import (
 )
 from langchain.agents.structured_output import ProviderStrategy
 from langchain.messages import AIMessage
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.cache.memory import InMemoryCache
 from langgraph.graph import END, START, StateGraph
@@ -513,7 +513,7 @@ Conversation:
     # (framework targets and source code) to actually perform a translation.
     if is_input_extracted(extraction):
         msg = [
-            *response["messages"],
+            *response["messages"][:-1],
             AIMessage(
                 content=f"""Successfully extracted inputs:
 
@@ -643,9 +643,14 @@ Source code being translated:
                 {"messages": [HumanMessage(content=message)]}
             )
             # Extract the final assistant response as schema context
-            schema_summary = (
-                response["messages"][-1].content if response["messages"] else ""
-            )
+            msg = response["messages"][-1] if response and "messages" in response and len(response["messages"]) > 0 else None
+            schema_summary = ""
+            if isinstance(msg, AIMessage):
+                schema_summary = "".join(
+                    block.get("text", "") 
+                    for block in msg.content_blocks
+                    if block.get("type") == "text"
+                ) or ""
             return {
                 "schema_context": str(schema_summary),
                 "messages": [
@@ -871,12 +876,13 @@ Source Code:
     output = response["structured_response"]
     updates.update(output.model_dump(warnings="error", exclude_unset=True))
 
-    msg = AIMessage(content=f"""Translation generated successfully on attempt {state.translation_loop_count + 1}.
+    msg = [*response["messages"][:-1],
+           AIMessage(content=f"""Translation generated successfully. Here's the translated code:
                     
 ```json
 {orjson.dumps(output.model_dump(mode="json", exclude_unset=False), option=orjson.OPT_INDENT_2).decode('utf-8')}
 ```
-""")
+""")]
     updates["messages"] = msg
     updates["translation_messages"] = msg
 
@@ -1349,9 +1355,10 @@ Is the translation logically equivalent and syntactically valid? Provide your re
 
     assert state.translation_type is not None and state.destination_target is not None
     output: EvaluationOutput = response["structured_response"]
+    messages = cast(list[BaseMessage], response.get("messages"))[:-1] if response and response.get("messages") else []
     if (output.decision == "ACCEPT"):
         markdown_lang = FRAMEWORK_TO_LANGUAGE_TYPE[state.destination_target].value
-        messages = [
+        messages = messages + [
             AIMessage(content=f"""The translation is accepted. Here is the final translated code:
 
 Translated schema:
@@ -1365,7 +1372,7 @@ Evaluation:
 """)
         ]
     else:
-        messages = [
+        messages = messages + [
             AIMessage(content=f"[{output.decision}] {output.explanation}"),
         ]
         

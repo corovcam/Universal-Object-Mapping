@@ -1,4 +1,6 @@
 import pytest
+from langchain.messages import AIMessage, AIMessageChunk, HumanMessage
+from langgraph.graph.state import CompiledStateGraph
 
 from react_agent.constants import AvailableModel
 from react_agent.context import Context
@@ -41,7 +43,7 @@ async def test_load_chat_model(context: Context) -> None:
         },
     )
     assert model3 is not None
-    
+
 
 @pytest.mark.asyncio
 async def test_load_chat_model_and_execute(context: Context) -> None:
@@ -58,14 +60,74 @@ async def test_load_chat_model_and_execute(context: Context) -> None:
         },
     )
     assert model1 is not None
-    res = await model1.ainvoke("Tell me a three sentence bedtime story about a unicorn.")
+    res = await model1.ainvoke(
+        "Tell me a three sentence bedtime story about a unicorn."
+    )
     print(res)
     for chunk in res.content_blocks:
         print(chunk)
 
 
 @pytest.mark.asyncio
-async def test_load_chat_model_handles_missing_extra_body(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_invoke_agent(sample_agent: CompiledStateGraph) -> None:
+    response = await sample_agent.ainvoke(
+        {
+            "messages": [
+                HumanMessage(
+                    content="Tell me a three sentence bedtime story about a unicorn."
+                )
+            ]
+        },
+        stream_mode="messages",
+    )
+    print(response)
+    assert response is not None
+    assert AIMessage in [type(msg) for msg in response.get("messages", [])]
+    # assert any(
+    #     "reasoning" in block.get("type", "")
+    #     for msg in response.get("messages", [])
+    #     for block in getattr(msg, "content_blocks", [])
+    # )
+    for msg in response.get("messages", [{}]):
+        print(msg)
+        if isinstance(msg, AIMessage):
+            for block in msg.content_blocks:
+                print("Block: ", block)
+                if block.get("type") == "reasoning":
+                    print("Reasoning block:", block.get("reasoning"))
+                if block.get("type") == "text":
+                    print("Text block:", block.get("text"))
+
+
+@pytest.mark.asyncio
+async def test_stream_agent(sample_agent: CompiledStateGraph) -> None:
+    async for chunk in sample_agent.astream(
+        {
+            "messages": [
+                HumanMessage(
+                    content="Tell me a three sentence bedtime story about a unicorn."
+                )
+            ]
+        },
+        stream_mode=["messages", "values"],
+    ):
+        print(chunk)
+        if isinstance(chunk, tuple) and chunk[0] == "messages":
+            msg = chunk[1][0]
+            if isinstance(msg, AIMessageChunk):
+                for block in msg.content_blocks:
+                    print("Block: ", block)
+                    if block.get("type") == "reasoning":
+                        print("Reasoning block:", block.get("reasoning"))
+                    if block.get("type") == "text":
+                        print("Text block:", block.get("text"))
+        
+
+
+@pytest.mark.asyncio
+async def test_load_chat_model_handles_missing_extra_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured_kwargs: dict[str, object] = {}
 
     class DummyChatModel:
@@ -83,7 +145,9 @@ async def test_load_chat_model_handles_missing_extra_body(monkeypatch: pytest.Mo
     )
 
     assert model is not None
-    assert captured_kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": True}}
+    assert captured_kwargs["extra_body"] == {
+        "chat_template_kwargs": {"enable_thinking": True}
+    }
 
 
 @pytest.mark.asyncio
