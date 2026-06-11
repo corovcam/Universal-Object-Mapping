@@ -57,6 +57,8 @@ import { ScrollBar } from "@/components/ui/scroll-area";
 import { SkeletonText } from "@/components/ui/skeleton";
 import { useGraphStateContext } from "@/hooks/use-graph-state-context";
 import { cn } from "@/lib/utils";
+import { NODE_NAME_MAP } from "@/components/assistant-ui/runtime/assistant-runtime-provider";
+// import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/assistant-ui/accordion";
 
 /**
  * React Component representing the main message thread workspace.
@@ -183,6 +185,15 @@ const getPromptTitle = (text: string): string => {
 const ThreadMessage = () => {
 	const isEditing = useAuiState((s) => s.message.composer.isEditing);
 	const role = useAuiState((s) => s.message.role);
+	const { activeNode } = useGraphStateContext();
+
+	{activeNode && (
+		<div className="fade-in slide-in-from-bottom-1 relative animate-in duration-150 [contain-intrinsic-size:auto_300px] [content-visibility:auto]">
+			<div className="flex w-full flex-row border rounded-xl bg-primary/10 text-primary my-2 overflow-hidden font-extrabold text-2xl h-5">
+				{NODE_NAME_MAP[activeNode]}
+			</div>
+		</div>
+	)}
 
 	if (isEditing) return <EditComposer />;
 
@@ -414,11 +425,15 @@ const PartialJsonMessageRenderer = ({ FallbackComp }: { FallbackComp: FC }) => {
 		return (
 			<AutoScrollJsonViewer
 				value={partialStructuredOutput}
-				containerClassName="border p-4 mt-2 mb-2 max-h-[600px] w-full overflow-y-auto custom-scrollbar"
+				containerClassName="border p-4 my-2 max-h-[600px] w-full overflow-y-auto custom-scrollbar"
 			/>
 		);
 	} else {
-		return <FallbackComp />;
+		return (
+			<div className="mt-1">
+				<FallbackComp />
+			</div>
+		);
 	}
 };
 
@@ -432,6 +447,8 @@ const DefaultTextComponent: FC = () => (
 );
 
 const AssistantMessageContent: FC = () => {
+	const isStreaming = useAuiState((s) => s.thread.isRunning);
+
 	return (
 		<div
 			data-slot="aui_assistant-message-content"
@@ -459,20 +476,30 @@ const AssistantMessageContent: FC = () => {
 						}
 						case "group-tool":
 							return (
-								<ToolGroupRoot>
-									<ToolGroupTrigger
-										count={part.indices.length}
-										active={part.status.type === "running"}
-									/>
-									<ToolGroupContent>{children}</ToolGroupContent>
-								</ToolGroupRoot>
+								<div className="my-2">
+									<ToolGroupRoot>
+										<ToolGroupTrigger
+											count={part.indices.length}
+											active={part.status.type === "running"}
+										/>
+										<ToolGroupContent>{children}</ToolGroupContent>
+									</ToolGroupRoot>
+								</div>
 							);
 						case "text":
 							return <PartialJsonMessageRenderer FallbackComp={MarkdownText} />;
 						case "reasoning":
-							return <Reasoning {...part} />;
+							return (
+								<div className="my-2">
+									<Reasoning {...part} />
+								</div>
+							);
 						case "tool-call":
-							return part.toolUI ?? <ToolFallback {...part} />;
+							return (
+								<div className="my-2">
+									{part.toolUI ?? <ToolFallback {...part} defaultOpen={isStreaming ? true : false} />}
+								</div>
+							);
 						case "indicator":
 							return <LoaderIcon className="size-4 animate-spin mt-2" />;
 						default:
@@ -593,6 +620,7 @@ const UserMessageContent: FC = () => {
 	const isFirstMessage = useAuiState(
 		(s) => s.thread.messages[0]?.id === s.message.id,
 	);
+	const isStreaming = useAuiState((s) => s.thread.isRunning);
 
 	return (
 		<div className="aui-user-message-content wrap-break-word peer rounded-2xl bg-muted px-4 py-2.5 text-foreground">
@@ -610,7 +638,7 @@ const UserMessageContent: FC = () => {
 						case "reasoning":
 							return <Reasoning {...part} />;
 						case "tool-call":
-							return part.toolUI ?? <ToolFallback {...part} />;
+							return part.toolUI ?? <ToolFallback {...part} defaultOpen={isStreaming ? true : false} />;
 						default:
 							return null;
 					}
@@ -628,7 +656,6 @@ const UserMessage: FC = () => {
 		.join("\n");
 
 	const isIntermediate = isIntermediatePrompt(fullText);
-	const promptTitle = getPromptTitle(fullText);
 
 	return (
 		<MessagePrimitive.Root
@@ -636,19 +663,17 @@ const UserMessage: FC = () => {
 			className="fade-in slide-in-from-bottom-1 grid animate-in auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 px-2 duration-150 [contain-intrinsic-size:auto_60px] [content-visibility:auto] [&:where(>*)]:col-start-2"
 			data-role="user"
 		>
-			{!isIntermediate && (
-				<div className="col-span-full col-start-1 row-start-1 flex w-full flex-row justify-end">
-					<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-						<UserIcon className="size-4" />
-					</div>
+			<div className="col-span-full col-start-1 row-start-1 flex w-full flex-row justify-end">
+				<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+					<UserIcon className="size-4" />
 				</div>
-			)}
+			</div>
 
 			<UserMessageAttachments />
 
 			{isIntermediate ? (
 				<div className="aui-user-message-content-wrapper relative col-start-1 min-w-0">
-					<CollapsiblePrompt title={promptTitle}>
+					<CollapsiblePrompt title={getPromptTitle(fullText)}>
 						<UserMessageContent />
 					</CollapsiblePrompt>
 				</div>

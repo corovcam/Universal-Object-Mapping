@@ -38,7 +38,7 @@ function ToolFallbackRoot({
 	className,
 	open: controlledOpen,
 	onOpenChange: controlledOnOpenChange,
-	defaultOpen = true,
+	defaultOpen = false,
 	children,
 	...props
 }: ToolFallbackRootProps) {
@@ -304,11 +304,18 @@ function ToolFallbackError({
 	);
 }
 
-const ToolFallbackImpl: ToolCallMessagePartComponent = ({
+const ToolFallbackImpl = ({
 	toolName,
 	argsText,
 	result,
 	status,
+	defaultOpen = false,
+}: {
+	toolName: string;
+	argsText: string;
+	result?: any;
+	status: ToolCallMessagePartStatus;
+	defaultOpen?: boolean;
 }) => {
 	const isCancelled =
 		status?.type === "incomplete" && status.reason === "cancelled";
@@ -316,6 +323,7 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
 	return (
 		<ToolFallbackRoot
 			className={cn(isCancelled && "border-muted-foreground/30 bg-muted/30")}
+			defaultOpen={defaultOpen}
 		>
 			<ToolFallbackTrigger toolName={toolName} status={status} />
 			<ToolFallbackContent>
@@ -339,7 +347,7 @@ const ToolFallback = memo(
 	Args: typeof ToolFallbackArgs;
 	Result: typeof ToolFallbackResult;
 	Error: typeof ToolFallbackError;
-};
+} & React.FC<React.ComponentProps<typeof ToolFallbackImpl>>;
 
 ToolFallback.displayName = "ToolFallback";
 ToolFallback.Root = ToolFallbackRoot;

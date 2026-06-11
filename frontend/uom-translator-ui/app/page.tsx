@@ -1,5 +1,28 @@
 import fs from "node:fs";
 import { Assistant } from "./assistant";
+import type { UOMGraphContext } from "@/lib/types";
+
+/**
+ * Default configuration values for the UOM Translator application, with environment variable overrides.
+ * This includes settings for Ollama, OpenAI, database connection strings, Daytona API, and more.
+ * Environment variables allow for secure and flexible configuration in different deployment contexts.
+ */
+export const DEFAULT_UOM_GRAPH_CONTEXT: UOMGraphContext = {
+	ollamaHost: process.env.OLLAMA_HOST || "http://localhost:11434",
+	model: process.env.MODEL || "einfra/kimi-k2.6",
+	openaiApiUrl: process.env.OPENAI_API_URL || "https://llm.ai.e-infra.cz/v1",
+	openaiApiKey: "",
+	mssqlConnectionString: process.env.MSSQL_CONNECTION_STRING || "Server=localhost,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True",
+	mongodbUri: process.env.MONGODB_URI || "mongodb://localhost:27027",
+	neo4jUri: process.env.NEO4J_URI || "neo4j://localhost:7697",
+	neo4jPassword: process.env.NEO4J_PASSWORD || "password",
+	daytonaTimeout: process.env.DAYTONA_TIMEOUT ? parseInt(process.env.DAYTONA_TIMEOUT) : 480,
+	dbToolboxUri: process.env.DB_TOOLBOX_URI || "http://localhost:5010",
+	daytonaApiUrl: process.env.DAYTONA_API_URL || "http://localhost:3000/api",
+	daytonaApiKey: "",
+	daytonaTarget: (process.env.DAYTONA_TARGET as "us" | "eu") || "us",
+	mongodbMcpUri: process.env.MONGODB_MCP_URI || "http://localhost:3010/mcp",
+};
 
 export default function Home() {
 	let efcoreToMongoInput: string | null = null;
@@ -63,7 +86,7 @@ export default function Home() {
 
 	return (
 		<main className="h-dvh w-screen overflow-hidden">
-			<Assistant inputData={{ inputSuggestions }} />
+			<Assistant inputData={{ defaultUomGraphContext: DEFAULT_UOM_GRAPH_CONTEXT, inputSuggestions }} />
 		</main>
 	);
 }

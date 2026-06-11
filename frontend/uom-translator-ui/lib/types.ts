@@ -46,7 +46,7 @@ export interface QueryEquivalenceDeepDiff {
  * Configuration schema for the UOM Translator frontend.
  * Persisted in localStorage and passed to the LangGraph execution runtime.
  */
-export interface UomConfig {
+export interface UOMGraphContext {
 	/** Endpoint hostname/port for the local Ollama instance (e.g. http://localhost:11434). */
 	ollamaHost: string;
 	/** The specific model name to run (e.g. einfra/kimi-k2.6, ollama/qwen3-coder:30b). */

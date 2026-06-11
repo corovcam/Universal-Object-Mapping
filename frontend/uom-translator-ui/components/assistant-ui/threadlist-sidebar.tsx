@@ -4,7 +4,7 @@ import { BookOpen, Settings } from "lucide-react";
 import Image from "next/image";
 import { useTheme } from "next-themes";
 import type * as React from "react";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { ThemeToggle } from "@/components/buttons";
 import { GitHubIcon } from "@/components/icons/github";
@@ -21,7 +21,7 @@ import {
 	SidebarMenuItem,
 	SidebarRail,
 } from "@/components/ui/sidebar";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonCard } from "@/components/ui/skeleton";
 import { ConfigModal } from "../config-modal";
 import { IdeLink } from "../ide-link";
 
@@ -131,14 +131,15 @@ export function ThreadListSidebar({
 			<SidebarFooter className="aui-sidebar-footer border-t">
 				<SidebarGroupLabel>Links</SidebarGroupLabel>
 				<SidebarMenu>
-					<SidebarMenuItem>
-						<SidebarMenuButton
-							asChild
-							className="rounded-lg px-3 text-sm"
-							tooltip="Open Documentation"
-						>
+					{process.env.NEXT_PUBLIC_DOCS_URL && (
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								asChild
+								className="rounded-lg px-3 text-sm"
+								tooltip="Open Documentation"
+							>
 							<a
-								href="https://github.com/corovcam/Universal-Object-Mapping"
+								href={process.env.NEXT_PUBLIC_DOCS_URL}
 								target="_blank"
 								rel="noopener noreferrer"
 								aria-label="Open Documentation"
@@ -148,14 +149,16 @@ export function ThreadListSidebar({
 							</a>
 						</SidebarMenuButton>
 					</SidebarMenuItem>
-					<SidebarMenuItem>
-						<SidebarMenuButton
-							asChild
-							className="rounded-lg px-3 text-sm"
-							tooltip="View on GitHub"
-						>
+					)}
+					{process.env.NEXT_PUBLIC_GITHUB_URL && (
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								asChild
+								className="rounded-lg px-3 text-sm"
+								tooltip="View on GitHub"
+							>
 							<a
-								href="https://github.com/corovcam/Universal-Object-Mapping"
+								href={process.env.NEXT_PUBLIC_GITHUB_URL}
 								target="_blank"
 								rel="noopener noreferrer"
 								aria-label="View on GitHub"
@@ -165,14 +168,17 @@ export function ThreadListSidebar({
 							</a>
 						</SidebarMenuButton>
 					</SidebarMenuItem>
+					)}
 				</SidebarMenu>
 			</SidebarFooter>
 			<SidebarRail />
-			<ConfigModal
-				isOpen={isConfigOpen}
-				onClose={() => setIsConfigOpen(false)}
-				onSave={() => setIsConfigOpen(false)}
-			/>
+			<Suspense>
+				<ConfigModal
+					isOpen={isConfigOpen}
+					onClose={() => setIsConfigOpen(false)}
+					onSave={() => setIsConfigOpen(false)}
+				/>
+			</Suspense>
 		</Sidebar>
 	);
 }

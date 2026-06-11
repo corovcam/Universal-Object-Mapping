@@ -44,7 +44,7 @@ export const useGraphStateContext = () => {
 	const context = useContext(GraphStateContext);
 	if (context === undefined) {
 		throw new Error(
-			"useGraphStateContext must be used within a GraphStateProvider",
+			"useGraphStateContext must be used within a GraphStateContextProvider",
 		);
 	}
 	return context;

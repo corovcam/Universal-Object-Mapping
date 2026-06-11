@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	AssistantCloud,
 	AssistantRuntimeProvider,
 	type RemoteThreadListAdapter,
 	Suggestions,
@@ -10,11 +11,12 @@ import {
 	type LangChainMessage,
 	useLangGraphRuntime,
 } from "@assistant-ui/react-langgraph";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { GraphStateContext } from "@/hooks/use-graph-state-context";
 import { createClient } from "@/lib/chatApi";
-import type { BackendState, UomConfig } from "@/lib/types";
+import { createAssistantStream } from "assistant-stream";
+import type { BackendState, UOMGraphContext } from "@/lib/types";
 
 /**
  * LangGraph Assistant ID for routing queries to the correct graph execution.
@@ -55,10 +57,64 @@ export const NODE_NAME_MAP = {
 };
 
 /**
+ * Normalizes message content so that no raw strings exist within a content array.
+ * Converts any string elements in the array to text part objects.
+ */
+function normalizeMessageContent(message: any): any {
+	if (!message) return message;
+	if (message.content !== undefined && message.content !== null) {
+		if (Array.isArray(message.content)) {
+			message.content = message.content.map((part: any) => {
+				if (typeof part === "string") {
+					return { type: "text", text: part };
+				}
+				return part;
+			});
+		}
+	}
+	return message;
+}
+
+/**
+ * Normalizes any events in the LangGraph stream so that nested message contents are correctly structured.
+ */
+function normalizeEvent(event: any): any {
+	if (!event || typeof event !== "object") return event;
+	if (event.data && typeof event.data === "object") {
+		const data = event.data;
+		if (event.event === "messages" && Array.isArray(data) && data.length > 0) {
+			data[0] = normalizeMessageContent(data[0]);
+		}
+		if (
+			(event.event === "messages/partial" || event.event === "messages/complete") &&
+			Array.isArray(data)
+		) {
+			event.data = data.map(normalizeMessageContent);
+		}
+		if (event.event === "values" && Array.isArray(data.messages)) {
+			data.messages = data.messages.map(normalizeMessageContent);
+		}
+		if (event.event === "updates") {
+			if (Array.isArray(data.messages)) {
+				data.messages = data.messages.map(normalizeMessageContent);
+			}
+			for (const key of Object.keys(data)) {
+				const val = data[key];
+				if (val && typeof val === "object" && Array.isArray(val.messages)) {
+					val.messages = val.messages.map(normalizeMessageContent);
+				}
+			}
+		}
+	}
+	return event;
+}
+
+/**
  * Errors that should be filtered out from showing up as global red error alerts.
  * Often happens when user cancels a running stream or browser environment discards requests.
  */
 const EXCLUDED_ERRORS = ["signal is aborted without reason"];
+
 
 /**
  * Wrapper component that sets up the LangGraph client, manages local React state for execution tracking,
@@ -88,6 +144,7 @@ export function AssistantRuntimeProviderWrapper({
 	const [activeNode, setActiveNode] = useState<
 		keyof typeof NODE_NAME_MAP | null
 	>(null);
+	const activeNodeRef = useRef<keyof typeof NODE_NAME_MAP | null>(activeNode);
 
 	/**
 	 * Custom LangGraph stream connection handler.
@@ -110,13 +167,13 @@ export function AssistantRuntimeProviderWrapper({
 				typeof window !== "undefined"
 					? localStorage.getItem("uom_translator_config")
 					: null;
-			const configurable: UomConfig = savedConfig
+			const configurable: UOMGraphContext = savedConfig
 				? JSON.parse(savedConfig)
 				: {};
 
 			const payload = {
 				input: messages.length ? { messages } : null,
-				streamMode: ["messages", "updates", "custom"],
+				streamMode: ["messages-tuple", "values", "custom"],
 				streamSubgraphs: true,
 				...(config.abortSignal != null && { signal: config.abortSignal }),
 				onDisconnect: "cancel",
@@ -156,6 +213,15 @@ export function AssistantRuntimeProviderWrapper({
 				payload as any,
 			);
 			return eventStream;
+
+			// const wrappedStream = async function* () {
+			// 	for await (const chunk of eventStream) {
+			// 		console.debug("[UOM] Stream chunk:", chunk);
+			// 		yield chunk;
+			// 	}
+			// };
+
+			// return wrappedStream();
 		};
 	}, [client]);
 
@@ -234,7 +300,12 @@ export function AssistantRuntimeProviderWrapper({
 			 * @param {string} remoteId - ID of the thread to delete.
 			 */
 			async delete(remoteId) {
-				await client.threads.delete(remoteId);
+				try {
+					await client.threads.delete(remoteId);
+				} catch (error) {
+					handleError("Failed to delete thread", error);
+					throw error;
+				}
 			},
 			/**
 			 * Pre-allocates a new thread ID with a localized timestamp placeholder title.
@@ -284,15 +355,32 @@ export function AssistantRuntimeProviderWrapper({
 			 * Generates an automated title for the thread.
 			 * Currently stubbed out to bypass additional LLM lookups.
 			 */
-			async generateTitle() {
-				return new ReadableStream({
-					start(controller) {
-						controller.close();
-					},
-				}) as any;
+			async generateTitle(remoteId) {
+				return createAssistantStream(async (controller) => {
+					let title = `Migration ${remoteId.slice(0, 4)}`;
+					try {
+						const thread = await client.threads.get(remoteId, {
+							include: ["metadata"],
+						});
+						title = (thread.metadata as { title?: string } | undefined)?.title || title;
+					} catch (error) {
+						console.error("[UOM] Error generating title:", error);
+					}
+					controller.appendText(title);
+				});
 			},
 		};
 	}, [client, handleError]);
+
+	// const cloud = useMemo(
+  //   () =>
+  //     new AssistantCloud({
+  //       baseUrl: process.env.NEXT_PUBLIC_ASSISTANT_BASE_URL!,
+  //       anonymous: true, // Creates browser session-based user ID
+	// 			telemetry: true, // Enables assistant-ui's built-in telemetry for usage analytics and debugging
+  //     }),
+  //   [],
+  // );
 
 	/**
 	 * Configures and hooks into the LangGraph client state manager.
@@ -300,6 +388,7 @@ export function AssistantRuntimeProviderWrapper({
 	 * mapping events like onMessageChunk and onUpdates to the React state.
 	 */
 	const runtime = useLangGraphRuntime({
+		// cloud, // Pass the cloud instance to enable assistant-ui's cloud features like session management and analytics
 		/** Enables user to cancel long-running agent loops manually. */
 		unstable_allowCancellation: true,
 		/** Core event stream callback. */
@@ -347,6 +436,9 @@ export function AssistantRuntimeProviderWrapper({
 						: { subgraphs: true },
 				);
 
+				// const rawMessages = state.values?.messages || [];
+				// const normalizedMessages = rawMessages.map(normalizeMessageContent);
+
 				return {
 					messages: state.values?.messages || [],
 					interrupts: state.tasks?.[0]?.interrupts || [],
@@ -354,6 +446,14 @@ export function AssistantRuntimeProviderWrapper({
 			} catch (error) {
 				handleError("Failed to load thread state", error);
 				return { messages: [], interrupts: [] };
+			}
+		},
+		delete: async (externalId) => {
+			try {
+				await client.threads.delete(externalId);
+			} catch (error) {
+				handleError("Failed to delete thread", error);
+				throw error;
 			}
 		},
 		/**
@@ -400,11 +500,14 @@ export function AssistantRuntimeProviderWrapper({
 			 * Triggered when a new token or structured data chunk is streamed from a node.
 			 * Used to set the currently active node dynamically in the UI.
 			 */
-			onMessageChunk: (_chunk: any, metadata: any) => {
-				const nodeName = metadata?.langgraph_node;
-				console.debug(`[UOM] Node: ${nodeName}`);
-				if (NODE_NAME_MAP[nodeName as keyof typeof NODE_NAME_MAP]) {
+			onMessageChunk: (_chunk, metadata) => {
+				const nodeName =(metadata?.langgraph_checkpoint_ns as string)?.split(":")[0];
+				console.debug(`[UOM] Message Metadata: ${metadata}`);
+				// TODO: use useRef for activeNode to avoid unnecessary re-renders on every chunk, and only update when nodeName changes
+				if (nodeName !== activeNodeRef.current && NODE_NAME_MAP?.[nodeName as keyof typeof NODE_NAME_MAP]) {
+					console.debug(`[UOM] Active node set to: ${nodeName}`);
 					setActiveNode(nodeName as keyof typeof NODE_NAME_MAP);
+					activeNodeRef.current = nodeName as keyof typeof NODE_NAME_MAP;
 				}
 			},
 			/**
@@ -430,9 +533,9 @@ export function AssistantRuntimeProviderWrapper({
 			 */
 			onSubgraphValues: (namespace: string, values: any) => {
 				console.debug(`[UOM] Subgraph values [${namespace}]:`, values);
-				if (values) {
-					setGraphState((prev) => ({ ...prev, ...values }));
-				}
+				// if (values) {
+				// 	setGraphState((prev) => ({ ...prev, ...values }));
+				// }
 			},
 			/**
 			 * Triggered when incremental sub-graph updates are broadcasted.
