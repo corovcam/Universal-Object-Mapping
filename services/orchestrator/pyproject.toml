@@ -113,6 +113,7 @@ convention = "google"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 collect_ignore_glob = ["old/*"]
+asyncio_mode="auto"
 markers = [
     "integration: requires running Docker services",
     "vcr: uses vcrpy to record/replay HTTP interactions",
