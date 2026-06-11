@@ -70,9 +70,14 @@
       "name": "Next.js: debug server-side",
       "type": "node-terminal",
       "request": "launch",
-      "command": "pnpm run dev",
+      "command": "pnpm run dev:frontend --inspect",
       "localRoot": "${workspaceFolder}/frontend/uom-translator-ui",
       "cwd": "${workspaceFolder}/frontend/uom-translator-ui",
+      "envFile": "${workspaceFolder}/frontend/uom-translator-ui/.env.development",
+      "sourceMapPathOverrides": {
+        "webpack:///./*": "${workspaceRoot}/frontend/uom-translator-ui/*",
+        "turbopack:///[project]/*": "${workspaceRoot}/frontend/uom-translator-ui/*"
+      },
     },
     {
       "name": "Next.js: debug client-side",
@@ -84,11 +89,21 @@
       "name": "Next.js: debug full stack",
       "type": "node",
       "request": "launch",
-      "runtimeExecutable": "/home/corovcak/.nvm/versions/node/v24.15.0/bin/node",
+      "runtimeExecutable": "node",
       "program": "${workspaceFolder}/frontend/uom-translator-ui/node_modules/next/dist/bin/next",
       "runtimeArgs": ["--inspect"],
-      "skipFiles": ["<node_internals>/**"],
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/**",
+        "**.next**"
+      ],
       "cwd": "${workspaceFolder}/frontend/uom-translator-ui",
+      "envFile": "${workspaceFolder}/frontend/uom-translator-ui/.env.development",
+      "console": "integratedTerminal",
+      "sourceMapPathOverrides": {
+        "webpack:///./*": "${workspaceRoot}/frontend/uom-translator-ui/*",
+        "turbopack:///[project]/*": "${workspaceRoot}/frontend/uom-translator-ui/*"
+      },
       "serverReadyAction": {
         "action": "debugWithChrome",
         "killOnServerStop": true,

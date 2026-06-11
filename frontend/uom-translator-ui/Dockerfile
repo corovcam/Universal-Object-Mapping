@@ -44,6 +44,11 @@ COPY --from=dependencies /app/node_modules ./node_modules
 # Copy application source code
 COPY . .
 
+ARG OUTER_HOST_GATEWAY_IP
+RUN if [ -n "$OUTER_HOST_GATEWAY_IP" ]; then \
+      sed -i 's|\${OUTER_HOST_GATEWAY_IP:-host.docker.internal}|'"$OUTER_HOST_GATEWAY_IP"'|g' .env.production; \
+    fi
+
 ENV NODE_ENV=production
 ARG CI=true
 
@@ -99,9 +104,14 @@ RUN chown node:node .next
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 
+ARG OUTER_HOST_GATEWAY_IP
+RUN if [ -n "$OUTER_HOST_GATEWAY_IP" ]; then \
+      sed -i 's|\${OUTER_HOST_GATEWAY_IP:-host.docker.internal}|'"$OUTER_HOST_GATEWAY_IP"'|g' .env.production; \
+    fi
+
 # If you want to persist the fetch cache generated during the build so that
 # cached responses are available immediately on startup, uncomment this line:
-COPY --from=builder --chown=node:node /app/.next/cache ./.next/cache
+# COPY --from=builder --chown=node:node /app/.next/cache ./.next/cache
 
 # Install additional dependencies using apt
 RUN apt-get update && \
