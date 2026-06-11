@@ -17,7 +17,7 @@
         "jitter": 0.1
       },
       "recordedTimings": {
-        "ttftMs": 1,
+        "ttftMs": 5000,
         "interChunkDelaysMs": [
           0,
           3371,
