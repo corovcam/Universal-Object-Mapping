@@ -7,6 +7,11 @@
         "turnIndex": 0,
         "hasToolResult": false
       },
+      "streamingProfile": {
+        "ttft": 5000,
+        "tps": 80,
+        "jitter": 0.1
+      },
       "response": {
         "content": "Let me inspect both the source SQL Server and target MongoDB schemas. I'll start by listing tables and collections in parallel.\n\n",
         "toolCalls": [

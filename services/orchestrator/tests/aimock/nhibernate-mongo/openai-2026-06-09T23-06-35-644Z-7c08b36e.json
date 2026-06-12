@@ -7,6 +7,11 @@
         "turnIndex": 5,
         "hasToolResult": true
       },
+      "streamingProfile": {
+        "ttft": 200,
+        "tps": 100,
+        "jitter": 0.15
+      },
       "response": {
         "content": "Let me also get the SQL Server column definitions for the key tables.\n\n\n\n\n\n",
         "toolCalls": [

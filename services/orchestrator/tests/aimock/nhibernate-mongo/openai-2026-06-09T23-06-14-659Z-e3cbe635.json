@@ -7,6 +7,11 @@
         "turnIndex": 3,
         "hasToolResult": true
       },
+      "streamingProfile": {
+        "ttft": 200,
+        "tps": 100,
+        "jitter": 0.15
+      },
       "response": {
         "content": "Now let me sample actual documents from both collections to see the data shapes.\n\n\n\n\n\n",
         "toolCalls": [

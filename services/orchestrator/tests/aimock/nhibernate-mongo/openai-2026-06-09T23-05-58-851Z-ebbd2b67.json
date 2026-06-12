@@ -7,6 +7,11 @@
         "turnIndex": 1,
         "hasToolResult": true
       },
+      "streamingProfile": {
+        "ttft": 200,
+        "tps": 100,
+        "jitter": 0.15
+      },
       "response": {
         "content": "Let me try the MongoDB side and also get the SQL Server schema.\n\n",
         "toolCalls": [

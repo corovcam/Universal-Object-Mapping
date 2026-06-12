@@ -11,8 +11,13 @@
         "content": "{ \"decision\": \"ACCEPT\", \"explanation\": \"Both source (.NET EF Core) and target (Java Spring Data MongoDB) validations passed successfully with exit code 0. All entities were validated in both environments, and all five translated queries executed without errors. The DeepDiff-based query equivalence check explicitly reports that query1 through query5 are all 'Equivalent'. No logical mismatches or syntactic failures were detected, indicating the translation preserves the intended semantics.\" }",
         "reasoning": "The user wants me to evaluate the validation results for a schema/query translation from .NET Entity Framework Core (SQL Server) to Java Spring Data MongoDB.\n\nLet me analyze the provided validation results:\n\n1.  **Source Validation (.NET EF Core):**\n    *   Build succeeded with 0 warnings and 0 errors.\n    *   Entities validated: Customer, CustomerTransaction, Order, OrderLine. All successful.\n    *   Queries executed (Query 1 through Query 5) all ran successfully against SQL Server.\n    *   Process exited with status 0.\n\n2.  **Target Validation (Java Spring Data MongoDB):**\n    *   Connected to MongoDB successfully.\n    *   Entities validated: Order, OrderLine. Both successful.\n    *   Queries executed (query1 through query5) all ran successfully against MongoDB.\n    *   Process exited with status 0.\n    *   STDERR contains only warnings about deprecated `sun.misc.Unsafe::objectFieldOffset` from Guava, which are benign and unrelated to the translation logic.\n\n3.  **Query Equivalence Results:**\n    *   The `check_query_equivalence` tool was called with the outputs from both validations.\n    *   The result explicitly states:\n        *   query1: Equivalent\n        *   query2: Equivalent\n        *   query3: Equivalent\n        *   query4: Equivalent\n        *   query5: Equivalent\n\nAll queries are marked as \"Equivalent\". Both source and target validations passed successfully. There are no errors indicating logical mismatches or syntactic issues in the generated code.\n\nTherefore, the translation is logically equivalent and syntactically valid.\n\nDecision: ACCEPT.\n\nReasoning:\n- Source validation passed (build succeeded, entities validated, queries ran).\n- Target validation passed (MongoDB connection succeeded, entities validated, queries ran).\n- Query equivalence check reports all 5 queries as \"Equivalent\".\n- No significant errors or logical discrepancies observed.\n\nOutput should be ACCEPT."
       },
+      "streamingProfile": {
+        "ttft": 5000,
+        "tps": 80,
+        "jitter": 0.1
+      },
       "recordedTimings": {
-        "ttftMs": 0,
+        "ttftMs": 5000,
         "interChunkDelaysMs": [
           0,
           1,

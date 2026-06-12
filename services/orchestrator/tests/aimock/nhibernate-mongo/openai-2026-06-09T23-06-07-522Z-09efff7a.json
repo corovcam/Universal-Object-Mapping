@@ -7,6 +7,11 @@
         "turnIndex": 2,
         "hasToolResult": true
       },
+      "streamingProfile": {
+        "ttft": 200,
+        "tps": 100,
+        "jitter": 0.15
+      },
       "response": {
         "content": "Good - the target MongoDB database is `uom` with collections `orderLines`, `orders`, `people`, and `suppliers`. The query code only deals with `OrderLine`, so let me inspect the `orderLines` and `orders` collections in detail.\n\n\n\n",
         "toolCalls": [
