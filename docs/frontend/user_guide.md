@@ -1,6 +1,9 @@
 # UOM Assistant Frontend: User & Operator Guide
 
-This guide is designed for database administrators, software engineers, and system architects who use the **Universal Object Mapping (UOM) Assistant** to migrate database schemas and queries from relational .NET environments to target NoSQL Java architectures.
+This guide is designed for database administrators, software engineers, and system architects who use the **Universal Object Mapping (UOM) Assistant** to migrate frameworks to any framework, currently tailored towards database schemas and queries from [ASP.NET](https://dotnet.microsoft.com/en-us/apps/aspnet) ORMs ([Entity Framework Core](https://learn.microsoft.com/en-us/ef/core/), [NHibernate](https://nhibernate.info/), [Dapper](https://github.com/DapperLib/Dapper)) to target [Java Spring](https://spring.io/) ORM/ODM/OGM ([Spring Data MongoDB](https://spring.io/projects/spring-data-mongodb/), [Spring Data Neo4j](https://spring.io/projects/spring-data-neo4j/)) architectures, and vice versa.
+
+> [!NOTE]
+> The Web APP is made for Desktop Browsers (preferably newer Google Chrome) and **IS NOT** optimized for mobile devices! The functionality is not tested there.
 
 ---
 
@@ -112,18 +115,19 @@ To execute a migration, paste your C# source schema and query code in the compos
 </p>
 
 ### 3.1 Stepper Nodes & Execution Progress
-During execution, a progress banner at the top of the chat area indicates the active pipeline step:
-*   **Extracting Input**: The assistant is parsing your framework types, versions, and code blocks.
-*   **Inspecting Database Schema**: The assistant is querying your source SQL Server via MCP to gather database metadata.
-*   **Translating Code**: The LLM is generating the equivalent Java target classes and queries.
-*   **Validating Schema / Query**: The assistant is spinning up Daytona containers to compile your C# and Java code concurrently.
-*   **Evaluating Translation**: The assistant is running DeepDiff comparison checks between relational SQL Server outputs and NoSQL query executions.
+During execution, a progress banner and/or specific graph prompts (hidden in accordions) is shown at the top/bottom of the current message, which indicates the current active pipeline step:
+
+- **Extracting Input**: The assistant is parsing your framework types, versions, and code blocks.
+- **Inspecting Database Schema**: The assistant is querying your source SQL Server and target MongoDB/Neo4j DBMS via MCP to gather database metadata.
+- **Translating Code**: The LLM is generating the equivalent  target classes and queries.
+- **Validating Schema / Query**: The assistant is spinning up Daytona containers to compile, run your generated C# and Java code harnesses concurrently.
+- **Evaluating Translation**: The assistant is running [DeepDiff](https://github.com/qlustered/deepdiff) comparison checks between JSON- serialized entities from relational MS SQL Server outputs and NoSQL (MongoDB, Neo4j) query executions by their respective frameworks: ASP .NET Entity Framework Core and Spring Data MongoDB/Spring Data Neo4j.
 
 ---
 
 ## 4. Troubleshooting & Manual Interventions
 
-When validation compilation fails or the semantic equivalence check identifies differences, the orchestrator suspends the graph execution.
+When validation compilation fails or the semantic equivalence check identifies differences after 3 attempts, the orchestrator suspends the graph execution.
 
 ### 4.1 The Manual Invervention Control Card
 When execution is suspended, a warning card is displayed in the chat thread with text "The translation pipeline reached the maximum automatic retries (3)." The card contains three sections:

@@ -14,7 +14,7 @@ The UOM platform runs as a distributed multi-container environment divided into 
 flowchart TD
     subgraph ClientSpace ["Developer / Client Space"]
         Browser["Next.js Web Browser (Port 3001)"]
-        IDE["Local IDE (VS Code / Cursor / JetBrains)"]
+        IDE["Local IDE (VS Code / Cursor)"]
     end
 
     subgraph CoreCompose ["Core Docker Compose Stack ('uom' network)"]

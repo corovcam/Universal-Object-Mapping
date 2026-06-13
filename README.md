@@ -1,6 +1,6 @@
-# Universal Object Mapping (UOM)
+<h1><span style="display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px;">Universal Object Mapping (UOM) <img src="docs/frontend/img/logo-uom-white-730.svg" height="64" alt="Universal Object Mapping (UOM) Logo" title="Universal Object Mapping (UOM) Logo" /></span></h1>
 
-Universal Object Mapping (UOM) is an advanced research and engineering platform designed to automate the translation, validation, and performance optimization of database schemas and query code across diverse Object-Relational Mapping (ORM), Object-Document Mapping (ODM), and Object-Graph Mapping (OGM) paradigms. 
+**Universal Object Mapping (UOM)** is an advanced research and engineering platform designed to automate the translation, validation, and performance optimization of database schemas and query code across diverse Object-Relational Mapping (ORM), Object-Document Mapping (ODM), and Object-Graph Mapping (OGM) paradigms. 
 
 Developed within the **Adaptive Data Management (ADaM) Research Group** at the Department of Software Engineering, Charles University (Faculty of Mathematics and Physics), the project addresses the complex challenges of multi-model database migrations. UOM transitions relational .NET ORM structures (.NET Entity Framework Core, Dapper, NHibernate) into document and graph-based Java Spring Data ecosystems (Spring Data MongoDB, Spring Data Neo4j) with structural compile-and-execute guarantees.
 

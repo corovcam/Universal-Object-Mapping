@@ -12,38 +12,33 @@ This document outlines the design specifications, styling variables, parsing alg
 The settings panel allows developers to configure LLM providers, database connection strings, and Daytona sandbox timeouts.
 
 ### 1.1 Default Configuration Object
-When no user configuration is present in the browser, the application falls back to defaults tuned for local deployment:
+When no user configuration is present in the environment variables (server side, so not readable by the client), the application falls back to defaults tuned for local deployment:
 ```typescript
-const DEFAULT_CONFIG = {
-    ollamaHost: "http://localhost:11434",
-    model: "einfra/kimi-k2.6",
-    openaiApiUrl: "https://llm.ai.e-infra.cz/v1",
-    openaiApiKey: "",
-    mssqlConnectionString: "Server=localhost,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True",
-    mongodbUri: "mongodb://localhost:27027",
-    neo4jUri: "neo4j://localhost:7697",
-    neo4jPassword: "password",
-    daytonaTimeout: 480,
-    dbToolboxUri: "http://localhost:5010",
-    daytonaApiUrl: "http://localhost:3000/api",
-    daytonaApiKey: "",
-    daytonaTarget: "us",
-    mongodbMcpUri: "http://localhost:3010/mcp",
+const DEFAULT_UOM_GRAPH_CONTEXT = {
+	ollamaHost: process.env.OLLAMA_HOST || "http://localhost:11434",
+	model: process.env.MODEL || "einfra/kimi-k2.6",
+	openaiApiUrl: process.env.OPENAI_API_URL || "https://llm.ai.e-infra.cz/v1",
+	openaiApiKey: "",
+	mssqlConnectionString: process.env.MSSQL_CONNECTION_STRING || "Server=localhost,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True",
+	mongodbUri: process.env.MONGODB_URI || "mongodb://localhost:27027",
+	neo4jUri: process.env.NEO4J_URI || "neo4j://localhost:7697",
+	neo4jPassword: process.env.NEO4J_PASSWORD || "password",
+	daytonaTimeout: process.env.DAYTONA_TIMEOUT ? parseInt(process.env.DAYTONA_TIMEOUT) : 480,
+	dbToolboxUri: process.env.DB_TOOLBOX_URI || "http://localhost:5010",
+	daytonaApiUrl: process.env.DAYTONA_API_URL || "http://localhost:3000/api",
+	daytonaApiKey: "",
+	daytonaTarget: (process.env.DAYTONA_TARGET as "us" | "eu") || "us",
+	mongodbMcpUri: process.env.MONGODB_MCP_URI || "http://localhost:3010/mcp",
 };
 ```
 
 ### 1.2 Mount & Saving Lifecycle
-*   **On Mount**: Checks for the existence of `localStorage.getItem("uom_translator_config")`. If found, it parses the JSON and merges it over the default state object: `setConfig({ ...DEFAULT_CONFIG, ...JSON.parse(saved) })`.
+*   **On Mount**: Checks for the existence of `localStorage.getItem("uom_translator_config")`. If found, it parses the JSON and merges it over the default state object: `setConfig({  ...appContext.defaultUomGraphContext, ...JSON.parse(saved) })`.
 *   **On Save**: Encodes variables into the storage keys and sets the onboarding flag to prevent automatic popups on subsequent visits:
     ```typescript
     localStorage.setItem("uom_translator_config", JSON.stringify(config));
     localStorage.setItem("uom_config_onboarded", "true");
-    setSaveSuccess(true);
-    setTimeout(() => {
-        setSaveSuccess(false);
-        onSave(config);
-        onClose();
-    }, 800);
+    ...
     ```
 
 ---
@@ -72,16 +67,15 @@ The component uses a regular expression to parse the raw SSH command and extract
 ```typescript
 const parseSshCommand = (cmd?: string, token?: string) => {
     let user = null;
-    let host = "localhost";
-    let port = "2222";
+    let host = process.env.NEXT_PUBLIC_SSH_GATEWAY_URL ? new URL(process.env.NEXT_PUBLIC_SSH_GATEWAY_URL).hostname : "localhost";
+    let port = process.env.NEXT_PUBLIC_SSH_GATEWAY_URL ? new URL(process.env.NEXT_PUBLIC_SSH_GATEWAY_URL).port : "2222";
     if (!cmd && !token) return { user, host, port };
-    
-    // Regex extracts port (group 1), user (group 2), and host (group 3)
     const match = cmd?.match(/ssh\s+(?:-p\s+(\d+)\s+)?([^@\s]+)@([^\s]+)/);
     if (match) {
-        if (match[1]) port = match[1];
+        if (match[1] && match[1] !== "2222") port = match[1];
+        port = port !== "2222" ? port : "2222";
         user = match[2];
-        host = match[3];
+        host = host !== "localhost" ? host : match[3];
     }
     if (!user) user = token ?? null;
     return { user, host, port };
@@ -92,7 +86,6 @@ const parseSshCommand = (cmd?: string, token?: string) => {
 The extracted credentials are mapped to deep-link protocols:
 *   **VS Code**: `vscode://vscode-remote/ssh-remote+${user}@${host}:${port}/sandbox`
 *   **Cursor**: `cursor://vscode-remote/ssh-remote+${user}@${host}:${port}/sandbox`
-*   **JetBrains Gateway**: `jetbrains-gateway://connect/ssh?host=${host}&port=${port}&user=${user}&projectPath=/sandbox`
 
 ---
 
@@ -101,7 +94,7 @@ The extracted credentials are mapped to deep-link protocols:
 *   **File Path**: [`frontend/uom-translator-ui/components/json-viewer.tsx`](../../frontend/uom-translator-ui/components/json-viewer.tsx)
 *   **Component**: `AutoScrollJsonViewer`
 
-Renders streaming JSON structures (such as validation details or DeepDiff results) using `@uiw/react-json-view`.
+Renders streaming JSON structures (such as validation details or DeepDiff results) using [`@uiw/react-json-view`](https://uiwjs.github.io/react-json-view/).
 
 ### 3.1 Pinned Scrolling & MutationObserver
 To keep the viewport aligned with streaming content, the component uses a `MutationObserver` combined with a pinning reference to prevent closures from losing scroll state during updates:
@@ -172,10 +165,10 @@ const handleScroll = () => {
     *   [`frontend/uom-translator-ui/components/assistant-ui/markdown-text.tsx`](../../frontend/uom-translator-ui/components/assistant-ui/markdown-text.tsx)
     *   [`frontend/uom-translator-ui/components/assistant-ui/shiki-highlighter.tsx`](../../frontend/uom-translator-ui/components/assistant-ui/shiki-highlighter.tsx)
 
-These components parse and render streaming markdown text from the assistant.
+These components parse and render streaming markdown text from the assistant via Vercel's [`streamdown`](https://github.com/vercel/streamdown), [`react-markdown`](https://github.com/remarkjs/react-markdown), and[ `react-shiki`](https://react-shiki.vercel.app/) syntax highlighter.
 
 ### 4.1 Partial JSON Parsing Algorithm
-To display streaming JSON code blocks before they are fully generated, the syntax highlighter uses a partial JSON decoder to close open braces and quotes on-the-fly, rendering the result as an interactive tree:
+To display streaming JSON code blocks before they are fully generated, the syntax highlighter uses a partial JSON decoder ([partial-json](https://github.com/promplate/partial-json-parser-js) package) to close open braces and quotes on-the-fly, rendering the result as an interactive tree:
 ```typescript
 import { Allow, parse as parsePartialJson } from "partial-json";
 

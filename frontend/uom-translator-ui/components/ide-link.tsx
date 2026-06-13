@@ -22,8 +22,6 @@ export enum SupportedIDEs {
 	vscode = "vscode",
 	/** Cursor AI Editor (cursor:// scheme) */
 	cursor = "cursor",
-	/** JetBrains Gateway client (jetbrains-gateway:// scheme) */
-	jetbrains = "jetbrains",
 }
 
 /**
@@ -42,7 +40,7 @@ export interface SandboxInfo {
 
 /**
  * React Component providing deep links and SSH credentials for IDEs.
- * Enables developers to connect VS Code, Cursor, or JetBrains Gateway directly into
+ * Enables developers to connect VS Code or Cursor directly into
  * the Daytona container compilation sandboxes in order to examine build environments or debug code.
  *
  * @returns {React.JSX.Element} Remote workspace linking controls.
@@ -169,7 +167,6 @@ export function IdeLink() {
 
 	const VSCODE_DEEP_LINK = `vscode://vscode-remote/ssh-remote+${user}@${host}:${port}/sandbox`;
 	const CURSOR_DEEP_LINK = `cursor://vscode-remote/ssh-remote+${user}@${host}:${port}/sandbox`;
-	const JETBRAINS_DEEP_LINK = `jetbrains-gateway://connect/ssh?host=${host}&port=${port}&user=${user}&projectPath=/sandbox`;
 
 	const displaySshCommand =
 		sandboxInfo?.sshCommand || `ssh ${user}@${host} -p ${port}`;
@@ -183,13 +180,11 @@ export function IdeLink() {
 	const getDeepLink = () => {
 		if (activeIde === SupportedIDEs.vscode) return VSCODE_DEEP_LINK;
 		if (activeIde === SupportedIDEs.cursor) return CURSOR_DEEP_LINK;
-		return JETBRAINS_DEEP_LINK;
 	};
 
 	const getIdeLabel = () => {
 		if (activeIde === SupportedIDEs.vscode) return "VS Code";
 		if (activeIde === SupportedIDEs.cursor) return "Cursor";
-		return "JetBrains";
 	};
 
 	return (
@@ -286,7 +281,6 @@ export function IdeLink() {
 					{[
 						SupportedIDEs.vscode,
 						SupportedIDEs.cursor,
-						SupportedIDEs.jetbrains,
 					].map((ide) => (
 						<button
 							key={ide}
@@ -305,9 +299,7 @@ export function IdeLink() {
 							<span>
 								{ide === SupportedIDEs.vscode
 									? "VS Code Remote"
-									: ide === SupportedIDEs.cursor
-										? "Cursor Remote"
-										: "JetBrains Gateway"}
+									: "Cursor Remote"}
 							</span>
 							<span className="font-mono text-[9px] text-muted-foreground">
 								{ide}://

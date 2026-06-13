@@ -20,7 +20,7 @@ The wrapper maintains the local reactive state machine:
 
 ## 2. Configurable Context Injection (`stream`)
 
-When a user submits a query via the Composer input, the custom `stream` callback triggers. This method loads credentials and database configuration settings from `localStorage` under the `"uom_translator_config"` key and injects them as a structured payload into the run execution context:
+When a user submits a query via the Composer input, the custom `stream` callback triggers. This method loads credentials and database configuration settings from `localStorage` under the `"uom_translator_config"` key and injects them as a structured payload into the run execution context. For more information on LanGraph SDK client methods/options (streamMode, streamSubgraphs, context), see the [LangGraph SDK documentation](https://reference.langchain.com/javascript/langchain-langgraph-sdk).
 
 ```typescript
 const savedConfig = typeof window !== "undefined" ? localStorage.getItem("uom_translator_config") : null;
@@ -28,8 +28,15 @@ const configurable: UomConfig = savedConfig ? JSON.parse(savedConfig) : {};
 
 const payload = {
     input: messages.length ? { messages } : null,
-    streamMode: ["messages", "updates", "custom"],
+    streamMode: ["messages-tuple", "values", "custom"],
     streamSubgraphs: true,
+    ...(config.abortSignal != null && { signal: config.abortSignal }),
+    onDisconnect: "cancel",
+    multitaskStrategy: "reject",
+    ...(config.command != null && { command: config.command }),
+    ...(config.checkpointId != null && {
+        checkpoint: { checkpoint_id: config.checkpointId },
+    }),
     context: {
         ollama_host: configurable.ollamaHost || undefined,
         openai_api_url: configurable.openaiApiUrl || undefined,
@@ -45,11 +52,16 @@ const payload = {
         daytona_api_key: configurable.daytonaApiKey || undefined,
         daytona_target: configurable.daytonaTarget || undefined,
         sandbox_execution_timeout: configurable.daytonaTimeout || undefined,
-    }
+    },
 };
 
 const eventStream = await client.runs.stream(externalId, ASSISTANT_ID, payload);
 ```
+
+Some payload parameters, come directly from `assistant-ui` runtime, which are passed through the `config` argument of the `stream` method:
+*   `abortSignal`: An `AbortController` signal that can be triggered to cancel the stream.
+*   `command`: An optional string command, use for example in the `InterruptHandler` component to send resume commands back to the LangGraph.
+*   `checkpointId`: An optional string identifier for resuming from a specific checkpoint in the thread history.
 
 ### 2.1 LLM Backend Switcher
 This injection logic allows users to swap models and providers on-the-fly:
@@ -63,7 +75,7 @@ This injection logic allows users to swap models and providers on-the-fly:
 The runtime adapter processes LangGraph events to sync backend execution details with the UI.
 
 ### 3.1 Sub-graph State Merging
-To track execution parameters inside nested validation or equivalence test subgraphs, the runtime processes sub-graph values and merges them into the main state object:
+To track execution parameters inside nested validation or equivalence test subgraphs, the runtime processes sub-graph values and merges them into the main state object. See [LangGraph Subgraph Docs](https://docs.langchain.com/oss/python/langgraph/use-subgraphs) how multi-agent orchestration works.
 ```typescript
 onSubgraphValues: (namespace: string, values: any) => {
     if (values) {
@@ -92,40 +104,6 @@ const handleError = (msg: string, error?: any) => {
     }
     console.error(`[UOM Error] ${msg}:`, error);
 };
-```
-
----
-
-## 4. History-Aware Checkpoint Resolution (`getCheckpointId`)
-
-When a user deletes a message, forks a conversation, or backtracks to a previous step, the system must locate the corresponding checkpoint ID in the thread history to avoid state divergence.
-
-The `getCheckpointId` callback retrieves the thread history and matches the current messages array against prior checkpoints:
-```typescript
-getCheckpointId: async (threadId, parentMessages) => {
-    try {
-        const history = await client.threads.getHistory<BackendState>(threadId);
-        for (const state of history) {
-            const stateMessages = state.values.messages;
-            if (!stateMessages || stateMessages.length !== parentMessages.length) {
-                continue;
-            }
-            const hasStableIds =
-                parentMessages.every((m) => typeof m.id === "string") &&
-                stateMessages.every((m) => typeof m.id === "string");
-            if (!hasStableIds) continue;
-            
-            const isMatch = parentMessages.every((m, i) => m.id === stateMessages[i]?.id);
-            if (isMatch) {
-                return state.checkpoint.checkpoint_id ?? null;
-            }
-        }
-        return null;
-    } catch (error) {
-        handleError("Failed to get checkpoint ID", error);
-        return null;
-    }
-}
 ```
 
 ---
@@ -202,3 +180,5 @@ The component uses hooks from `@assistant-ui/react-langgraph` to resume the grap
         const resume = JSON.stringify({ decision: "reject", feedback });
         await sendCommand({ resume });
         ```
+
+For more information on interrupt handling and human-in-the-loop patterns, see the [LangGraph Interrupts Documentation](https://docs.langchain.com/oss/python/langgraph/interrupts).

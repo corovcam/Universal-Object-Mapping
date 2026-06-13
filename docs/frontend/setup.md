@@ -9,7 +9,7 @@ This guide describes how to configure, run, and contribute to the **UOM Assistan
 The frontend uses environment files located at the root of the [`uom-translator-ui`](../../frontend/uom-translator-ui) directory:
 *   `.env.development`: Default variables for local developer runs.
 *   `.env.production`: Production fallback configurations.
-*   `.env.local`: User overrides (contains secrets; git-ignored).
+*   `.env.local`: User overrides (contains additional local settings).
 
 ### Key Variables
 
@@ -19,7 +19,7 @@ The frontend uses environment files located at the root of the [`uom-translator-
 | `NEXT_PUBLIC_LANGGRAPH_API_URL` | Direct client-side SDK API endpoint reference. | (Defaults to Next.js API proxy `/api`) |
 | `NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID` | Graph assistant routing identifier. | `universal-object-mapping-translator` |
 | `LANGSMITH_TRACING` | Enables trace recording on LangSmith. | `true` |
-| `LANGSMITH_API_KEY` | Secret credential key for LangSmith tracing logs. | `lsv2_pt_...` |
+| `LANGSMITH_API_KEY` | Secret credential key. NECESSARY for LangSmith License Authentication. Not required for local frontend development. | `lsv2_pt_...` |
 
 ---
 
@@ -72,10 +72,10 @@ The frontend uses environment files located at the root of the [`uom-translator-
     ```bash
     cp .env.example .env.production
     ```
-    Configure the actual production backend service endpoints and database authorization credentials within `.env.production`.
+    Configure the actual production backend service endpoints (based on your networking setup) and database authorization credentials within `.env.production`.
 
 2.  **Multi-Stage Dockerfile Compilation**:
-    The production environment compiles the Next.js dashboard using a multi-stage [Dockerfile](../../frontend/uom-translator-ui/Dockerfile) to optimize image footprint and isolate environment configurations:
+    The production environment compiles the Next.js dashboard using a multi-stage [Dockerfile](../../frontend/uom-translator-ui/Dockerfile) to optimize image footprint and isolate environment configurations based on [Next.js Official Example](https://github.com/vercel/next.js/tree/canary/examples/with-docker) patterns. The stages include:
 
     *(Note: The Dockerfile stages shown below are simplified conceptual representations of the actual multi-stage build process.)*
     *   **Stage 1 (Dependencies)**: Installs production and development node packages using frozen lockfile validation:

@@ -20,7 +20,7 @@ flowchart LR
 ### 1.2 Custom Translation & Operational Features
 *   **State-Aware UI Progress Tracker**: Maps internal LangGraph node IDs in real-time to user-friendly execution steps (e.g. *Inspecting Database Schema*, *Validating Query Logic*), displaying progress as a visual stepper.
 *   **Onboarding & Configuration Panel**: Allows users to configure remote OpenAI-compatible clusters (such as e-INFRA CZ), local Ollama instances, database connection strings, and Daytona sandbox limits.
-*   **Daytona IDE Integration**: Fetches sandbox details and provisions SSH connection tokens to open your local IDE (VS Code, Cursor, JetBrains Gateway) directly inside the Daytona sandbox.
+*   **Daytona IDE Integration**: Fetches sandbox details and provisions SSH connection tokens to open your local IDE (VS Code, Cursor) directly inside the Daytona sandbox.
 *   **Streaming JSON Trees**: Uses `partial-json` to decode incomplete JSON code blocks in real-time, rendering them inside interactive tree components.
 *   **Interactive Suspended Interventions**: Suspends the runtime when validation retries are exhausted, showing build outputs and DeepDiff logs, and providing buttons to Accept or Reject & Correct the code.
 

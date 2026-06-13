@@ -8,6 +8,7 @@
 	},
 	"scripts": {
 		"dev": "concurrently -k --kill-timeout 10000 --names frontend,backend,aimock 'pnpm run dev:frontend --inspect' './scripts/run-dev-backend.sh' 'cd ../../services/orchestrator && make record_requests'",
+		"dev:backend": "concurrently -k --kill-timeout 10000 --names frontend,backend,aimock 'pnpm run dev:frontend --inspect' './scripts/run-dev-backend.sh'",
 		"dev:frontend": "next dev --turbopack",
 		"build": "next build",
 		"start": "next start",

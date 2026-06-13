@@ -2,7 +2,7 @@
 
 Welcome to the comprehensive system overview for the **Universal Object Mapping (UOM) Assistant** frontend dashboard (internally named `uom-translator-ui`). 
 
-The UOM Assistant is a premium web portal and interactive AI advisor designed to guide software developers, database administrators (DBAs), and system architects through the complex lifecycle of cross-paradigm schema and query migrations. In modern data-intensive systems, shifting a software stack from a relational database schema to an optimized NoSQL paradigm (document or graph) is highly error-prone. The UOM frontend solves this by providing a unified workspace that coordinates relational SQL inspections, LLM-based query translations, Daytona container-based builds, and real-time execution telemetry.
+The UOM Assistant is a web chatbot-like dashboard and interactive AI advisor designed to guide software developers, database administrators (DBAs), and system architects through the complex lifecycle of cross-paradigm schema and query migrations. In modern data-intensive systems, shifting a software stack from a relational database schema to an optimized NoSQL paradigm (document or graph) is highly error-prone. The UOM frontend solves this by providing a unified workspace that coordinates relational SQL inspections, LLM-based query translations, Daytona container-based builds, and real-time execution telemetry.
 
 ---
 
@@ -17,7 +17,7 @@ The UOM Assistant targets two primary personas:
 ## 2. Core Capabilities
 
 ### 2.1 AI-Driven Interactive Workspace (`assistant-ui`)
-The interface leverages the modern [`assistant-ui`](https://github.com/assistant-ui/assistant-ui) library to deliver a conversational agent environment optimized for technical workflows. Rather than treating chat as a generic text bubble interface, the UOM dashboard maps the components of the assistant:
+The interface leverages the modern [`assistant-ui`](https://github.com/assistant-ui/assistant-ui) library with pre-built [LangGraph runtime template](https://github.com/assistant-ui/assistant-ui/tree/main/examples/with-langgraph) (using their [Quickstart tutorial](https://www.assistant-ui.com/docs/runtimes/langgraph/quickstart)) to deliver a conversational agent environment optimized for technical workflows. Rather than treating chat as a generic text bubble interface, the UOM dashboard maps the components of the assistant:
 *   **Structured Prompt Suggestions**: Pre-baked onboarding templates for translating NHibernate to MongoDB, Dapper to Spring Data MongoDB, and EF Core to MongoDB/Neo4j.
 *   **Collapsible Thinking Accordions**: Renders the raw reasoning path of the underlying LLM (e.g., `einfra/kimi-k2.6` or `einfra/deepseek-v4-pro-thinking`), keeping the chat clean while preserving diagnostic depth.
 *   **MCP Tool Call Integration**: Displays the invocation parameters and execution status of external database tools, letting engineers see exactly what tables are being analyzed.
@@ -26,7 +26,7 @@ The interface leverages the modern [`assistant-ui`](https://github.com/assistant
 During the translation phase, the backend provisions containerized sandbox compilation units using Daytona. The frontend:
 *   Queries the container gateway to retrieve active build context metadata.
 *   Provisions temporary SSH authorization tokens.
-*   Generates deep-link URIs to connect local developer workstations (`vscode://`, `cursor://`, or `jetbrains-gateway://`) directly to the active compilation sandbox.
+*   Generates deep-link URIs to connect local developer workstations (`vscode://`, or `cursor://`) directly to the active compilation sandbox.
 
 ### 2.3 Streaming JSON Parsers & Scroll Locking
 Rather than waiting for the agent to finish generating large multi-kilobyte JSON state updates or compilation reports:
@@ -51,7 +51,7 @@ flowchart TD
     User([Developer / DBA]) <-->|Browser UI| View[Next.js Client Components]
     
     subgraph FrontendApp ["Next.js Frontend (Port 3020/3001)"]
-        View <-->|React Context / Hooks| StateProvider[GraphStateProvider]
+        View <-->|React Context / Hooks| StateProvider[GraphStateProvider<br>AppContextProvider]
         View <-->|Render Stream| Streamdown[StreamdownText & MarkdownText]
         View <-->|Interactive Gate| InterruptCard[InterruptHandler]
         
@@ -61,7 +61,7 @@ flowchart TD
     end
     
     subgraph BackendOrchestrator ["LangGraph Backend (Port 2024)"]
-        LangGraph["LangGraph SDK Server"] <-->|Runs Pipeline| StateGraph["StateGraph Engine"]
+        LangGraph["LangGraph Agent Server"] <-->|Runs Pipeline| StateGraph["CompiledStateGraph Instance"]
     end
     
     View <-->|Requests / api/*| ProxyRoute
@@ -83,5 +83,6 @@ To help developers contribute to the frontend codebase, the layout of the source
     *   **[`components/json-viewer.tsx`](../../frontend/uom-translator-ui/components/json-viewer.tsx)**: Auto-scrolling JSON tree rendering component.
 *   **[`hooks/`](../../frontend/uom-translator-ui/hooks)**: Context providers and hooks.
     *   **[`hooks/use-graph-state-context.ts`](../../frontend/uom-translator-ui/hooks/use-graph-state-context.ts)**: Context hook distributing active node execution variables.
+    *   **[`hooks/use-app-context.ts`](../../frontend/uom-translator-ui/hooks/use-app-context.ts)**: Context hook distributing global app state (e.g. default config from environment variables).
 *   **[`lib/`](../../frontend/uom-translator-ui/lib)**: Type contracts and client factories.
     *   **[`lib/chatApi.ts`](../../frontend/uom-translator-ui/lib/chatApi.ts)**: LangGraph SDK client initialization factory.
