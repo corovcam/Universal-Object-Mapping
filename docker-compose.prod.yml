@@ -12,8 +12,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
-      NEXT_PUBLIC_LANGGRAPH_API_URL: "http://localhost:${FRONTEND_PORT}/api"
+      NEXT_PUBLIC_LANGGRAPH_API_URL: "https://entrust-clamshell-tabasco.ngrok-free.dev/api"
       LANGGRAPH_API_URL: "http://langgraph-api:8000"
+      OUTER_HOST_GATEWAY_IP: ${OUTER_HOST_GATEWAY_IP:-host-gateway}
     ports:
       - "${FRONTEND_PORT}:3000"
     restart: unless-stopped
@@ -205,6 +206,32 @@ services:
       - portainer_data:/data
     ports:
       - 9020:9000
+
+  aimock:
+    image: ghcr.io/copilotkit/aimock:latest
+    command: ["-f", "/app/fixtures", "-h", "0.0.0.0", "--metrics", "--proxy-only", "--watch", "--latency", "5", "--upstream-timeout-ms", "300000", "--body-timeout-ms", "300000", "--log-level", "debug", "--provider-openai", "https://llm.ai.e-infra.cz"]
+    ports:
+      - "4010:4010"
+    volumes:
+      - ./services/orchestrator/tests/aimock:/app/fixtures
+    restart: unless-stopped
+    networks:
+      - default
+      - uom
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    command:
+      - "start"
+      - "--all"
+      - "--config"
+      - "/etc/ngrok.yml"
+    volumes:
+      - ./ngrok.yml:/etc/ngrok.yml
+    ports:
+      - 4040:4040
+    network_mode: host
   
   # code-server:
   #   image: lscr.io/linuxserver/code-server:latest

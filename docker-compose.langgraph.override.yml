@@ -20,6 +20,7 @@ services:
       # - FF_PROFILE_IMPORTS=true
       - OUTER_HOST_GATEWAY_IP=${OUTER_HOST_GATEWAY_IP:-host-gateway}
       - FRONTEND_URL=http://localhost:${FRONTEND_PORT}
+      - LANGGRAPH_API_URL=http://localhost:8123
     #   - REDIS_URI=redis://langgraph-redis:6379
     #   - POSTGRES_URI=postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
     #   - NEO4J_DATABASE=neo4j

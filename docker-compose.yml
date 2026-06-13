@@ -207,57 +207,6 @@ services:
     ports:
       - 9020:9000
 
-  aimock:
-    image: ghcr.io/copilotkit/aimock:latest
-    command: ["-f", "/app/fixtures", "-h", "0.0.0.0", --latency 5 --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz]
-    ports:
-      - "4010:4010"
-    volumes:
-      - ./services/orchestrator/tests/aimock/fixtures:/app/fixtures
-    restart: unless-stopped
-    networks:
-      - default
-      - uom
-
-  ngrok:
-    image: ngrok/ngrok:latest
-    restart: unless-stopped
-    command:
-      - "start"
-      - "--all"
-      - "--config"
-      - "/etc/ngrok.yml"
-    volumes:
-      - ./ngrok.yml:/etc/ngrok.yml
-    ports:
-      - 4040:4040
-    networks:
-      - default
-      - uom
-  
-  # code-server:
-  #   image: lscr.io/linuxserver/code-server:latest
-  #   container_name: code-server
-  #   environment:
-  #     - PUID=1000
-  #     - PGID=1000
-  #     - TZ=Etc/UTC
-  #     - PASSWORD=password #optional
-  #     # - HASHED_PASSWORD= #optional
-  #     - SUDO_PASSWORD=password #optional
-  #     # - SUDO_PASSWORD_HASH= #optional
-  #     # - PROXY_DOMAIN=code-server.my.domain #optional
-  #     # - DEFAULT_WORKSPACE=/config/workspace #optional
-  #     # - PWA_APPNAME=code-server #optional
-  #   volumes:
-  #     - ./services/code-server:/config
-  #   ports:
-  #     - 8443:8443
-  #   restart: unless-stopped
-  #   networks:
-  #     - default
-  #     - uom
-
 volumes:
   mssql_data:
   mongodb_data:

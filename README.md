@@ -85,7 +85,7 @@ To run, compile, or debug the monorepo, your host environment must satisfy the f
 
 ---
 
-## 5. Quick Start & Execution
+## 5. Development Quick Start & Execution
 
 Follow these step-by-step instructions to boot the complete monorepo stack:
 
@@ -94,6 +94,7 @@ Copy the env templates in the [workspace root directory](.env.example), [fronten
 ```bash
 cp .env.example .env.dev # for development
 cp .env.example .env # for production
+cp .env.example .env.development # for development in frontend Next.js project
 cp .env.example .env.production # for production in frontend Next.js project
 ```
 
@@ -154,6 +155,13 @@ pnpm install
 pnpm dev:frontend
 ```
 Open your web browser to **[http://localhost:3001](http://localhost:3001)** (since Daytona API is already running at [http://localhost:3000](http://localhost:3000)) to access the UOM Assistant UI frontend and begin translating query code!
+
+## 6. Production Deployment
+To deploy the stack in production mode, ensure all environment variables in the `.env` files are properly configured (domain names, IP addresses, mostly networking-related), and run:
+```bash
+./scripts/init-project-prod.sh
+```
+See the **[DevOps & Deployment Operations](docs/devops/devops.md)** documentation for detailed information on the production deployment setup, environment variable configurations, and operational guidelines.
 
 ---
 

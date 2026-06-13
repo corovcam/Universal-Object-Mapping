@@ -1,21 +1,18 @@
 version: "3"
 agent:
   authtoken: 2WCmTVhUs67qqSr3FUbvksH3M0y_5TRgSrUBjJYazj6vt8wum
+  log_level: debug
+  log: stdout
 
 endpoints:
   - name: frontend
-    url: entrust-clamshell-tabasco.ngrok-free.dev
+    url: https://default.internal
     upstream:
       url: 3020
-  - name: langgraph-api
-    url: entrust-clamshell-tabasco.ngrok-free.dev
-    upstream:
-      url: 8123
-  - name: daytona-api
-    url: entrust-clamshell-tabasco.ngrok-free.dev
-    upstream:
-      url: 3000
   - name: relational-migrator
-    url: entrust-clamshell-tabasco.ngrok-free.dev
     upstream:
       url: 8091
+  - name: ssh-gateway
+    url: tcp://
+    upstream:
+      url: 2222

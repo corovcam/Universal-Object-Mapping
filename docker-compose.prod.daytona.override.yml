@@ -1,0 +1,46 @@
+services:
+  api:
+    environment:
+      - PROXY_DOMAIN=${OUTER_HOST_GATEWAY_IP:-proxy}:4000
+      - PROXY_TEMPLATE_URL=http://${OUTER_HOST_GATEWAY_IP:-proxy}:4000/{{PORT}}-{{sandboxId}}
+      - OTEL_ENABLED=false
+      - PUBLIC_OIDC_DOMAIN=http://localhost:5356/dex
+    networks:
+      - uom
+
+  proxy:
+    environment:
+      - OIDC_PUBLIC_DOMAIN=http://localhost:5356/dex
+    networks:
+      - uom
+
+  runner:
+    networks:
+      - uom
+    extra_hosts:
+      - "host.docker.internal:${OUTER_HOST_GATEWAY_IP:-host-gateway}"
+  
+  dex:
+    volumes:
+      - ../../../services/daytona/dex/config.yaml:/etc/dex/config.yaml
+    ports: !override
+      - 5356:5556
+
+  registry:
+    ports: !override
+      - 6058:6000
+  
+  ssh-gateway:
+    networks:
+      - uom
+  
+  maildev: !reset null
+
+  jaeger: !reset null
+  
+  otel-collector: !reset null
+
+networks:
+  uom:
+    external: true
+    name: uom

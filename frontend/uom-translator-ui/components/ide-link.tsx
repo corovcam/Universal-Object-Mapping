@@ -148,14 +148,15 @@ export function IdeLink() {
 	 */
 	const parseSshCommand = (cmd?: string, token?: string) => {
 		let user = null;
-		let host = "localhost";
-		let port = "2222";
+		let host = process.env.NEXT_PUBLIC_SSH_GATEWAY_URL ? new URL(process.env.NEXT_PUBLIC_SSH_GATEWAY_URL).hostname : "localhost";
+		let port = process.env.NEXT_PUBLIC_SSH_GATEWAY_URL ? new URL(process.env.NEXT_PUBLIC_SSH_GATEWAY_URL).port : "2222";
 		if (!cmd && !token) return { user, host, port };
 		const match = cmd?.match(/ssh\s+(?:-p\s+(\d+)\s+)?([^@\s]+)@([^\s]+)/);
 		if (match) {
-			if (match[1]) port = match[1];
+			if (match[1] && match[1] !== "2222") port = match[1];
+			port = port !== "2222" ? port : "2222";
 			user = match[2];
-			host = match[3];
+			host = host !== "localhost" ? host : match[3];
 		}
 		if (!user) user = token ?? null;
 		return { user, host, port };
