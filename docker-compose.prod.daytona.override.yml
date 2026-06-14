@@ -1,16 +1,16 @@
 services:
   api:
     environment:
-      - PROXY_DOMAIN=${OUTER_HOST_GATEWAY_IP:-proxy}:4000
-      - PROXY_TEMPLATE_URL=http://${OUTER_HOST_GATEWAY_IP:-proxy}:4000/{{PORT}}-{{sandboxId}}
+      - PROXY_DOMAIN=${PRODUCTION_DOMAIN_OR_IP}:4000
+      - PROXY_TEMPLATE_URL=http://{{PORT}}-{{sandboxId}}.${PRODUCTION_DOMAIN_OR_IP}:4000
       - OTEL_ENABLED=false
-      - PUBLIC_OIDC_DOMAIN=http://localhost:5356/dex
+      - PUBLIC_OIDC_DOMAIN=http://${PRODUCTION_DOMAIN_OR_IP}:5356/dex
     networks:
       - uom
 
   proxy:
     environment:
-      - OIDC_PUBLIC_DOMAIN=http://localhost:5356/dex
+      - OIDC_PUBLIC_DOMAIN=http://${PRODUCTION_DOMAIN_OR_IP}:5356/dex
     networks:
       - uom
 

@@ -2,19 +2,21 @@ name: universal-object-mapping
 include:
   - path:
       - ./services/orchestrator/docker-compose.yml
-      - ./docker-compose.langgraph.override.yml
+      - ./docker-compose.prod.langgraph.override.yml
 services:
   frontend:
     build:
       context: ./frontend/uom-translator-ui
       args:
         OUTER_HOST_GATEWAY_IP: ${OUTER_HOST_GATEWAY_IP:-host-gateway}
+        PRODUCTION_DOMAIN_OR_IP: ${PRODUCTION_DOMAIN_OR_IP}
     environment:
       NODE_ENV: production
       PORT: "3000"
-      NEXT_PUBLIC_LANGGRAPH_API_URL: "https://entrust-clamshell-tabasco.ngrok-free.dev/api"
+      NEXT_PUBLIC_LANGGRAPH_API_URL: "https://${PRODUCTION_DOMAIN_OR_IP}/api"
       LANGGRAPH_API_URL: "http://langgraph-api:8000"
       OUTER_HOST_GATEWAY_IP: ${OUTER_HOST_GATEWAY_IP:-host-gateway}
+      PRODUCTION_DOMAIN_OR_IP: ${PRODUCTION_DOMAIN_OR_IP}
     ports:
       - "${FRONTEND_PORT}:3000"
     restart: unless-stopped
@@ -219,19 +221,44 @@ services:
       - default
       - uom
 
-  ngrok:
-    image: ngrok/ngrok:latest
+  chisel-tunnel:
+    image: jpillora/chisel:latest
+    container_name: uom-chisel-tunnel
     restart: unless-stopped
+    # The command array explicitly maps the incoming K8s port (left) 
+    # directly to the internal Docker service name and container port (right)
     command:
-      - "start"
-      - "--all"
-      - "--config"
-      - "/etc/ngrok.yml"
-    volumes:
-      - ./ngrok.yml:/etc/ngrok.yml
-    ports:
-      - 4040:4040
-    network_mode: host
+      - "client"
+      - "--keepalive"
+      - "25s"
+      - "${K8S_EXTERNAL_IP}:9999" 
+      - "R:3025:frontend:3000"                     # Next.js UI
+      - "R:8125:langgraph-api:8000"                # LangGraph API
+      - "R:3005:api:3000"                          # Daytona API
+      - "R:4005:proxy:4000"                        # Daytona Proxy
+      - "R:8095:mongodb-relational-migrator:8080"  # MongoDB Migrator
+      - "R:2225:ssh-gateway:2222"                  # Daytona SSH
+      - "R:5555:dex:5556"                          # Daytona Dex (OIDC)
+    networks:
+      - uom
+    # Ensures the tunnel doesn't try to route traffic before the services exist
+    depends_on:
+      - frontend
+      - mongodb-relational-migrator
+
+  # ngrok:
+  #   image: ngrok/ngrok:latest
+  #   restart: unless-stopped
+  #   command:
+  #     - "start"
+  #     - "--all"
+  #     - "--config"
+  #     - "/etc/ngrok.yml"
+  #   volumes:
+  #     - ./ngrok.yml:/etc/ngrok.yml
+  #   ports:
+  #     - 4040:4040
+  #   network_mode: host
   
   # code-server:
   #   image: lscr.io/linuxserver/code-server:latest

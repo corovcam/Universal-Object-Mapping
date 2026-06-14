@@ -1,0 +1,32 @@
+services:
+  langgraph-api:
+    networks:
+      - default
+      - uom
+      - ollama
+    environment:
+      # - FF_PROFILE_IMPORTS=true
+      - OUTER_HOST_GATEWAY_IP=${OUTER_HOST_GATEWAY_IP:-host-gateway}
+      - FRONTEND_URL=http://${PRODUCTION_DOMAIN_OR_IP}
+      - LANGGRAPH_API_URL=http://${PRODUCTION_DOMAIN_OR_IP}:8123
+      - PRODUCTION_DOMAIN_OR_IP=${PRODUCTION_DOMAIN_OR_IP}
+    #   - REDIS_URI=redis://langgraph-redis:6379
+    #   - POSTGRES_URI=postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
+    #   - NEO4J_DATABASE=neo4j
+    #   - NEO4J_USERNAME=${NEO4J_USERNAME}
+    #   - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+    #   - NEO4J_URI=neo4j://neo4j:7687
+    #   - MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE}
+    #   - MSSQL_HOST=mssql_db
+    #   - MSSQL_PORT=1433
+    #   - MSSQL_USER=${MSSQL_USER}
+    #   - MSSQL_PASSWORD=${MSSQL_PASSWORD}
+    #   - DB_TOOLBOX_URI=http://db-toolbox:5000
+  langgraph-redis:
+    ports:
+      - "${REDIS_PORT}:6379"
+
+networks:
+  uom:
+    external: true
+    name: uom

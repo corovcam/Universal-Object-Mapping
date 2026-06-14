@@ -49,6 +49,11 @@ RUN if [ -n "$OUTER_HOST_GATEWAY_IP" ]; then \
       sed -i 's|\${OUTER_HOST_GATEWAY_IP:-host.docker.internal}|'"$OUTER_HOST_GATEWAY_IP"'|g' .env.production; \
     fi
 
+ARG PRODUCTION_DOMAIN_OR_IP
+RUN if [ -n "$PRODUCTION_DOMAIN_OR_IP" ]; then \
+      sed -i 's|\${PRODUCTION_DOMAIN_OR_IP}|'"$PRODUCTION_DOMAIN_OR_IP"'|g' .env.production; \
+    fi
+
 ENV NODE_ENV=production
 ARG CI=true
 
@@ -107,6 +112,11 @@ COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 ARG OUTER_HOST_GATEWAY_IP
 RUN if [ -n "$OUTER_HOST_GATEWAY_IP" ]; then \
       sed -i 's|\${OUTER_HOST_GATEWAY_IP:-host.docker.internal}|'"$OUTER_HOST_GATEWAY_IP"'|g' .env.production; \
+    fi
+
+ARG PRODUCTION_DOMAIN_OR_IP
+RUN if [ -n "$PRODUCTION_DOMAIN_OR_IP" ]; then \
+      sed -i 's|\${PRODUCTION_DOMAIN_OR_IP}|'"$PRODUCTION_DOMAIN_OR_IP"'|g' .env.production; \
     fi
 
 # If you want to persist the fetch cache generated during the build so that
