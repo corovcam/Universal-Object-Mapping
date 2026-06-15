@@ -18,5 +18,5 @@ export OUTER_HOST_GATEWAY_IP="$HOST_GW"
 echo "Using OUTER_HOST_GATEWAY_IP=$OUTER_HOST_GATEWAY_IP for network $UOM_NETWORK"
 
 echo "Starting the stack..."
-docker compose -f docker-compose.prod.yml up -d --remove-orphans
-docker compose -f external/daytona/docker/docker-compose.yaml -f docker-compose.prod.daytona.override.yml up -d --remove-orphans
+docker compose -f external/daytona/docker/docker-compose.yaml -f docker-compose.prod.daytona.override.yml up -d --build --remove-orphans
+docker compose -f docker-compose.prod.yml up -d --build --remove-orphans

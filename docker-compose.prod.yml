@@ -231,20 +231,31 @@ services:
       - "client"
       - "--keepalive"
       - "25s"
-      - "${K8S_EXTERNAL_IP}:9999" 
-      - "R:3025:frontend:3000"                     # Next.js UI
-      - "R:8125:langgraph-api:8000"                # LangGraph API
-      - "R:3005:api:3000"                          # Daytona API
-      - "R:4005:proxy:4000"                        # Daytona Proxy
-      - "R:8095:mongodb-relational-migrator:8080"  # MongoDB Migrator
-      - "R:2225:ssh-gateway:2222"                  # Daytona SSH
-      - "R:5555:dex:5556"                          # Daytona Dex (OIDC)
+      - "--auth"
+      - "daytona:SuperSecretTunnelPass123"
+      - "http://${K8S_EXTERNAL_IP}:9999" 
+      
+      # Core Web Apps
+      - "R:3025:frontend:3000"                     
+      - "R:8125:langgraph-api:8000"                
+      
+      # Daytona Core
+      - "R:3005:api:3000"                          
+      - "R:4005:proxy:4000"                        
+      - "R:5555:dex:5556"
+      - "R:2225:ssh-gateway:2222"                  
+      
+      # Auxiliary & Databases
+      - "R:8095:mongodb-relational-migrator:8080"  
+      - "R:7475:neo4j:7474"   # Neo4j HTTP Browser
     networks:
+      - default
       - uom
-    # Ensures the tunnel doesn't try to route traffic before the services exist
     depends_on:
       - frontend
       - mongodb-relational-migrator
+      - neo4j
+      - langgraph-api
 
   # ngrok:
   #   image: ngrok/ngrok:latest

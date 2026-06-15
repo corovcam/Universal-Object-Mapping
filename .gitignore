@@ -15,4 +15,4 @@ frontend/assistant-ui-langgraph-example/
 misc/
 mockups/
 .devcontainer/*agent.sh
-nginx.conf
+nginx*.conf

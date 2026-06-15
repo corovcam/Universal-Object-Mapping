@@ -215,6 +215,8 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
 		}, 800);
 	};
 
+	const onboardingStepOffset = process.env.NEXT_PUBLIC_GITHUB_URL ? 1 : 0; // If GitHub URL is set, offset the step numbers by 1
+
 	return (
 		<Dialog
 			open={isOpen}
@@ -319,29 +321,31 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
 										</h3>
 								
 										<div className="grid gap-4 text-xs">
+											{process.env.NEXT_PUBLIC_GITHUB_URL ? (
+												<OnboardingStep
+													number={1}
+													title="Boot the Database Stack"
+													description="Run the init script inside the monorepo root directory. This spins up the LangGraph LLM backend, MS SQL Server (source), MongoDB & Neo4j (targets), MongoDB Relational Migrator, Daytona stack, and the DB Toolbox and MongoDB MCP Servers."
+													codeCommand="./scripts/init-project.sh"
+												/>
+											) : null}
 											<OnboardingStep
-												number={1}
-												title="Boot the Database Stack"
-												description="Run the init script inside the monorepo root directory. This spins up the LangGraph LLM backend, MS SQL Server (source), MongoDB & Neo4j (targets), MongoDB Relational Migrator, Daytona stack, and the DB Toolbox and MongoDB MCP Servers."
-												codeCommand="./scripts/init-project.sh"
-											/>
-											<OnboardingStep
-												number={2}
+												number={1 + onboardingStepOffset}
 												title="Configure LLM Orchestration"
 												description="Specify your LLM provider under the LLM Settings tab. You can use Metacentrum e-INFRA CZ or any OpenAI-compatible API (fill in the API key and URL), or host a local model using Ollama."
 											/>
 											<OnboardingStep
-												number={3}
+												number={2 + onboardingStepOffset}
 												title="Set Connection Mappings & Daytona"
 												description="Verify the MS SQL connection strings and target database URIs under Database URIs. Set required Daytona API settings sandbox execution timeout under Daytona Sandbox. The Daytona daemon runs LLM generated code inside secure containers."
 											/>
 											<OnboardingStep
-												number={4}
+												number={3 + onboardingStepOffset}
 												title="Run the Migration"
 												description="Use the chat interface to initiate the migration process. See the suggestions for example inputs."
 											/>
 											<OnboardingStep
-												number={5}
+												number={4 + onboardingStepOffset}
 												title="Connect your IDE"
 												description='Use the "Connect Your IDE" sidebar button to connect remotely (via SSH) to the respective Daytona Container (.NET, or Java). Use the development environment to see what UOM generates and continue from there!'
 											/>
@@ -354,23 +358,31 @@ export function ConfigModal({ isOpen, onClose, onSave }: ConfigModalProps) {
 										</h3>
 								
 										<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-											<LinkItem
-												icon={GitHubIcon}
-												title="GitHub Codebase"
-												description="Universal Object Mapping GitHub Repository"
-												href="https://github.com/corovcam/Universal-Object-Mapping"
-												tooltip="Universal Object Mapping GitHub Repository"
-											/>
+											{process.env.NEXT_PUBLIC_GITHUB_URL ? (
+												<LinkItem
+													icon={GitHubIcon}
+													title="GitHub Codebase"
+													description="Universal Object Mapping GitHub Repository"
+													href={process.env.NEXT_PUBLIC_GITHUB_URL}
+													tooltip="Universal Object Mapping GitHub Repository"
+											/>) : process.env.NEXT_PUBLIC_DOCS_URL ? (
+												<LinkItem
+													icon={BookOpen}
+													title="Documentation"
+													description="Universal Object Mapping Documentation"
+													href={process.env.NEXT_PUBLIC_DOCS_URL}
+													tooltip="Universal Object Mapping Documentation"
+												/>
+											) : null}
 											<LinkItem
 												icon={Database}
 												iconClass="bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
 												title="MongoDB Relational Migrator"
-												description="MongoDB Relational Migrator Dashboard"
+												description={process.env.NEXT_PUBLIC_MONGODB_REL_MIGRATOR_URL ? "MongoDB Relational Migrator Dashboard" : "MongoDB Relational Migrator Docs"}
 												href={
-													process.env.NEXT_PUBLIC_MONGODB_REL_MIGRATOR_URL ||
-													"http://localhost:8091"
+													process.env.NEXT_PUBLIC_MONGODB_REL_MIGRATOR_URL ? process.env.NEXT_PUBLIC_MONGODB_REL_MIGRATOR_URL : "https://www.mongodb.com/docs/relational-migrator/"
 												}
-												tooltip="Open MongoDB Relational Migrator Web UI"
+												tooltip={process.env.NEXT_PUBLIC_MONGODB_REL_MIGRATOR_URL ? "Open MongoDB Relational Migrator Web UI" : "Open MongoDB Relational Migrator Documentation"}
 											/>
 											<LinkItem
 												icon={Database}
