@@ -204,7 +204,10 @@ This script coordinates submodules, networks, environment settings, and boots th
     docker compose -f external/daytona/docker/docker-compose.yaml -f docker-compose.daytona.override.yml up -d --remove-orphans
     ```
 
-### 4.2 `scripts/destroy-containers.sh`
+### 4.2 `scripts/init-project-prod.sh`
+Similarly, this script initializes the production environment with additional volume persistence and production overrides.
+
+### 4.3 `scripts/destroy-containers.sh`
 Tears down and purges the docker-compose services:
 ```bash
 # Tears down database compose stacks, purging anonymous volumes (-v) and local builds
@@ -213,7 +216,7 @@ docker compose down -v --remove-orphans --rmi local
 docker compose -f external/daytona/docker/docker-compose.yaml -f docker-compose.daytona.override.yml down -v --remove-orphans --rmi local
 ```
 
-### 4.3 `scripts/update-submodules.sh`
+### 4.4 `scripts/update-submodules.sh`
 Polls external submodules, fetches tags, and checks out the newest release tag:
 ```bash
 git submodule update --init --recursive
