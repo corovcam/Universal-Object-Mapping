@@ -14,7 +14,8 @@ staticClients:
     redirectURIs:
       - 'https://daytona.uom.dyn.cloud.e-infra.cz'
       - 'https://daytona.uom.dyn.cloud.e-infra.cz/api/oauth2-redirect.html'
-      - 'https://daytona.uom.dyn.cloud.e-infra.cz/callback'
+      - 'https://proxy.daytona.uom.dyn.cloud.e-infra.cz/callback'
+      - 'http://localhost:3009/callback'
     name: 'Daytona'
     public: true
 enablePasswordDB: true

@@ -1,13 +1,13 @@
 services:
   api:
     environment:
-      - PROXY_DOMAIN=daytona.${PRODUCTION_DOMAIN_OR_IP}
-      - PROXY_TEMPLATE_URL=https://{{PORT}}-{{sandboxId}}.daytona.${PRODUCTION_DOMAIN_OR_IP}
+      - PROXY_DOMAIN=proxy.daytona.${PRODUCTION_DOMAIN_OR_IP}
+      - PROXY_TEMPLATE_URL=https://{{PORT}}-{{sandboxId}}.proxy.daytona.${PRODUCTION_DOMAIN_OR_IP}
+      - PROXY_PROTOCOL=https
       
       - DASHBOARD_URL=https://daytona.uom.dyn.cloud.e-infra.cz/dashboard
       - DASHBOARD_BASE_API_URL=https://daytona.${PRODUCTION_DOMAIN_OR_IP}
       
-      # Notice how Dex is just appended to the base domain
       - PUBLIC_OIDC_DOMAIN=https://daytona.${PRODUCTION_DOMAIN_OR_IP}/dex
       
       - SSH_GATEWAY_URL=daytona.${PRODUCTION_DOMAIN_OR_IP}:2222
@@ -20,7 +20,7 @@ services:
     environment:
       - OIDC_PUBLIC_DOMAIN=https://daytona.${PRODUCTION_DOMAIN_OR_IP}/dex
       - PROXY_PROTOCOL=https
-      - COOKIE_DOMAIN=daytona.${PRODUCTION_DOMAIN_OR_IP}
+      - COOKIE_DOMAIN=proxy.daytona.${PRODUCTION_DOMAIN_OR_IP}
     networks:
       - uom
 
@@ -35,6 +35,8 @@ services:
       - ../../../services/daytona/dex/config.yaml:/etc/dex/config.yaml
     ports: !override
       - 5356:5556
+    networks:
+      - uom
 
   registry:
     ports: !override
