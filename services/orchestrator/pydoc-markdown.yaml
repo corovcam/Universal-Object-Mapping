@@ -14,9 +14,10 @@ processors:
 
 renderer:
   type: pydoc_mintlify.MintlifyRenderer
-  docs_base_path: /home/corovcak/Projects/uom-docs
+  docs_base_path: ../../external/uom-docs
+  relative_output_path: backend_code_reference
   nav: # Navigation configuration for your generated .mdx files. (This will be dumped into a tab with the same name in your docs.json)
-    tab: Code Reference # Must match the name of a tab in your docs.json
+    tab: Backend Code Reference # Must match the name of a tab in your docs.json
     directory: accordion
     groups:
       - group: UOM Translator (LangGraph)

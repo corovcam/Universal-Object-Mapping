@@ -1,5 +1,31 @@
 {
+  "$schema": "node_modules/typedoc-plugin-markdown/typedoc-plugin-markdown.schema.json",
   "entryPoints": ["app", "components", "hooks", "lib"],
-  "out": "docs",
-  "githubPages": false
+  "entryPointStrategy": "expand",
+  "out": "../../external/uom-docs/frontend_code_reference",
+  "plugin": ["typedoc-plugin-markdown"],
+  "githubPages": false,
+  "readme": "none",
+  "gitRevision": "main",
+  "excludeReferences": true,
+  "excludeNotDocumented": true,
+  "cleanOutputDir": true,
+
+  "router": "module",
+  "includeHierarchySummary": true,
+  "fileExtension": ".mdx",
+  "entryFileName": "index",
+  "hidePageHeader": true,
+  "hideBreadcrumbs": true,
+  "hidePageTitle": true,
+  "useCodeBlocks": true,
+  "expandObjects": true,
+  "expandParameters": true,
+  "navigation": {
+    "includeCategories": true,
+    "includeGroups": true,
+    "includeFolders": true,
+    "compactFolders": true
+  },
+  "navigationJson": "navigation.json"
 }
