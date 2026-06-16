@@ -4,3 +4,6 @@
 [submodule "external/langgraphics"]
 	path = external/langgraphics
 	url = git@github.com:corovcam/langgraphics.git
+[submodule "external/pydoc-mintlify"]
+	path = external/pydoc-mintlify
+	url = git@github.com:corovcam/pydoc-mintlify.git

@@ -100,6 +100,9 @@ spell_check:
 spell_fix:
 	codespell --toml pyproject.toml -w
 
+make_api_docs:
+	pydoc-mintlify build
+
 ######################
 # HELP
 ######################

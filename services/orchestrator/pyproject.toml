@@ -62,7 +62,8 @@ test = [
     "langgraph-sdk>=0.3.14",
 ]
 
-# [tool.uv.sources]
+[tool.uv.sources]
+pydoc-mintlify = { path = "../../external/pydoc-mintlify", editable = true }
 # langgraphics = { path = "../../external/langgraphics", editable = true }
 
 [build-system]
