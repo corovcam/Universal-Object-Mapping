@@ -16,32 +16,80 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 /**
- * React Component to handle LangGraph Suspended state.
- * Intercepts human-in-the-loop validation checkpoints when the orchestrator
- * hits compiler failures or equivalence warnings, rendering the errors and
- * providing buttons to Accept or Reject & Correct the translation.
+ * Shape of the payload the backend surfaces through LangGraph's native `interrupt()`
+ * call inside `human_intervention_node`. Mirrors the dict passed to `interrupt(...)`.
+ */
+type InterventionPayload = {
+	instruction?: string;
+	state?: {
+		translated_query_code?: string | null;
+		translated_schema_code?: string | null;
+		explanation_message?: string | null;
+		query_equivalence_deep_diffs?: unknown;
+	};
+};
+
+/**
+ * Resume value expected by the backend. Validated server-side against the
+ * `HumanInterventionResponse` Pydantic model (both fields are required), so it
+ * must be sent as an object — not a bare string or a JSON-encoded string.
+ */
+type HumanInterventionResume = {
+	decision: "accept" | "reject";
+	feedback: string;
+};
+
+/**
+ * Renders any value (string or structured object) as readable monospace text.
+ */
+function renderValue(value: unknown): string {
+	if (value == null) return "";
+	return typeof value === "object"
+		? JSON.stringify(value, null, 2)
+		: String(value);
+}
+
+/**
+ * React Component to handle the LangGraph suspended (interrupted) state.
+ *
+ * Intercepts the human-in-the-loop validation checkpoint raised by the backend
+ * `human_intervention_node` via LangGraph's native `interrupt()` API. The payload
+ * (instruction + current translation state + query-equivalence deep diffs) is
+ * surfaced through `useLangGraphInterruptState()`. The user can Accept the
+ * translation or Reject it with targeted feedback; the decision is resumed back
+ * into the graph with `Command(resume={ decision, feedback })`.
+ *
+ * The interrupt is captured live (requires `"updates"` in the stream's `streamMode`)
+ * and restored on reload via the runtime's `load()` callback, so the card reappears
+ * when an interrupted conversation is reopened from the thread list.
  *
  * @returns {React.JSX.Element | null} The interrupt control card, or null if execution is not suspended.
  */
 export function InterruptHandler() {
-	/** Retrieve current graph execution suspend payload and status. */
+	/** Current graph suspension payload, or undefined when not interrupted. */
 	const interrupt = useLangGraphInterruptState();
-	/** Hook to submit user correction inputs or confirmation to resume the LangGraph flow. */
+	/** Hook to submit the user's decision and resume the LangGraph flow. */
 	const sendCommand = useLangGraphSendCommand();
 
 	const [decision, setDecision] = useState<"accept" | "reject" | null>(null);
 	const [feedback, setFeedback] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	if (!interrupt?.resumable) return null;
+	// Note: do NOT gate on `interrupt.resumable` — that field is deprecated in the
+	// LangGraph SDK (>=1.x) and omitted by recent servers, which previously hid the
+	// card entirely. Render whenever there is an interrupt payload to act on.
+	if (!interrupt?.value) return null;
 
-	const payload = interrupt.value ?? {};
-	const validationErrors = payload?.validation_errors || payload?.error || null;
-	const deepdiffText = payload?.query_equivalence_deep_diffs || null;
+	const payload = (interrupt.value ?? {}) as InterventionPayload;
+	const instruction = payload.instruction;
+	const interventionState = payload.state ?? {};
+	const deepdiff = interventionState.query_equivalence_deep_diffs ?? null;
+	const explanation = interventionState.explanation_message ?? null;
 
 	/**
-	 * Form submit handler. Submits the decision and feedback back to the LangGraph graph
-	 * via the `sendCommand` hook, which triggers a resume action.
+	 * Form submit handler. Resumes the LangGraph graph with the user's decision.
+	 * The resume value is an object matching the backend `HumanInterventionResponse`
+	 * model: `feedback` is required, so it is sent as an empty string on accept.
 	 *
 	 * @param {React.FormEvent} e - Form event.
 	 */
@@ -50,11 +98,14 @@ export function InterruptHandler() {
 		if (!decision) return;
 		setIsSubmitting(true);
 		try {
-			const resume =
+			const resume: HumanInterventionResume =
 				decision === "accept"
-					? "accept"
-					: JSON.stringify({ decision: "reject", feedback });
-			await sendCommand({ resume });
+					? { decision: "accept", feedback: "" }
+					: { decision: "reject", feedback };
+			// `LangGraphCommand.resume` is typed as `string` upstream, but LangGraph
+			// forwards the value verbatim to the server, which validates it against the
+			// `HumanInterventionResponse` model (an object). Cast past the narrow type.
+			await sendCommand({ resume: resume as unknown as string });
 		} finally {
 			setIsSubmitting(false);
 		}
@@ -70,39 +121,37 @@ export function InterruptHandler() {
 						Agent Execution Suspended
 					</span>
 					<span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">
-						The translation process reached the maximum automatic retries.
-						Relational equivalence checks require manual validation or targeted
-						correction.
+						{instruction ||
+							"The translation process reached the maximum automatic retries. Relational equivalence checks require manual validation or targeted correction."}
 					</span>
 				</div>
 			</div>
 
 			<form onSubmit={handleSubmit} className="space-y-4 p-4">
-				{validationErrors && (
+				{explanation && (
 					<div className="space-y-1.5">
 						<span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-							Validation Failures
+							Translation Explanation
 						</span>
-						<div className="custom-scrollbar max-h-36 select-text overflow-y-auto rounded-lg border bg-muted p-3 font-mono text-[10px] leading-relaxed text-destructive">
-							{typeof validationErrors === "object"
-								? JSON.stringify(validationErrors, null, 2)
-								: validationErrors}
+						<div className="custom-scrollbar max-h-36 select-text overflow-y-auto rounded-lg border bg-muted p-3 font-mono text-[10px] leading-relaxed text-muted-foreground">
+							{renderValue(explanation)}
 						</div>
 					</div>
 				)}
 
-				{deepdiffText && (
-					<div className="space-y-1.5">
-						<span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-							Equivalence DeepDiff Payload
-						</span>
-						<div className="custom-scrollbar max-h-32 select-text overflow-y-auto rounded-lg border bg-muted p-3 font-mono text-[10px] leading-relaxed text-muted-foreground">
-							{typeof deepdiffText === "object"
-								? JSON.stringify(deepdiffText, null, 2)
-								: deepdiffText}
+				{deepdiff != null &&
+					!(
+						typeof deepdiff === "object" && Object.keys(deepdiff).length === 0
+					) && (
+						<div className="space-y-1.5">
+							<span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+								Query Equivalence DeepDiff
+							</span>
+							<div className="custom-scrollbar max-h-32 select-text overflow-y-auto rounded-lg border bg-muted p-3 font-mono text-[10px] leading-relaxed text-destructive">
+								{renderValue(deepdiff)}
+							</div>
 						</div>
-					</div>
-				)}
+					)}
 
 				<div className="space-y-3">
 					<span className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">

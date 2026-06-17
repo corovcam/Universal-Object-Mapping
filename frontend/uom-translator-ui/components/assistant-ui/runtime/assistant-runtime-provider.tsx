@@ -173,7 +173,11 @@ export function AssistantRuntimeProviderWrapper({
 
 			const payload = {
 				input: messages.length ? { messages } : null,
-				streamMode: ["messages-tuple", "values", "custom"],
+				// "updates" is required for human-in-the-loop: @assistant-ui/react-langgraph
+				// only captures the LangGraph `interrupt()` payload from `updates` events
+				// (it reads `chunk.data.__interrupt__`). Without it the suspension is never
+				// surfaced to `useLangGraphInterruptState()` during a live run.
+				streamMode: ["messages-tuple", "updates", "values", "custom"],
 				streamSubgraphs: true,
 				...(config.abortSignal != null && { signal: config.abortSignal }),
 				onDisconnect: "cancel",
@@ -439,9 +443,15 @@ export function AssistantRuntimeProviderWrapper({
 				// const rawMessages = state.values?.messages || [];
 				// const normalizedMessages = rawMessages.map(normalizeMessageContent);
 
+				// Restore any pending `interrupt()` so the human-intervention card
+				// reappears when the conversation is reloaded via the thread list adapter.
+				// The runtime feeds `interrupts[0]` into `useLangGraphInterruptState`.
+				// Collect across all tasks (not just tasks[0]) for robustness.
 				return {
 					messages: state.values?.messages || [],
-					interrupts: state.tasks?.[0]?.interrupts || [],
+					interrupts: (state.tasks ?? []).flatMap(
+						(task) => task.interrupts ?? [],
+					),
 				};
 			} catch (error) {
 				handleError("Failed to load thread state", error);
@@ -523,9 +533,23 @@ export function AssistantRuntimeProviderWrapper({
 			 * Triggered when incremental state updates are broadcasted.
 			 */
 			onUpdates: (updates: any) => {
-				if (updates) {
-					console.debug("[UOM] Updates:", updates);
-					setGraphState((prev) => ({ ...prev, ...updates }));
+				if (!updates || typeof updates !== "object") return;
+				console.debug("[UOM] Updates:", updates);
+				// `updates` events are keyed by node name (`{ nodeName: { ...stateDelta } }`)
+				// and may also carry the special `__interrupt__` channel. Flatten the
+				// per-node deltas into the flat graph state and drop `__interrupt__` so the
+				// inspected state mirrors the `values` shape (the interrupt itself is handled
+				// by the runtime and surfaced via `useLangGraphInterruptState`).
+				const { __interrupt__, ...nodeUpdates } = updates;
+				const merged = Object.values(nodeUpdates).reduce<Record<string, any>>(
+					(acc, delta) =>
+						delta && typeof delta === "object" && !Array.isArray(delta)
+							? { ...acc, ...delta }
+							: acc,
+					{},
+				);
+				if (Object.keys(merged).length > 0) {
+					setGraphState((prev) => ({ ...prev, ...merged }));
 				}
 			},
 			/**

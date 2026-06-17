@@ -269,6 +269,8 @@ const Composer: FC = () => {
 	const { activeNode } = useGraphStateContext();
 	const [expanded, setExpanded] = useState(false);
 
+	const expandedClassName = (expanded && !isRunning) ? " min-h-40 max-h-70" : (!isRunning ? " min-h-10 max-h-32" : "")
+
 	return (
 		<ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col text-primary">
 			<ComposerPrimitive.AttachmentDropzone asChild disabled={isRunning}>
@@ -306,7 +308,7 @@ const Composer: FC = () => {
 
 					<ComposerPrimitive.Input
 						placeholder={isRunning ? "Input is disabled when generating..." : "Send a message..."}
-						className={`aui-composer-input custom-scrollbar w-full resize-none bg-transparent px-1.75 py-1 text-sm outline-none placeholder:text-muted-foreground/80${expanded ? " min-h-40 max-h-70" : " min-h-10 max-h-32"}${isRunning ? "cursor-not-allowed" : ""}`}
+						className={`aui-composer-input custom-scrollbar w-full resize-none bg-transparent px-1.75 py-1 text-sm outline-none placeholder:text-muted-foreground/80${expandedClassName}${isRunning ? " cursor-not-allowed" : ""}`}
 						rows={1}
 						autoFocus
 						aria-label="Message input"
