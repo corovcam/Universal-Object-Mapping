@@ -11,8 +11,7 @@ For comprehensive User and Programming Documentation, please refer directly to o
 
 **NOTE:** The Web UI is made for Desktop Browsers with wide-screen (width > 1920px; preferably newer Google Chrome; other browsers haven't been tested) and IS NOT optimized for mobile devices! The functionality is not tested there.
 
-**NOTE:** To review Observability logs/stack traces and more on LogFire, use this link: https://logfire-eu.pydantic.dev/l/join-corovcam/xasSDeTa0YObservability (Note that ONLY 2 additional View-only seats are available for committee members, use appropriately). LangSmith Observability platform is also available for review, but it does not have the option to invite external users, so we will provide the committee with exported JSON traces of the evaluation runs instead.
-Platforms cannot assign more seats in free plans.
+**NOTE:** To review Observability logs/stack traces and more on LogFire, use this link: https://logfire-eu.pydantic.dev/l/join-corovcam/xasSDeTa0YObservability (Note that ONLY 2 additional View-only seats are available for committee members, use appropriately). LangSmith Observability platform is also available for review, but it does not have the option to invite external users, so we will provide the committee with exported JSON traces (and public links) of the evaluation runs instead.
 
 ## 2. Specification Deviations
 While the core translation pipeline successfully implements the reasoning-and-acting (ReAct) agent workflow, a few practical deviations from the original specification occurred:
@@ -83,6 +82,6 @@ The final project deliverables are provided as follows:
 3. (D1, D6) **Documentation:** Hosted on the public website [https://uom-demo.vercel.app/docs](https://uom-demo.vercel.app/docs), alongside a `.ZIP` archive of the documentation repository: [https://github.com/corovcam/uom-docs](https://github.com/corovcam/uom-docs).
 4. (D3, D5) **Evaluation Traces:** Evaluation of translation correctness was conducted manually and is given to the committee for manual review if needed. The traces are exported as JSON files in the deliverables folder and also published online. Below are the public links to 4 sample traces from the LangSmith Observability platform demonstrating the pipeline's capabilities:
    * **EFCore $\rightarrow$ Mongo:** [https://eu.smith.langchain.com/public/8c8e3bd4-9119-45f7-97c8-7019b90e5c72/r/](https://eu.smith.langchain.com/public/8c8e3bd4-9119-45f7-97c8-7019b90e5c72/r/)
-   * **EFCore $\rightarrow$ Neo4j:** TODO
-   * **Dapper $\rightarrow$ Mongo:** TODO
-   * **NHibernate $\rightarrow$ Mongo:** TODO
+   * **EFCore $\rightarrow$ Neo4j:** [https://eu.smith.langchain.com/public/95e88ba1-3cf7-44c8-852a-8331d52d3b9c/r](https://eu.smith.langchain.com/public/95e88ba1-3cf7-44c8-852a-8331d52d3b9c/r)
+   * **Dapper $\rightarrow$ Mongo:** 
+   * **NHibernate $\rightarrow$ Mongo:** [https://eu.smith.langchain.com/public/18c70874-8d37-4122-ac07-9e6163f3f46a/r](https://eu.smith.langchain.com/public/18c70874-8d37-4122-ac07-9e6163f3f46a/r)

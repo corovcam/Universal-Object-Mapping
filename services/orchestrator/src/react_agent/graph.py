@@ -211,50 +211,30 @@ class BaseTranslationOutput(BaseModel):
                 self.target_validation_harness_code
             )
 
+        # Validate that each entrypoint type name is declared in its corresponding code field.
+        # Fields stripped by `_create_translation_output_model` (e.g. the harness code during a
+        # SCHEMA-only translation) carry the pydantic MISSING sentinel rather than `None`, so a
+        # plain `is not None` guard would still fall through to the membership test and raise
+        # `TypeError: argument of type 'Sentinel' is not a container or iterable`. Guarding on
+        # `isinstance(code, str)` skips both excluded (MISSING) and unset (None) fields, since a
+        # populated code field is always a string by this point (lists are joined above).
         errors = []
-        if "source_validation_harness_code" in self.__dict__:
+        entrypoint_checks = (
+            ("source_validation_entry_type_name", "source_validation_harness_code"),
+            ("source_validation_entry_type_name", "source_validation_schema_code"),
+            ("target_validation_entry_type_name", "target_validation_harness_code"),
+            ("target_validation_entry_type_name", "target_validation_schema_code"),
+        )
+        for entry_field, code_field in entrypoint_checks:
+            entry_name = getattr(self, entry_field, None)
+            code = getattr(self, code_field, None)
             if (
-                self.source_validation_harness_code is not None
-                and self.source_validation_entry_type_name
-                not in self.source_validation_harness_code
+                isinstance(code, str)
+                and isinstance(entry_name, str)
+                and entry_name not in code
             ):
                 errors.append(
-                    ValueError(
-                        "source_validation_entry_type_name must be declared in source_validation_harness_code."
-                    )
-                )
-        if "source_validation_schema_code" in self.__dict__:
-            if (
-                self.source_validation_schema_code is not None
-                and self.source_validation_entry_type_name
-                not in self.source_validation_schema_code
-            ):
-                errors.append(
-                    ValueError(
-                        "source_validation_entry_type_name must be declared in source_validation_schema_code."
-                    )
-                )
-        if "target_validation_harness_code" in self.__dict__:
-            if (
-                self.target_validation_harness_code is not None
-                and self.target_validation_entry_type_name
-                not in self.target_validation_harness_code
-            ):
-                errors.append(
-                    ValueError(
-                        "target_validation_entry_type_name must be declared in target_validation_harness_code."
-                    )
-                )
-        if "target_validation_schema_code" in self.__dict__:
-            if (
-                self.target_validation_schema_code is not None
-                and self.target_validation_entry_type_name
-                not in self.target_validation_schema_code
-            ):
-                errors.append(
-                    ValueError(
-                        "target_validation_entry_type_name must be declared in target_validation_schema_code."
-                    )
+                    ValueError(f"{entry_field} must be declared in {code_field}.")
                 )
         if errors:
             raise ExceptionGroup("Validation entry type name checks failed", errors)
@@ -293,7 +273,6 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
                 },
             },
             "source_validation_schema_code": {
-                "annotation": Union[list[str], str],
                 "attributes": {
                     "description": base_model_fields[
                         "source_validation_schema_code"
@@ -311,7 +290,6 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
                 },
             },
             "target_validation_schema_code": {
-                "annotation": Union[list[str], str],
                 "attributes": {
                     "description": base_model_fields[
                         "target_validation_schema_code"
@@ -342,7 +320,6 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
                 },
             },
             "source_validation_harness_code": {
-                "annotation": Union[list[str], str],
                 "attributes": {
                     "description": base_model_fields[
                         "source_validation_harness_code"
@@ -360,7 +337,6 @@ async def _create_translation_output_model(state: State) -> type[BaseModel]:
                 },
             },
             "target_validation_harness_code": {
-                "annotation": Union[list[str], str],
                 "attributes": {
                     "description": base_model_fields[
                         "target_validation_harness_code"
