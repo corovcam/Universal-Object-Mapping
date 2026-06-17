@@ -68,6 +68,9 @@ import { NODE_NAME_MAP } from "@/components/assistant-ui/runtime/assistant-runti
  * @returns {React.JSX.Element} The thread chat interface.
  */
 export const Thread: FC = () => {
+	const isRunning = useAuiState((s) => s.thread.isRunning);
+	const isEmpty = useAuiState((s) => s.thread.isEmpty);
+
 	return (
 		<ScrollAreaPrimitive.Root asChild>
 			<ThreadPrimitive.Root
@@ -108,7 +111,7 @@ export const Thread: FC = () => {
 
 							<ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mt-auto flex flex-col gap-4 overflow-visible rounded-t-(--composer-radius) bg-background pb-4 md:pb-6">
 								<ThreadScrollToBottom />
-								<Composer />
+								{(isEmpty || isRunning) && <Composer />}
 							</ThreadPrimitive.ViewportFooter>
 						</div>
 					</ThreadPrimitive.Viewport>
@@ -185,15 +188,6 @@ const getPromptTitle = (text: string): string => {
 const ThreadMessage = () => {
 	const isEditing = useAuiState((s) => s.message.composer.isEditing);
 	const role = useAuiState((s) => s.message.role);
-	const { activeNode } = useGraphStateContext();
-
-	{activeNode && (
-		<div className="fade-in slide-in-from-bottom-1 relative animate-in duration-150 [contain-intrinsic-size:auto_300px] [content-visibility:auto]">
-			<div className="flex w-full flex-row border rounded-xl bg-primary/10 text-primary my-2 overflow-hidden font-extrabold text-2xl h-5">
-				{NODE_NAME_MAP[activeNode]}
-			</div>
-		</div>
-	)}
 
 	if (isEditing) return <EditComposer />;
 
@@ -271,41 +265,53 @@ const ThreadSuggestionItem: FC = () => {
 };
 
 const Composer: FC = () => {
+	const isRunning = useAuiState((s) => s.thread.isRunning);
+	const { activeNode } = useGraphStateContext();
 	const [expanded, setExpanded] = useState(false);
 
 	return (
 		<ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col text-primary">
-			<ComposerPrimitive.AttachmentDropzone asChild>
+			<ComposerPrimitive.AttachmentDropzone asChild disabled={isRunning}>
 				<div
 					data-slot="aui_composer-shell"
-					className="flex w-full flex-col gap-2 rounded-(--composer-radius) border bg-background p-(--composer-padding) transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20 data-[dragging=true]:border-ring data-[dragging=true]:border-dashed data-[dragging=true]:bg-accent/50"
+					className={`${isRunning ? "h-fit " : ""}flex w-full flex-col gap-2 rounded-(--composer-radius) border bg-background p-(--composer-padding) transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20 data-[dragging=true]:border-ring data-[dragging=true]:border-dashed data-[dragging=true]:bg-accent/50`}
 				>
-					<div className="relative flex items-center justify-between">
-						{/* <ComposerAttachments /> */}
-						<TooltipIconButton
-							tooltip={expanded ? "Collapse input" : "Expand input"}
-							side="bottom"
-							type="button"
-							variant="ghost"
-							size="icon"
-							className="size-8 rounded-full self-end"
-							aria-label={expanded ? "Collapse input" : "Expand input"}
-							onClick={() => setExpanded((e) => !e)}
-						>
-							{expanded ? (
-								<Minimize2 className="size-4 stroke-[1.5px]" />
-							) : (
-								<Maximize2 className="size-4 stroke-[1.5px]" />
-							)}
-						</TooltipIconButton>
-					</div>
+					{isRunning && activeNode && (
+						<div className="p-1 w-full relative font-semibold border-b border-accent bg-transparent text-primary shimmer-bg shimmer transition-shadow">
+							<span className="font-normal text-shadow-xs text-sm text-primary/60 mr-2">Current Stage:</span>
+							{NODE_NAME_MAP[activeNode]}
+						</div>
+					)}
+					{!isRunning && (
+						<div className="relative flex items-center justify-between">
+							{/* <ComposerAttachments /> */}
+							<TooltipIconButton
+								tooltip={expanded ? "Collapse input" : "Expand input"}
+								side="bottom"
+								type="button"
+								variant="ghost"
+								size="icon"
+								className="size-8 rounded-full self-end"
+								aria-label={expanded ? "Collapse input" : "Expand input"}
+								onClick={() => setExpanded((e) => !e)}
+							>
+								{expanded ? (
+									<Minimize2 className="size-4 stroke-[1.5px]" />
+								) : (
+									<Maximize2 className="size-4 stroke-[1.5px]" />
+								)}
+							</TooltipIconButton>
+						</div>
+					)}
 
 					<ComposerPrimitive.Input
-						placeholder="Send a message..."
-						className={`aui-composer-input custom-scrollbar w-full resize-none bg-transparent px-1.75 py-1 text-sm outline-none placeholder:text-muted-foreground/80 ${expanded ? "min-h-40 max-h-70" : "min-h-10 max-h-32"}`}
+						placeholder={isRunning ? "Input is disabled when generating..." : "Send a message..."}
+						className={`aui-composer-input custom-scrollbar w-full resize-none bg-transparent px-1.75 py-1 text-sm outline-none placeholder:text-muted-foreground/80${expanded ? " min-h-40 max-h-70" : " min-h-10 max-h-32"}${isRunning ? "cursor-not-allowed" : ""}`}
 						rows={1}
 						autoFocus
 						aria-label="Message input"
+						disabled={isRunning}
+						aria-disabled={isRunning}
 					/>
 					<ComposerAction />
 				</div>
@@ -516,7 +522,7 @@ const ThinkingIndicator = ({
 	text = "Thinking...",
 	className,
 }: {
-	text?: string;
+	text?: string | React.ReactNode;
 	className?: string;
 }) => {
 	return (

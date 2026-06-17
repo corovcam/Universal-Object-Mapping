@@ -1539,27 +1539,28 @@ logfire.instrument_aiohttp_client(capture_all=True)
 # )
 # set_llm_cache(redis_cache)
 
-if os.getenv("DEVELOPMENT"):
-    node_cache = InMemoryCache()
-else:
-    from langchain_core.globals import set_llm_cache
-    from langchain_redis import RedisCache
-    from langgraph.cache.redis import RedisCache as NodeRedisCache
+node_cache = InMemoryCache()
+# if os.getenv("DEVELOPMENT"):
+#     node_cache = InMemoryCache()
+# else:
+#     from langchain_core.globals import set_llm_cache
+#     from langchain_redis import RedisCache
+#     from langgraph.cache.redis import RedisCache as NodeRedisCache
 
-    # from langchain_community.cache import AsyncRedisCache as NodeRedisCache
-    from redis import Redis
+#     # from langchain_community.cache import AsyncRedisCache as NodeRedisCache
+#     from redis import Redis
 
-    redis_client = Redis.from_url(os.getenv("REDIS_URI", "redis://localhost:6379"))
-    # Node Cache for caching graph states (not LLM calls)
-    node_cache = NodeRedisCache(redis_client)
+#     redis_client = Redis.from_url(os.getenv("REDIS_URI", "redis://localhost:6379"))
+#     # Node Cache for caching graph states (not LLM calls)
+#     node_cache = NodeRedisCache(redis_client)
 
-    # Global LLM Cache for caching LLM calls
-    redis_cache = RedisCache(
-        redis_url=os.getenv("REDIS_URI", "redis://localhost:6379"),
-        prefix="langgraph:llm_cache:",
-        redis_client=redis_client,
-    )
-    set_llm_cache(redis_cache)
+#     # Global LLM Cache for caching LLM calls
+#     redis_cache = RedisCache(
+#         redis_url=os.getenv("REDIS_URI", "redis://localhost:6379"),
+#         prefix="langgraph:llm_cache:",
+#         redis_client=redis_client,
+#     )
+#     set_llm_cache(redis_cache)
 
 builder = StateGraph(
     State,
