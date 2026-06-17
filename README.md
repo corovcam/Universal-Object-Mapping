@@ -1,10 +1,13 @@
 <h1 align="center">Universal Object Mapping (UOM)</h1>
 
+> [!NOTE]
+> Full documentation is available at https://uom-demo.vercel.app/docs, including detailed developer guides, architecture overviews, and deployment instructions.
+
 **Universal Object Mapping (UOM)** is an advanced research and engineering platform designed to automate the translation, validation, and performance optimization of database schemas and query code across diverse Object-Relational Mapping (ORM), Object-Document Mapping (ODM), and Object-Graph Mapping (OGM) paradigms. 
 
 Developed within the **Adaptive Data Management (ADaM) Research Group** at the Department of Software Engineering, Charles University (Faculty of Mathematics and Physics), the project addresses the complex challenges of multi-model database migrations. UOM transitions relational .NET ORM structures (.NET Entity Framework Core, Dapper, NHibernate) into document and graph-based Java Spring Data ecosystems (Spring Data MongoDB, Spring Data Neo4j) with structural compile-and-execute guarantees.
 
-![UOM Translation Workspace](docs/frontend/img/uom-newthreadpage-filled.png)
+![UOM Translation Workspace](diagrams/uom-newthreadpage-filled.png)
 
 ---
 
@@ -162,33 +165,6 @@ To deploy the stack in production mode, ensure all environment variables in the 
 ./scripts/init-project-prod.sh
 ```
 See the **[DevOps & Deployment Operations](docs/devops/devops.md)** documentation for detailed information on the production deployment setup, environment variable configurations, and operational guidelines.
-
----
-
-## 6. Subsystem Documentation Index
-
-Review the following modular documentation files for detailed, verbose analyses of UOM's backend orchestrator, Next.js frontend, and DevOps pipelines:
-
-### 6.1 UOM Orchestrator Backend Subsystem
-*   **[System Architecture Diagram & LangGraph Nodes](docs/backend/architecture.md)**: Details graph logic, node transitions, and ReAct agent deprecations.
-*   **[State Representation & Message Isolation](docs/backend/state_and_context.md)**: Explains the `translation_messages` isolation layer and Context reflection.
-*   **[Daytona Sandbox Managers](docs/backend/sandbox_environment.md)**: Details baseline snapshot builds, exponential backoffs, and log streams.
-*   **[Semantic Equivalence Algorithms](docs/backend/validators_and_equivalence.md)**: Reviews Base64 encoding, Maven executions, DeepDiff, and swapped sorting orders check logic.
-*   **[DeepAgent & ACP Interfaces](docs/backend/deep_agent_and_acp.md)**: Analyzes ACP session modes, local context inspection bash scripts, and CompositeBackend routing.
-*   **[MCP Adapters & Toolbox Tools](docs/backend/mcp_integration.md)**: Details SSE connections, MongoDB HTTP clients, and database safety fallback parameters.
-
-### 6.2 UOM Advisor Frontend Dashboard
-*   **[Frontend System Overview](docs/frontend/overview.md)**: Introduces the translation workspace features, suggestion engines, and workspace layout.
-*   **[Frontend Architecture & Proxy Routing](docs/frontend/architecture.md)**: Explains the API passthrough proxy, client-side SDK clients, state propagation context, and style utilities.
-*   **[Frontend Runtime & Integration](docs/frontend/runtime.md)**: Details configuration injection, sub-graph events, thread list synchronization adapters, and checkpoint tracking.
-*   **[Frontend UI Component Specifications](docs/frontend/components.md)**: Exhaustive details on Settings onboarding, Daytona remote IDE links, auto-scroll JSON visualizers, and streamdown markdown parsers.
-*   **[Frontend Setup & Contribution Guidelines](docs/frontend/setup.md)**: Details dev requirements, production multi-stage Docker builds, and Biome coding standards.
-*   **[User & Operator Guide](docs/frontend/user_guide.md)**: Explains how to start translation sessions, configure targets, diagnose build errors, and handle suspended human-in-the-loop checkpoints.
-
-### 6.3 DevOps & Deployment Operations
-*   **[DevOps Setup, Deployment & Operations](docs/devops/devops.md)**: Exhaustive details on Docker Compose profiles, environment setups, sandbox timeouts, init/destroy scripts, and database initialization pipelines.
-
----
 
 ## Acknowledgements
 
