@@ -1,4 +1,11 @@
 {
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "https://uom.dyn.cloud.e-infra.cz",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/docs",
