@@ -477,9 +477,12 @@ const AssistantMessageContent: FC = () => {
 						case "group-reasoning": {
 							const running = part.status.type === "running";
 							return (
-								<ReasoningGroupWrapper running={running}>
-									{children}
-								</ReasoningGroupWrapper>
+								<ReasoningRoot defaultOpen={running}>
+									<ReasoningTrigger active={running} />
+									<ReasoningContent aria-busy={running}>
+										<ReasoningText>{children}</ReasoningText>
+									</ReasoningContent>
+								</ReasoningRoot>
 							);
 						}
 						case "group-tool":
@@ -497,11 +500,7 @@ const AssistantMessageContent: FC = () => {
 						case "text":
 							return <PartialJsonMessageRenderer FallbackComp={MarkdownText} />;
 						case "reasoning":
-							return (
-								<div className="my-2">
-									<Reasoning {...part} />
-								</div>
-							);
+							return part.text;
 						case "tool-call":
 							return (
 								<div className="my-2">
@@ -767,35 +766,35 @@ const EditComposer: FC = () => {
 // 	);
 // };
 
-const ReasoningGroupWrapper: FC<{
-	running: boolean;
-	children: React.ReactNode;
-}> = ({ running, children }) => {
-	const [elapsed, setElapsed] = useState(0);
+// const ReasoningGroupWrapper: FC<{
+// 	running: boolean;
+// 	children: React.ReactNode;
+// }> = ({ running, children }) => {
+// 	const [elapsed, setElapsed] = useState(0);
 
-	useEffect(() => {
-		if (!running) {
-			setElapsed(0);
-			return;
-		}
+// 	useEffect(() => {
+// 		if (!running) {
+// 			setElapsed(0);
+// 			return;
+// 		}
 
-		const start = Date.now();
-		const interval = setInterval(() => {
-			setElapsed(Math.round((Date.now() - start) / 1000));
-		}, 500);
+// 		const start = Date.now();
+// 		const interval = setInterval(() => {
+// 			setElapsed(Math.round((Date.now() - start) / 1000));
+// 		}, 500);
 
-		return () => clearInterval(interval);
-	}, [running]);
+// 		return () => clearInterval(interval);
+// 	}, [running]);
 
-	return (
-		<ReasoningRoot defaultOpen={running}>
-			<ReasoningTrigger
-				active={running}
-				duration={elapsed > 0 ? elapsed : undefined}
-			/>
-			<ReasoningContent aria-busy={running}>
-				<ReasoningText>{children}</ReasoningText>
-			</ReasoningContent>
-		</ReasoningRoot>
-	);
-};
+// 	return (
+// 		<ReasoningRoot defaultOpen={running}>
+// 			<ReasoningTrigger
+// 				active={running}
+// 				duration={elapsed > 0 ? elapsed : undefined}
+// 			/>
+// 			<ReasoningContent aria-busy={running}>
+// 				<ReasoningText>{children}</ReasoningText>
+// 			</ReasoningContent>
+// 		</ReasoningRoot>
+// 	);
+// };

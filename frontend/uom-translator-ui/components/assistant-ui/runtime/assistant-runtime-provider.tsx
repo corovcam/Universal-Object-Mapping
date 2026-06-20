@@ -512,8 +512,7 @@ export function AssistantRuntimeProviderWrapper({
 			 */
 			onMessageChunk: (_chunk, metadata) => {
 				const nodeName =(metadata?.langgraph_checkpoint_ns as string)?.split(":")[0];
-				console.debug(`[UOM] Message Metadata: ${metadata}`);
-				// TODO: use useRef for activeNode to avoid unnecessary re-renders on every chunk, and only update when nodeName changes
+				// console.debug(`[UOM] Message Metadata: ${metadata}`);
 				if (nodeName !== activeNodeRef.current && NODE_NAME_MAP?.[nodeName as keyof typeof NODE_NAME_MAP]) {
 					console.debug(`[UOM] Active node set to: ${nodeName}`);
 					setActiveNode(nodeName as keyof typeof NODE_NAME_MAP);
@@ -556,7 +555,7 @@ export function AssistantRuntimeProviderWrapper({
 			 * Triggered when sub-graphs values update.
 			 */
 			onSubgraphValues: (namespace: string, values: any) => {
-				console.debug(`[UOM] Subgraph values [${namespace}]:`, values);
+				// console.debug(`[UOM] Subgraph values [${namespace}]:`, values);
 				// if (values) {
 				// 	setGraphState((prev) => ({ ...prev, ...values }));
 				// }
@@ -565,7 +564,7 @@ export function AssistantRuntimeProviderWrapper({
 			 * Triggered when incremental sub-graph updates are broadcasted.
 			 */
 			onSubgraphUpdates: (namespace: string, updates: any) => {
-				console.debug(`[UOM] Subgraph updates [${namespace}]:`, updates);
+				// console.debug(`[UOM] Subgraph updates [${namespace}]:`, updates);
 			},
 			/**
 			 * Catch-all error reporter for execution loops.
