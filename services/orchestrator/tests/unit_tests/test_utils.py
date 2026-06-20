@@ -14,7 +14,7 @@ from react_agent.utils import (
 @pytest.mark.asyncio
 async def test_load_chat_model(context: Context) -> None:
     model1 = await load_chat_model(
-        AvailableModel.EINFRA_KIMI_K2_6.value,
+        AvailableModel.EINFRA_KIMI_K2_7.value,
         {
             "openai_api_url": context.openai_api_url,
             "openai_api_key": context.openai_api_key,

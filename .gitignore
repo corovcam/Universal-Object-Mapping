@@ -16,3 +16,4 @@ misc/
 mockups/
 .devcontainer/*agent.sh
 nginx*.conf
+.vercel

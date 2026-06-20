@@ -6,12 +6,26 @@ pydantic MISSING sentinel, which previously made the `check_entrypoint_names` af
 crash with ``TypeError: argument of type 'Sentinel' is not a container or iterable``.
 """
 
+import json
+
 import pytest
-from langchain_core.messages import HumanMessage
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelFallbackMiddleware
+from langchain.agents.structured_output import (
+    ProviderStrategy,
+    StructuredOutputValidationError,
+)
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+from langchain_core.messages import AIMessage, HumanMessage
+from pydantic import ValidationError
 from pydantic.experimental.missing_sentinel import MISSING
 
 from react_agent.constants import FrameworkEnum, TranslationType
-from react_agent.graph import _create_translation_output_model
+from react_agent.graph import (
+    StructuredOutputRetryMiddleware,
+    _create_translation_output_model,
+    _format_structured_output_error,
+)
 from react_agent.state import State
 
 
@@ -119,11 +133,12 @@ async def test_entrypoint_missing_from_included_code_still_raises() -> None:
     """The entrypoint check must still fire for the fields that ARE present.
 
     Here the source entrypoint name is absent from its (non-excluded) schema code, so
-    `check_entrypoint_names` collects a ValueError and raises it as an ExceptionGroup.
+    `check_entrypoint_names` raises a ValueError, which pydantic surfaces as a ValidationError
+    whose message retains the full actionable detail (so it can be fed back to the model).
     """
     model = await _create_translation_output_model(_make_state(TranslationType.SCHEMA))
 
-    with pytest.raises(ExceptionGroup) as exc_info:
+    with pytest.raises(ValidationError) as exc_info:
         model(
             translated_schema_code="public class Order {}",
             source_validation_schema_code="public class Unrelated { }",
@@ -132,11 +147,9 @@ async def test_entrypoint_missing_from_included_code_still_raises() -> None:
             target_validation_entry_type_name="MongoEntrypoint",
         )
 
-    messages = [str(e) for e in exc_info.value.exceptions]
-    assert any(
+    assert (
         "source_validation_entry_type_name must be declared in source_validation_schema_code"
-        in m
-        for m in messages
+        in str(exc_info.value)
     )
 
 
@@ -155,3 +168,161 @@ async def test_list_code_fields_are_joined() -> None:
 
     assert instance.translated_schema_code == "public class Order {\n}"
     assert instance.source_validation_schema_code == "public class EFCoreEntrypoint {\n}"
+
+
+# ---------------------------------------------------------------------------
+# StructuredOutputRetryMiddleware
+# ---------------------------------------------------------------------------
+
+
+class _BindableFakeChatModel(FakeMessagesListChatModel):
+    """Fake chat model that supports `bind_tools` (required by the agent's ProviderStrategy path).
+
+    Records the messages passed on every model call in `seen_messages` so tests can assert that
+    validation feedback is actually injected into the prompt on retry.
+    """
+
+    seen_messages: list = []
+
+    def bind_tools(self, tools, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        # The agent calls bind_tools(..., strict=True, response_format=...) for ProviderStrategy;
+        # the fake model ignores tools but must accept (and drop) the strict kwarg.
+        return self.bind(**{k: v for k, v in kwargs.items() if k != "strict"})
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        type(self).seen_messages.append(list(messages))
+        return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+
+def _valid_schema_payload() -> str:
+    return json.dumps(
+        {
+            "translated_schema_code": "public class Order {}",
+            "source_validation_schema_code": "public class EFCoreEntrypoint {}",
+            "source_validation_entry_type_name": "EFCoreEntrypoint",
+            "target_validation_schema_code": "public class MongoEntrypoint {}",
+            "target_validation_entry_type_name": "MongoEntrypoint",
+        }
+    )
+
+
+def _invalid_schema_payload() -> str:
+    # Entry type name absent from the schema code -> @model_validator fails.
+    return json.dumps(
+        {
+            "translated_schema_code": "public class Order {}",
+            "source_validation_schema_code": "public class Unrelated {}",
+            "source_validation_entry_type_name": "EFCoreEntrypoint",
+            "target_validation_schema_code": "public class MongoEntrypoint {}",
+            "target_validation_entry_type_name": "MongoEntrypoint",
+        }
+    )
+
+
+async def _make_agent(responses, *, max_retries, fallback_responses=None):
+    """Build an agent over a fake model using the production middleware ordering."""
+    model = await _create_translation_output_model(_make_state(TranslationType.SCHEMA))
+    _BindableFakeChatModel.seen_messages = []
+    primary = _BindableFakeChatModel(responses=list(responses))
+    middleware = []
+    if fallback_responses is not None:
+        middleware.append(
+            ModelFallbackMiddleware(
+                _BindableFakeChatModel(responses=list(fallback_responses))
+            )
+        )
+    middleware.append(StructuredOutputRetryMiddleware(max_retries=max_retries))
+    return create_agent(
+        primary,
+        response_format=ProviderStrategy(model, strict=True),
+        middleware=middleware,
+    )
+
+
+@pytest.mark.asyncio
+async def test_retry_middleware_self_corrects_and_feeds_back_error() -> None:
+    """An invalid first response is retried, with the validation error injected as feedback."""
+    agent = await _make_agent(
+        [AIMessage(content=_invalid_schema_payload()), AIMessage(content=_valid_schema_payload())],
+        max_retries=3,
+    )
+
+    result = await agent.ainvoke({"messages": [HumanMessage(content="translate")]})
+
+    assert result.get("structured_response") is not None
+
+    # The model was called twice; the second call received an extra feedback HumanMessage
+    # containing the actionable validator error.
+    calls = _BindableFakeChatModel.seen_messages
+    assert len(calls) == 2
+    assert len(calls[1]) == len(calls[0]) + 1
+    feedback = str(calls[1][-1].content)
+    assert "failed structured output validation" in feedback
+    assert (
+        "source_validation_entry_type_name must be declared in source_validation_schema_code"
+        in feedback
+    )
+
+
+@pytest.mark.asyncio
+async def test_retry_middleware_succeeds_first_try_without_feedback() -> None:
+    """A valid first response is returned immediately with no extra model calls."""
+    agent = await _make_agent([AIMessage(content=_valid_schema_payload())], max_retries=3)
+
+    result = await agent.ainvoke({"messages": [HumanMessage(content="translate")]})
+
+    assert result.get("structured_response") is not None
+    assert len(_BindableFakeChatModel.seen_messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_middleware_caps_attempts_then_raises() -> None:
+    """After max_retries + 1 failed attempts the error propagates (escalates past the loop)."""
+    agent = await _make_agent([AIMessage(content=_invalid_schema_payload())] * 6, max_retries=2)
+
+    with pytest.raises(StructuredOutputValidationError):
+        await agent.ainvoke({"messages": [HumanMessage(content="translate")]})
+
+    # Initial attempt + 2 retries = 3 model calls (no fallback configured).
+    assert len(_BindableFakeChatModel.seen_messages) == 3
+
+
+@pytest.mark.asyncio
+async def test_retry_middleware_escalates_to_fallback_after_exhaustion() -> None:
+    """When the primary exhausts its feedback retries, the fallback model is tried."""
+    agent = await _make_agent(
+        [AIMessage(content=_invalid_schema_payload())] * 4,
+        max_retries=1,
+        fallback_responses=[AIMessage(content=_valid_schema_payload())],
+    )
+
+    result = await agent.ainvoke({"messages": [HumanMessage(content="translate")]})
+
+    assert result.get("structured_response") is not None
+    # 2 primary attempts (initial + 1 retry) before the fallback resolved it.
+    assert len(_BindableFakeChatModel.seen_messages) >= 3
+
+
+def test_format_structured_output_error_extracts_validation_detail() -> None:
+    """The formatter surfaces the pydantic validator message and omits the bulky input echo."""
+    from pydantic import BaseModel, model_validator
+
+    class _Model(BaseModel):
+        x: int
+
+        @model_validator(mode="after")
+        def _check(self):
+            raise ValueError("entry name must be declared in schema code")
+
+    try:
+        _Model(x=1)
+    except ValidationError as validation_error:
+        # Mimic the wrapping done by ProviderStrategyBinding.parse -> _parse_with_schema.
+        source = ValueError(f"Failed to parse data to _Model: {validation_error}")
+        source.__cause__ = validation_error
+        exc = StructuredOutputValidationError("_Model", source, AIMessage(content="{}"))
+
+    formatted = _format_structured_output_error(exc)
+    assert "entry name must be declared in schema code" in formatted
+    # The model's (potentially huge / truncated) input must NOT be echoed back.
+    assert "input_value" not in formatted

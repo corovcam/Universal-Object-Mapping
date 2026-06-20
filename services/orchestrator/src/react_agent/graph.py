@@ -13,13 +13,18 @@ import logfire
 import orjson
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
+    AgentMiddleware,
     ClearToolUsesEdit,
     ContextEditingMiddleware,
     ModelFallbackMiddleware,
     ModelRetryMiddleware,
     ToolRetryMiddleware,
 )
-from langchain.agents.structured_output import ProviderStrategy
+from langchain.agents.middleware.types import ModelRequest, ModelResponse
+from langchain.agents.structured_output import (
+    ProviderStrategy,
+    StructuredOutputValidationError,
+)
 from langchain.messages import AIMessage
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
@@ -29,12 +34,13 @@ from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
 from langgraph.types import CachePolicy, Command, RetryPolicy, interrupt
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from react_agent.constants import (
     FRAMEWORK_TO_LANGUAGE_TYPE,
     MAX_EXTRACTION_LOOPS,
+    MAX_STRUCTURED_OUTPUT_RETRIES,
     MAX_TRANSLATION_LOOPS,
     AvailableModel,
     DotnetFramework,
@@ -187,7 +193,7 @@ class BaseTranslationOutput(BaseModel):
             BaseTranslationOutput: The validated and normalized model instance.
 
         Raises:
-            ValueError: If the entrypoint type name is missing from the harness/schema code.
+            ValueError: If any entrypoint type name is missing from its harness/schema code.
         """
         # First, join any list fields into strings
         if isinstance(self.translated_schema_code, list):
@@ -233,12 +239,105 @@ class BaseTranslationOutput(BaseModel):
                 and isinstance(entry_name, str)
                 and entry_name not in code
             ):
-                errors.append(
-                    ValueError(f"{entry_field} must be declared in {code_field}.")
-                )
+                errors.append(f"{entry_field} must be declared in {code_field}.")
         if errors:
-            raise ExceptionGroup("Validation entry type name checks failed", errors)
+            # Raise a single ValueError so pydantic wraps it into a ValidationError whose string carries every message. (see StructuredOutputRetryMiddleware).
+            raise ValueError("\n".join(errors))
         return self
+
+
+def _format_structured_output_error(exc: StructuredOutputValidationError) -> str:
+    """Render a concise, model-actionable description of a structured-output failure.
+
+    Args:
+        exc (StructuredOutputValidationError): The error raised by the provider strategy when the
+            native structured response failed to parse or validate.
+
+    Returns:
+        str: A newline-separated, human/LLM-readable summary of what went wrong.
+    """
+    source: BaseException = getattr(exc, "source", None) or exc
+    cause = getattr(source, "__cause__", None)
+    if isinstance(cause, ValidationError):
+        lines = []
+        for err in cause.errors(include_url=False, include_input=False):
+            loc = ".".join(str(part) for part in err.get("loc", ()))
+            msg = err.get("msg", "")
+            lines.append(f"{loc}: {msg}" if loc else msg)
+        if lines:
+            return "\n".join(lines)
+    return str(source)
+
+
+class StructuredOutputRetryMiddleware(AgentMiddleware):
+    """Retry provider-native structured output, feeding the validation error back to the model.
+
+    `ProviderStrategy` is faster and more reliable than `ToolStrategy` for strict structured
+    output, but (unlike `ToolStrategy.handle_errors`) it offers no retry hook.
+
+    Only `StructuredOutputValidationError` is retried here; all other exceptions (transient API
+    errors, etc.) propagate to the surrounding middleware (e.g. `ModelFallbackMiddleware`). Place
+    this *inside* `ModelFallbackMiddleware` (i.e. later in the middleware list) so the primary model
+    is given several feedback-guided attempts before escalating to fallback models.
+    """
+
+    def __init__(self, *, max_retries: int = MAX_STRUCTURED_OUTPUT_RETRIES) -> None:
+        """Initialize the middleware.
+
+        Args:
+            max_retries (int): Maximum number of *additional* attempts after the initial call.
+        """
+        super().__init__()
+        self.max_retries = max_retries
+        self.tools = []
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
+    ) -> ModelResponse:
+        """Invoke the model, retrying structured-output failures with error feedback.
+
+        Args:
+            request (ModelRequest): The model request (messages, model, response format, ...).
+            handler (Callable): Executes the model + structured-output parsing; may be called
+                multiple times.
+
+        Returns:
+            ModelResponse: The first successful response.
+
+        Raises:
+            StructuredOutputValidationError: If every attempt fails validation.
+        """
+        last_exc: StructuredOutputValidationError | None = None
+        for attempt in range(self.max_retries + 1):
+            if attempt == 0 or last_exc is None:
+                current_request = request
+            else:
+                # Rebuild from the original messages + a single latest-error note (to shorten model input)
+                feedback = HumanMessage(
+                    content=(
+                        "Your previous response failed structured output validation:\n"
+                        f"{_format_structured_output_error(last_exc)}\n\n"
+                        "Regenerate the complete structured output, fixing exactly these issues. "
+                        "Return all required fields."
+                    )
+                )
+                current_request = request.override(
+                    messages=[*request.messages, feedback]
+                )
+            try:
+                return await handler(current_request)
+            except StructuredOutputValidationError as exc:
+                last_exc = exc
+                logger.warning(
+                    "Structured output validation failed (attempt %d/%d): %s",
+                    attempt + 1,
+                    self.max_retries + 1,
+                    _format_structured_output_error(exc),
+                )
+        assert last_exc is not None
+        raise last_exc
 
 
 async def _create_translation_output_model(state: State) -> type[BaseModel]:
@@ -810,7 +909,8 @@ Source Code:
         response_format=ProviderStrategy(TranslationOutput, strict=True),
         system_prompt=system_prompt,
         middleware=[
-            ModelRetryMiddleware(),
+            # Outermost: only escalate to fallback models once the primary has exhausted its
+            # feedback-guided structured-output retries below.
             ModelFallbackMiddleware(
                 await get_model(
                     config, runtime, AvailableModel.EINFRA_THINKER, temperature=0
@@ -819,6 +919,7 @@ Source Code:
                     config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0
                 ),
             ),
+            StructuredOutputRetryMiddleware(), # Must be placed under ModelFallbackMiddleware to ensure retries happen before fallback escalation.
             ToolRetryMiddleware(),
         ],
     )
@@ -1287,7 +1388,7 @@ async def evaluation_node(
     Returns:
         dict[str, Any]: State updates containing the evaluation decision and explanation.
     """
-    model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6)
+    model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_7)
 
     last_msgs = [str(msg) for msg in state.translation_messages[-4:]]
 
