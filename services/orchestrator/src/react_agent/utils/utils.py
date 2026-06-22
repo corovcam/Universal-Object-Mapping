@@ -108,26 +108,31 @@ def translate_localhost_to_host_gateway(uri: str) -> str:
     return uri
 
 
-async def get_snippet_content(framework: FrameworkEnum, is_schema: bool = False) -> str:
+async def get_snippet_content(framework: FrameworkEnum, is_schema: bool = False) -> dict[Literal["content", "entry_type_name"], str]:
     """Read a snippet file's content based on framework and type."""
     snippets_dir = os.path.join(get_context_dir(), "snippets")
 
     if framework not in FRAMEWORK_TO_SNIPPET_FILES:
         logger.warning(f"No snippet file mapping found for framework {framework.value}")
-        return ""
+        return {"content": "", "entry_type_name": ""}
 
-    file_name = (
-        FRAMEWORK_TO_SNIPPET_FILES[framework][0]
-        if is_schema
-        else FRAMEWORK_TO_SNIPPET_FILES[framework][1]
-    )
+    if is_schema:
+        file_name = FRAMEWORK_TO_SNIPPET_FILES[framework]["schema_validation"]
+        entry_type_name = FRAMEWORK_TO_SNIPPET_FILES[framework]["schema_validation_entry_type_name"]
+    else:
+        file_name = FRAMEWORK_TO_SNIPPET_FILES[framework]["query_validation"]
+        entry_type_name = FRAMEWORK_TO_SNIPPET_FILES[framework]["query_validation_entry_type_name"]
+
     path = os.path.join(snippets_dir, file_name)
     try:
         async with aiofiles.open(path) as f:
-            return await f.read()
+            return {
+                "content": await f.read(),
+                "entry_type_name": entry_type_name
+            }
     except Exception as e:
         logger.warning(f"Failed to read snippet file {path}: {e}")
-        return ""
+        return {"content": "", "entry_type_name": ""}
 
 
 async def get_framework_config_content(framework: FrameworkEnum) -> str:
@@ -664,9 +669,15 @@ async def create_example_for_prompt(
     framework: FrameworkEnum, return_schema: bool
 ) -> str:
     """Create example code snippets for prompts based on the framework."""
-    example = f"""
+    if return_schema:
+        example = f"""
 <example framework="{framework.value}">
-{await get_snippet_content(framework, is_schema=True) if return_schema else await get_snippet_content(framework, is_schema=False)}
+{(await get_snippet_content(framework, is_schema=True))["content"]}
+</example>"""
+    else:
+        example = f"""
+<example framework="{framework.value}">
+{(await get_snippet_content(framework, is_schema=False))["content"]}
 </example>"""
     return example
 

@@ -6,6 +6,9 @@ They are dynamically interpolated at runtime using str.format() to inject
 the chosen frameworks and context variables.
 """
 
+from datetime import UTC, datetime
+
+from react_agent.constants import TranslationType
 from react_agent.state import State
 from react_agent.utils.utils import get_framework_config_content, get_snippet_content
 
@@ -715,7 +718,10 @@ Your task:
    - For MongoDB: use mongodb tools to list collections, inspect document schemas, and sample documents.
    - For Neo4j: use the prebuilt neo4j tools to list node labels, relationship types, and sample nodes/edges.
 2. Inspect the TARGET database schema if applicable (e.g., if translating from SQL to MongoDB, inspect what MongoDB collections exist).
-3. Return a concise but complete summary of the relevant source and target schemas."""
+3. Return a concise but complete summary of the relevant source and target schemas.
+
+System time: {system_time}
+"""
 """Schema inspection prompt used prior to code translation.
 Guides the agent to use the MCP tools to interact with live relational and NoSQL databases."""
 
@@ -740,11 +746,23 @@ Core translation contract:
 3. Preserve behavior, field intent, and query semantics.
 4. Keep translated query methods semantically equivalent to the source query method. Do not introduce synthetic validator parameters (for example sortByField/ascending) unless they already exist in source query code.
 5. Keep schema code and query code separated.
-6. For QUERY or BOTH translations, produce:
-   - translated_query_code: production query implementation only.
+{"""6. For SCHEMA translations, produce structured output:
+    - translated_schema_code: See EXAMPLES.
+    - source_validation_schema_code: See VALIDATION ENTRYPOINT EXAMPLES.
+    - source_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.
+    - target_validation_schema_code: See VALIDATION ENTRYPOINT EXAMPLES.
+    - target_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.""" if state.translation_type == TranslationType.SCHEMA else ""}
+{"""6. For QUERY or BOTH translations, produce structured output:
+   - translated_schema_code: See EXAMPLES.
+   - translated_query_code: See EXAMPLES.
+   - source_validation_harness_code: See VALIDATION ENTRYPOINT EXAMPLES.
+   - source_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.
+   - target_validation_harness_code: See VALIDATION ENTRYPOINT EXAMPLES.
+   - target_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.""" if state.translation_type in [TranslationType.QUERY, TranslationType.BOTH] else ""}
 7. Structured output fields already separate content. Do NOT wrap field values with XML tags.
 8. All code should be properly indented, including line breaks, with properly formatted blocks of code without any additional markdown formatting.
 9. DO NOT USE COMMENTS OR PLACEHOLDERS IN TRANSLATED CODE. THIS CODE WILL BE EXECUTED.
+10. PRODUCE OUTPUT IN THE EXACT STRUCTURED FORMAT JSON SCHEMA AS REQUESTED. DO NOT SHORTEN, OMIT OR REPLACE ANY FIELDS WITH NULL OR PLACEHOLDER VALUES.
 
 Framework rules:
 1. For Java schema classes, avoid public access modifier unless explicitly required.
@@ -758,7 +776,7 @@ Source ({state.source_target.value})
 Target ({state.destination_target.value})
 {await get_framework_config_content(state.destination_target)}
 
---- EXAMPLES (for source_validation_schema_code, source_validation_harness_code, target_validation_schema_code, target_validation_harness_code see below) ---
+--- EXAMPLES (example <input> and <output> for translated_schema_code and translated_query_code) ---
 
 <example translation_type="schema" source_target=".NET Entity Framework Core" destination_target="Java Spring Data MongoDB">
 <input>
@@ -1002,36 +1020,59 @@ public static class NHibernateQueryEntrypoint
 # 4. If any validation fails, fix code and rerun until all required validations pass.
 # 5. Do not finalize query translations unless all three query validation steps pass.
 
-    snippets = "--- VALIDATION ENTRYPOINT EXAMPLES ---\n"
-    src_schema = await get_snippet_content(state.source_target, is_schema=True)
-    src_query = await get_snippet_content(state.source_target, is_schema=False)
-    snippets += f"""
-<example translation_type="both" source_target="{state.source_target.value}" destination_target="{state.destination_target.value if state.destination_target else ""}">
+    snippets = "\n--- VALIDATION ENTRYPOINT EXAMPLES (example structured <output> for source_validation_schema_code, source_validation_harness_code, source_validation_entry_type_name, target_validation_schema_code, target_validation_harness_code, target_validation_entry_type_name) ---\n"
+    
+    # Add source validation harness examples
+    if state.translation_type == TranslationType.SCHEMA:
+        src_example = await get_snippet_content(state.source_target, is_schema=True)
+        snippets += f"""
+<example translation_type="schema" source_target="{state.source_target.value}" destination_target="{state.destination_target.value if state.destination_target else ""}">
 <output>
 source_validation_schema_code:
 ```csharp
-{src_schema}
-```
+{src_example["content"]}```
+source_validation_entry_type_name:
+{src_example["entry_type_name"]}
+"""
+    else:
+        src_example = await get_snippet_content(state.source_target, is_schema=False)
+        snippets += f"""
+<example translation_type="both" source_target="{state.source_target.value}" destination_target="{state.destination_target.value if state.destination_target else ""}">
+<output>
 source_validation_harness_code:
 ```csharp
-{src_query}
+{src_example['content']}
+source_validation_entry_type_name:
+{src_example["entry_type_name"]}
 ```
 
 """
 
-    tgt_schema = await get_snippet_content(state.destination_target, is_schema=True)
-    tgt_query = await get_snippet_content(state.destination_target, is_schema=False)
-    snippets += f"""
+    # Add target validation harness examples
+    if state.translation_type == TranslationType.SCHEMA:
+        tgt_example = await get_snippet_content(state.destination_target, is_schema=True)
+        snippets += f"""
 target_validation_schema_code:
 ```java
-{tgt_schema}
+{tgt_example['content']}```
+target_validation_entry_type_name:
+{tgt_example['entry_type_name']}
 ```
+"""
+    else:
+        tgt_example = await get_snippet_content(state.destination_target, is_schema=False)
+        snippets += f"""
 target_validation_harness_code:
 ```java
-{tgt_query}
+{tgt_example['content']}
+```
+target_validation_entry_type_name:
+{tgt_example['entry_type_name']}
 ```
 </output>
 </example>
+
+System time: {datetime.now(tz=UTC).isoformat()}
 """
 
     return base_prompt + snippets

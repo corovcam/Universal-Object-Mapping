@@ -1,6 +1,8 @@
 """Constants and enumerations for the React Agent Orchestrator service."""
 from enum import Enum
 
+from typing_extensions import Literal
+
 
 class AvailableModel(str, Enum):
     """Available models from Ollama and EINFRA for UI dropdown selection."""
@@ -144,27 +146,40 @@ FRAMEWORK_TO_LANGUAGE_TYPE = {
 }
 """Mapping of each framework type to its corresponding programming language type for code generation and validation logic."""
 
-FRAMEWORK_TO_SNIPPET_FILES = {
-    FrameworkEnum.DOTNET_EFCORE: (
-        "EFCoreSchemaValidationEntrypoint.cs",
-        "EFCoreQueryEntrypoint.cs",
-    ),
-    FrameworkEnum.DOTNET_DAPPER: (
-        "DapperSchemaValidationEntrypoint.cs",
-        "DapperQueryEntrypoint.cs",
-    ),
-    FrameworkEnum.DOTNET_NHIBERNATE: (
-        "NHibernateSchemaValidationEntrypoint.cs",
-        "NHibernateQueryEntrypoint.cs",
-    ),
-    FrameworkEnum.JAVA_SPRING_DATA_MONGODB: (
-        "MongoSchemaValidationEntrypoint.java",
-        "MongoQueryEntrypoint.java",
-    ),
-    FrameworkEnum.JAVA_SPRING_DATA_NEO4J: (
-        "Neo4jSchemaValidationEntrypoint.java",
-        "Neo4jQueryEntrypoint.java",
-    ),
+FRAMEWORK_TO_SNIPPET_FILES: dict[
+    FrameworkEnum, 
+    dict[Literal["schema_validation", "schema_validation_entry_type_name", "query_validation", "query_validation_entry_type_name"], str]
+] = {
+    FrameworkEnum.DOTNET_EFCORE: {
+        "schema_validation": "EFCoreSchemaValidationEntrypoint.cs",
+        "schema_validation_entry_type_name": "EFCoreSchemaValidationEntrypoint",
+        "query_validation": "EFCoreQueryEntrypoint.cs",
+        "query_validation_entry_type_name": "EFCoreQueryEntrypoint",
+    },
+    FrameworkEnum.DOTNET_DAPPER: {
+        "schema_validation": "DapperSchemaValidationEntrypoint.cs",
+        "schema_validation_entry_type_name": "DapperSchemaValidationEntrypoint",
+        "query_validation": "DapperQueryEntrypoint.cs",
+        "query_validation_entry_type_name": "DapperQueryEntrypoint",
+    },
+    FrameworkEnum.DOTNET_NHIBERNATE: {
+        "schema_validation": "NHibernateSchemaValidationEntrypoint.cs",
+        "schema_validation_entry_type_name": "NHibernateSchemaValidationEntrypoint",
+        "query_validation": "NHibernateQueryEntrypoint.cs",
+        "query_validation_entry_type_name": "NHibernateQueryEntrypoint",
+    },
+    FrameworkEnum.JAVA_SPRING_DATA_MONGODB: {
+        "schema_validation": "MongoSchemaValidationEntrypoint.java",
+        "schema_validation_entry_type_name": "MongoSchemaValidationEntrypoint",
+        "query_validation": "MongoQueryEntrypoint.java",
+        "query_validation_entry_type_name": "MongoQueryEntrypoint",
+    },
+    FrameworkEnum.JAVA_SPRING_DATA_NEO4J: {
+        "schema_validation": "Neo4jSchemaValidationEntrypoint.java",
+        "schema_validation_entry_type_name": "Neo4jSchemaValidationEntrypoint",
+        "query_validation": "Neo4jQueryEntrypoint.java",
+        "query_validation_entry_type_name": "Neo4jQueryEntrypoint",
+    },
 }
 """Mapping of framework types to their corresponding schema and query snippet file names."""
 

@@ -6,7 +6,7 @@
 import asyncio
 import json
 import logging
-import os
+from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable, Literal, Union, cast
 
 import logfire
@@ -33,7 +33,13 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
-from langgraph.types import CachePolicy, Command, RetryPolicy, interrupt
+from langgraph.types import (
+    CachePolicy,
+    Command,
+    RetryPolicy,
+    default_retry_on,
+    interrupt,
+)
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
@@ -241,13 +247,21 @@ class BaseTranslationOutput(BaseModel):
             ):
                 errors.append(f"{entry_field} must be declared in {code_field}.")
         if errors:
-            # Raise a single ValueError so pydantic wraps it into a ValidationError whose string carries every message. (see StructuredOutputRetryMiddleware).
+            # Raise a single ValueError (not an ExceptionGroup) so pydantic wraps it into a
+            # ValidationError whose string carries every message. ExceptionGroup's str only
+            # reports a sub-exception count, so the actionable detail was being lost when the
+            # error was surfaced to the model for self-correction (see
+            # StructuredOutputRetryMiddleware).
             raise ValueError("\n".join(errors))
         return self
 
 
 def _format_structured_output_error(exc: StructuredOutputValidationError) -> str:
     """Render a concise, model-actionable description of a structured-output failure.
+
+    Prefers the underlying pydantic `ValidationError` (extracting just the `loc` + `msg` of each
+    error, without echoing the model's potentially huge/truncated input) and otherwise falls back
+    to the raw source error string (e.g. JSON decode failures from output truncation).
 
     Args:
         exc (StructuredOutputValidationError): The error raised by the provider strategy when the
@@ -270,16 +284,29 @@ def _format_structured_output_error(exc: StructuredOutputValidationError) -> str
 
 
 class StructuredOutputRetryMiddleware(AgentMiddleware):
-    """Retry provider-native structured output, feeding the validation error back to the model.
+    """Retry provider-native structured output on the SAME model, feeding the error back.
 
     `ProviderStrategy` is faster and more reliable than `ToolStrategy` for strict structured
-    output, but (unlike `ToolStrategy.handle_errors`) it offers no retry hook.
+    output, but (unlike `ToolStrategy.handle_errors`) it offers no retry hook: when the generated
+    JSON fails schema or `@model_validator` checks the agent raises
+    `StructuredOutputValidationError` and gives up. Plain `ModelRetryMiddleware` would re-call the
+    model with the *identical* prompt; this middleware instead appends a concise description of the
+    failure and re-invokes, so the model can self-correct — mirroring `ToolStrategy`'s error loop
+    while keeping native strict structured output.
 
-    Only `StructuredOutputValidationError` is retried here; all other exceptions (transient API
-    errors, etc.) propagate to the surrounding middleware (e.g. `ModelFallbackMiddleware`). Place
-    this *inside* `ModelFallbackMiddleware` (i.e. later in the middleware list) so the primary model
-    is given several feedback-guided attempts before escalating to fallback models.
+    Only `StructuredOutputValidationError` is retried, and always against the *same* model:
+    validation failures mean the model got the schema wrong, not that the model is unavailable, so
+    escalating to a (typically weaker) fallback rarely helps and burns the token/latency budget. To
+    guarantee that, on exhaustion this middleware returns a normal `ModelResponse` carrying an
+    `ERROR_PREFIX` message instead of raising — a raised exception would be caught by the
+    surrounding `ModelFallbackMiddleware` and bounced to the fallback models. Genuine failures
+    (transient API errors, outages) raise other exception types, which propagate untouched to
+    `ModelFallbackMiddleware` as intended.
     """
+
+    #: Prefix marking a surfaced structured-output failure in the message stream. Downstream
+    #: handling (and the UI) key on this to recognise a generation failure.
+    ERROR_PREFIX = "[Structured Output Error]"
 
     def __init__(self, *, max_retries: int = MAX_STRUCTURED_OUTPUT_RETRIES) -> None:
         """Initialize the middleware.
@@ -296,7 +323,7 @@ class StructuredOutputRetryMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
-        """Invoke the model, retrying structured-output failures with error feedback.
+        """Invoke the model, retrying structured-output failures (same model) with error feedback.
 
         Args:
             request (ModelRequest): The model request (messages, model, response format, ...).
@@ -304,17 +331,18 @@ class StructuredOutputRetryMiddleware(AgentMiddleware):
                 multiple times.
 
         Returns:
-            ModelResponse: The first successful response.
-
-        Raises:
-            StructuredOutputValidationError: If every attempt fails validation.
+            ModelResponse: The first successful response, or — once retries are exhausted — a
+            response whose single message is a surfaced ``ERROR_PREFIX`` error (never raised, so
+            fallback models are not triggered for validation failures).
         """
         last_exc: StructuredOutputValidationError | None = None
         for attempt in range(self.max_retries + 1):
             if attempt == 0 or last_exc is None:
                 current_request = request
             else:
-                # Rebuild from the original messages + a single latest-error note (to shorten model input)
+                # Rebuild from the original messages + a single latest-error note rather than
+                # accumulating feedback (and the bulky invalid output) every round, which would
+                # grow context and make output truncation on capped models more likely.
                 feedback = HumanMessage(
                     content=(
                         "Your previous response failed structured output validation:\n"
@@ -337,7 +365,41 @@ class StructuredOutputRetryMiddleware(AgentMiddleware):
                     _format_structured_output_error(exc),
                 )
         assert last_exc is not None
-        raise last_exc
+        attempts = self.max_retries + 1
+        logger.error(
+            "Structured output validation failed after %d attempts; surfacing error to the user.",
+            attempts,
+        )
+        return ModelResponse(
+            result=[
+                AIMessage(
+                    content=(
+                        f"{self.ERROR_PREFIX} The model could not produce a valid structured "
+                        f"response after {attempts} attempts. Validation errors:\n"
+                        f"{_format_structured_output_error(last_exc)}"
+                    )
+                )
+            ]
+        )
+
+
+def _retry_on_excluding_structured_output(exc: Exception) -> bool:
+    """Node retry predicate that never re-runs the whole node on a structured-output failure.
+
+    `StructuredOutputRetryMiddleware` already retries the model (with feedback) and surfaces a
+    failure message rather than raising, so a `StructuredOutputValidationError` reaching the node
+    boundary should not trigger an expensive full-node re-run. Everything else defers to LangGraph's
+    default retry behavior (transient connection/5xx errors, etc.).
+
+    Args:
+        exc (Exception): The exception raised by the node.
+
+    Returns:
+        bool: Whether LangGraph should retry the node.
+    """
+    if isinstance(exc, StructuredOutputValidationError):
+        return False
+    return default_retry_on(exc)
 
 
 async def _create_translation_output_model(state: State) -> type[BaseModel]:
@@ -667,7 +729,7 @@ async def schema_inspection(
                 temperature=0,
             ),
             tools=db_tools,
-            system_prompt=SYSTEM_PROMPT_SCHEMA_INSPECTOR,
+            system_prompt=SYSTEM_PROMPT_SCHEMA_INSPECTOR.format(system_time=datetime.now(tz=UTC).isoformat()),
             middleware=[
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
@@ -909,8 +971,9 @@ Source Code:
         response_format=ProviderStrategy(TranslationOutput, strict=True),
         system_prompt=system_prompt,
         middleware=[
-            # Outermost: only escalate to fallback models once the primary has exhausted its
-            # feedback-guided structured-output retries below.
+            # Outermost: only escalate to fallback models on *genuine* failures (transient API
+            # errors, outages). Structured-output validation errors never reach here — the
+            # middleware below handles them on the same model and returns gracefully.
             ModelFallbackMiddleware(
                 await get_model(
                     config, runtime, AvailableModel.EINFRA_THINKER, temperature=0
@@ -919,7 +982,10 @@ Source Code:
                     config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0
                 ),
             ),
-            StructuredOutputRetryMiddleware(), # Must be placed under ModelFallbackMiddleware to ensure retries happen before fallback escalation.
+            # Retries StructuredOutputValidationError in place on the same model, feeding the
+            # error back so the model can self-correct (ProviderStrategy has no built-in
+            # handle_errors like ToolStrategy).
+            StructuredOutputRetryMiddleware(),
             ToolRetryMiddleware(),
         ],
     )
@@ -938,17 +1004,35 @@ Source Code:
     }
 
     if "structured_response" not in response:
-        logger.error("LLM did not return TranslationOutput properly.")
-        messages = [
-            *response["messages"],
-            AIMessage(
-                content="Failed to generate translation. LLM did not return structured response in expected format."
-            ),
+        # The model could not produce a valid structured response even after in-place retries.
+        # Surface the error to the user as a normal assistant message — a raised exception becomes
+        # an opaque graph run error that never reaches the frontend message stream, whereas a
+        # message on the `messages` channel renders in chat (same path as the success message).
+        # `route_post_translation` detects the `[Structured Output Error]` marker and diverts to
+        # human intervention instead of pushing empty/invalid code into validation.
+        logger.error(
+            "generate_translation_node: no structured response after retries; surfacing error."
+        )
+        response_messages = list(response.get("messages", []))
+        last_content = (
+            str(response_messages[-1].content) if response_messages else ""
+        )
+        # The retry middleware already emits a detailed `[Structured Output Error]` message; reuse
+        # its detail when present, otherwise fall back to a generic explanation.
+        detail = (
+            last_content
+            if StructuredOutputRetryMiddleware.ERROR_PREFIX in last_content
+            else f"{StructuredOutputRetryMiddleware.ERROR_PREFIX} The model did not return a valid translation in the expected structured format."
+        )
+        failure_message = AIMessage(content=detail)
+        surfaced = [
+            *(response_messages[:-1] if response_messages else []),
+            failure_message,
         ]
-        raise Exception("\n".join([str(msg.content) for msg in messages]))
-        # updates["messages"] = messages
-        # updates["translation_messages"] = messages
-        # return updates
+        updates["messages"] = surfaced
+        updates["translation_messages"] = surfaced
+        updates["explanation_message"] = detail
+        return updates
 
     output = response["structured_response"]
     updates.update(output.model_dump(warnings="error", exclude_unset=True))
@@ -1102,10 +1186,7 @@ def prep_query_validation(state: State) -> dict[str, Any]:
     assert state.source_target is not None and state.destination_target is not None
 
     # Source validation
-    if state.source_target in [
-        FrameworkEnum.DOTNET_EFCORE,
-        FrameworkEnum.DOTNET_DAPPER,
-    ]:
+    if state.source_target in DotnetFramework:
         tool_calls.append(
             {
                 "name": "validate_dotnet_code",
@@ -1117,10 +1198,7 @@ def prep_query_validation(state: State) -> dict[str, Any]:
                 "type": "tool_call",
             }
         )
-    elif state.source_target in [
-        FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
-        FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
-    ]:
+    elif state.source_target in JavaFramework:
         tool_calls.append(
             {
                 "name": "validate_java_code",
@@ -1136,10 +1214,7 @@ def prep_query_validation(state: State) -> dict[str, Any]:
         )
 
     # Target validation
-    if state.destination_target in [
-        FrameworkEnum.DOTNET_EFCORE,
-        FrameworkEnum.DOTNET_DAPPER,
-    ]:
+    if state.destination_target in DotnetFramework:
         tool_calls.append(
             {
                 "name": "validate_dotnet_code",
@@ -1151,10 +1226,7 @@ def prep_query_validation(state: State) -> dict[str, Any]:
                 "type": "tool_call",
             }
         )
-    elif state.destination_target in [
-        FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
-        FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
-    ]:
+    elif state.destination_target in JavaFramework:
         tool_calls.append(
             {
                 "name": "validate_java_code",
@@ -1517,18 +1589,31 @@ def should_extract_input(state: State) -> Literal["schema_inspection", "extract_
 
 def route_post_translation(
     state: State,
-) -> Literal["prep_schema_validation", "prep_query_validation"]:
+) -> Literal[
+    "prep_schema_validation", "prep_query_validation", "human_intervention_node"
+]:
     """Determine the next validation state transition after code generation.
 
-    Routes to `prep_schema_validation` if the translation type is SCHEMA. For QUERY or BOTH
-    translation types, it routes to `prep_query_validation`.
+    If generation could not produce a valid structured output (surfaced by
+    `generate_translation_node` as a `[Structured Output Error]` message), routes to
+    `human_intervention_node` so the failure is reviewed instead of pushing empty/invalid code
+    into validation. Otherwise routes to `prep_schema_validation` for SCHEMA translations, or to
+    `prep_query_validation` for QUERY/BOTH.
 
     Args:
         state (State): The current state of the graph.
 
     Returns:
-        Literal["prep_schema_validation", "prep_query_validation"]: The next node.
+        Literal["prep_schema_validation", "prep_query_validation", "human_intervention_node"]:
+        The next node.
     """
+    last_msg = (
+        str(state.translation_messages[-1].content)
+        if state.translation_messages
+        else ""
+    )
+    if StructuredOutputRetryMiddleware.ERROR_PREFIX in last_msg:
+        return "human_intervention_node"
     if state.translation_type == TranslationType.SCHEMA:
         return "prep_schema_validation"
     return "prep_query_validation"
@@ -1650,6 +1735,14 @@ retry_policy = RetryPolicy(
     max_attempts=3,
 )
 
+# Same as `retry_policy` but never re-runs the whole node on a structured-output validation
+# failure: `StructuredOutputRetryMiddleware` already retried the model in place and surfaced a
+# user-facing error, so a full-node re-run (3x the model/fallback fan-out) would only add cost.
+generation_retry_policy = RetryPolicy(
+    max_attempts=3,
+    retry_on=_retry_on_excluding_structured_output,
+)
+
 builder.add_node(
     extract_input,  # type: ignore
     cache_policy=CachePolicy(),
@@ -1663,7 +1756,7 @@ builder.add_node(
 builder.add_node(
     generate_translation_node,  # type: ignore
     cache_policy=CachePolicy(),
-    retry_policy=retry_policy,
+    retry_policy=generation_retry_policy,
 )
 builder.add_node(
     human_intervention_node,  # type: ignore
