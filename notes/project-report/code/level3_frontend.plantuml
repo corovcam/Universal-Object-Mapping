@@ -1,0 +1,23 @@
+@startuml C4_Components
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title UOM System - Component Diagram (Next.js Frontend UI)
+
+Container_Boundary(frontend, "UOM UI Frontend") {
+    Component(ui_components, "React Client Components", "Assistant-UI, Tailwind, Shadcn", "Renders chat, deep diffs, logs, and sandbox links in browser.")
+    Component(state_context, "React Graph State Context", "React Context", "Synchronizes graph state, checkpoints, and UI updates globally.")
+    Component(sdk_client, "LangGraph SDK Client", "TypeScript", "Connects to server-side proxy route to stream LangGraph runs.")
+    Component(api_proxy, "API Passthrough Proxy", "Node.js (Next.js App Router)", "Intercepts /api/* requests, injects auth tokens, and shields backend URLs.")
+}
+
+Person(dev, "Developer / DB Architect", "Interacts via browser")
+Container(backend, "LangGraph Orchestrator", "Python", "Provides translation pipeline.")
+
+Rel(dev, ui_components, "Views and interacts")
+Rel(ui_components, state_context, "Reads/Updates state")
+Rel(ui_components, sdk_client, "Triggers actions (runs, messages)")
+Rel(sdk_client, api_proxy, "API Calls", "/api/threads, /api/runs")
+Rel(api_proxy, backend, "Proxies Requests securely", "HTTP/SSE")
+
+SHOW_LEGEND()
+@enduml
