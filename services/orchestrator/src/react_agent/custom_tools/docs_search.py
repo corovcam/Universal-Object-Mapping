@@ -120,11 +120,16 @@ async def load_docs_mcp_tools() -> AsyncGenerator[list[BaseTool], None]:
             "url": "https://learn.microsoft.com/api/mcp",
             "transport": "streamable_http",
         },
-        # "spring_docs": {
-        #     "command": "npx",
-        #     "args": ["@enokdev/springdocs-mcp@latest"],
-        #     "transport": "stdio",
-        # },
+        "spring_docs": {
+            "command": "npx",
+            "args": ["@enokdev/springdocs-mcp@latest"],
+            "transport": "stdio",
+            "env": {
+                "NODE_OPTIONS": "--max-old-space-size=4096",
+                "REQUEST_TIMEOUT": "15000",
+                "MAX_RETRIES": "3"
+            }
+        },
     }
 
     tools: list[BaseTool] = []

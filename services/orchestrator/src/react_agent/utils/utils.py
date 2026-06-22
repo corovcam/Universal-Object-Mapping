@@ -225,7 +225,12 @@ async def load_chat_model(
                 "enable_thinking": config["reasoning"]
             }
         if extra_body is not None:
-            extra_body_kwargs.get("chat_template_kwargs", {}).update(extra_body)
+            chat_template_kwargs = extra_body_kwargs.get("chat_template_kwargs", {})
+            extra_body_kwargs["chat_template_kwargs"] = {
+                **chat_template_kwargs,
+                **extra_body.get("chat_template_kwargs", {}),
+            }
+            extra_body_kwargs.update({k: v for k, v in extra_body.items() if k != "chat_template_kwargs"})
         
         litellm_api_base = config.get("openai_api_url", "").rstrip("/v1")
         model_client = ChatLiteLLM(
@@ -631,7 +636,48 @@ async def get_model(
         "extra_body": extra_body,
         **chat_model_kwargs,
     }
+    extra_body_kwargs = await get_extra_body_for_model(AvailableModel(model_name))
+    if extra_body_kwargs:
+        chat_model_config["extra_body"] = chat_model_config.get("extra_body") or {}
+        chat_model_config["extra_body"].update(extra_body_kwargs)
     return await load_chat_model(model_name, config=chat_model_config)
+
+
+async def get_extra_body_for_model(model_name: AvailableModel) -> dict[str, Any]:
+    """Return any necessary extra body parameters for specific models."""
+    import base64
+    
+    cache_file = os.path.join(get_config_dir(), "model_profiles.json")
+    if not MODEL_PROFILE_CACHE:
+        try:
+            async with aiofiles.open(cache_file, "rb") as f:
+                content = await f.read()
+                if content:
+                    MODEL_PROFILE_CACHE.update(orjson.loads(content))
+        except Exception:
+            pass
+    
+    extra_body = {}
+    if model_name == AvailableModel.EINFRA_GLM_5_2:
+        max_tokens = MODEL_PROFILE_CACHE[model_name.value]["max_input_tokens"] if model_name.value in MODEL_PROFILE_CACHE else 1048576
+        extra_body = {
+            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
+        }
+        extra_body["chat_template_kwargs"] = {
+            "cache_salt": base64.b64encode(b"universal-object-mapping-cache-salt").decode(),
+            "enable_thinking": True,
+            "thinking": True,
+            "preserve_thinking": True,
+            "reasoning_effort": "high",
+        }
+    elif model_name == AvailableModel.EINFRA_KIMI_K2_7:
+        max_tokens = MODEL_PROFILE_CACHE[model_name.value]["max_input_tokens"] if model_name.value in MODEL_PROFILE_CACHE else 262144
+        extra_body = {
+            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
+        }
+    return extra_body
 
 
 async def get_database_mapping_json(
