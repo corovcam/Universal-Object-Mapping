@@ -180,7 +180,7 @@ services:
   mongodb-mcp-server:
     image: mongodb/mongodb-mcp-server:latest
     ports:
-      - "3010:3000"
+      - "${MONGODB_MCP_SERVER_PORT}:3000"
     environment:
       - MDB_MCP_TRANSPORT=http
       - MDB_MCP_HTTP_HOST=0.0.0.0
@@ -193,6 +193,24 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+    networks:
+      - default
+      - uom
+
+  everspring-mcp:
+    build:
+      context: ./external/everspring-mcp
+    restart: unless-stopped
+    command: ["python", "-m", "everspring_mcp.main", "--log-level", "debug", "serve", "--tier", "main", "--transport", "http"]
+    environment:
+      EVERSPRING_MODEL_TIER: "main"
+      EVERSPRING_DATA_DIR: "/home/everspring/.everspring"
+      EVERSPRING_HTTP_HOST: "0.0.0.0"
+      EVERSPRING_HTTP_PORT: 8000
+    ports:
+      - "${EVERSPRING_MCP_PORT}:8000"
+    volumes:
+      - everspring-data-main:/home/everspring/.everspring
     networks:
       - default
       - uom
@@ -212,6 +230,7 @@ volumes:
   mongodb_data:
   neo4j_data:
   mongodb_migrator_data:
+  everspring-data-main:
   portainer_data:
 
 networks:

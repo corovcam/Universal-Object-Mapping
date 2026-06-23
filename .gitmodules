@@ -10,3 +10,6 @@
 [submodule "external/uom-docs"]
 	path = external/uom-docs
 	url = git@github.com:corovcam/uom-docs.git
+[submodule "external/everspring-mcp"]
+	path = external/everspring-mcp
+	url = git@github.com:corovcam/everspring-mcp.git
