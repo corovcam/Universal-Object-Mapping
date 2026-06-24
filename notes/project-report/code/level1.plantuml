@@ -1,0 +1,26 @@
+@startuml C4_Context
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+!$ICONURL = "https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/v3.0.0/icons"
+!include $ICONURL/common.puml
+!define DEVICONS2 $ICONURL/devicons2
+
+title UOM System - Context Diagram
+
+Person(dev, "Developer / DB Architect", "Migrates ORM schemas and queries across frameworks; evaluates performance.")
+
+System(uom, "Universal Object Mapping (UOM) System", "LLM-driven translation, validation, and evaluation pipeline for cross-paradigm ORM migrations.")
+
+System_Ext(ollama_ext, "MFF UK Ollama Server", "Faculty's local Ollama server")
+System_Ext(einfra_ext, "E-Infra vLLM API", "Remote LLM API provided by Metacentrum")
+System_Ext(etl_migrators, "ETL Migration Tools", "MongoDB Relational Migrator & Neo4j ETL for data population")
+
+Rel(dev, uom, "Submits schema/queries, reviews results", "Web UI")
+Rel(dev, etl_migrators, "Configures mapping and loads data")
+Rel(etl_migrators, uom, "Prepares equivalent databases for validation")
+
+Rel(uom, ollama_ext, "Uses LLM for translation fallback", "SSH Tunnel")
+Rel(uom, einfra_ext, "Uses LLM for translation and logic", "HTTPS")
+
+SHOW_LEGEND()
+@enduml

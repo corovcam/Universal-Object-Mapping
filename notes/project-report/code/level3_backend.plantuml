@@ -1,0 +1,59 @@
+@startuml C4_Components
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+!$ICONURL = "https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/v3.0.0/icons"
+!include $ICONURL/common.puml
+!define DEVICONS2 $ICONURL/devicons2
+!include DEVICONS2/python.puml
+
+title UOM System - Component Diagram (LangGraph Orchestrator Backend)
+
+Container_Boundary(orchestrator, "LangGraph Orchestrator Backend") {
+    Component(api_server, "FastAPI API Server", "Python", "Provides REST/SSE endpoints for clients.", $sprite="python")
+    Component(acp_server, "ACP Server", "Python", "Provides MCP wrapper around the Deep Agent.", $sprite="python")
+    Component(deep_agent, "UOM Deep Agent", "Python", "Entry point that invokes the subagent graph.", $sprite="python")
+    
+    Boundary(graph_engine, "LangGraph State Machine (react_agent/graph.py)") {
+        Component(node_extract, "Extract Input Node", "Python", "Parses user query and frameworks into structured input.")
+        Component(node_schema, "Schema Inspection Node", "Python", "Retrieves context via MCP DB tools.")
+        Component(node_generate, "Generate Translation Node", "Python", "Generates source/target code representations.")
+        Component(node_val_schema, "Validate Schema Node", "Python", "Executes compiler tools in sandboxes.")
+        Component(node_val_query, "Validate Query Node", "Python", "Executes data query tools in sandboxes concurrently.")
+        Component(node_equiv, "Check Equivalence Node", "Python", "Computes DeepDiff on executed query results.")
+        Component(node_eval, "Evaluation Node", "Python", "LLM Judge reviewing diffs and logs to ACCEPT or REJECT.")
+        Component(node_human, "Human Intervention Node", "Python", "Interrupts execution and waits for human feedback on MAX_LOOPS.")
+    }
+}
+
+Container(frontend, "UOM UI Frontend", "Next.js", "Provides chat interface.")
+Container(sandboxes, "Daytona Daemon", "Go", "Executes sandbox environments.")
+Container(mcp, "MCP Servers", "Python / TypeScript", "DB inspection tools.")
+System_Ext(llm, "External LLM Services", "E-Infra / Ollama", "AI models.")
+
+Rel(frontend, api_server, "API Requests", "HTTPS/SSE")
+Rel(frontend, acp_server, "ACP Messages", "WebSocket/SSE")
+Rel(acp_server, deep_agent, "Binds to")
+Rel(deep_agent, api_server, "Invokes subagent execution")
+
+Rel(api_server, node_extract, "Starts graph")
+Rel(node_extract, node_schema, "Transitions (Inputs Present)")
+Rel(node_schema, node_generate, "Transitions")
+Rel(node_generate, node_val_schema, "Transitions (TranslationType=SCHEMA)")
+Rel(node_generate, node_val_query, "Transitions (TranslationType=QUERY)")
+Rel(node_val_schema, node_val_query, "Transitions (Passed & BOTH)")
+Rel(node_val_query, node_equiv, "Transitions (Passed)")
+Rel(node_equiv, node_eval, "Transitions")
+Rel(node_eval, node_generate, "REJECT & Loop < Max")
+Rel(node_eval, node_human, "REJECT & Loop >= Max")
+Rel(node_human, node_generate, "Resumes on user feedback")
+
+Rel(node_schema, mcp, "Delegates DB inspections")
+Rel(node_val_schema, sandboxes, "Triggers build execution")
+Rel(node_val_query, sandboxes, "Triggers query execution")
+
+Rel(node_extract, llm, "Invokes")
+Rel(node_generate, llm, "Invokes")
+Rel(node_eval, llm, "Invokes")
+
+SHOW_LEGEND()
+@enduml
