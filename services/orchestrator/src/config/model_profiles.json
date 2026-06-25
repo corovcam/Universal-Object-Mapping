@@ -41,7 +41,13 @@
     "reasoning_output": true,
     "temperature": true
   },
-  "ollama/qwen3-coder:30b": {},
+  "ollama/qwen3-coder:30b": {
+    "name": "qwen3-coder:30b",
+    "text_inputs": true,
+    "text_outputs": true,
+    "max_input_tokens": 262144,
+    "tool_calling": true
+  },
   "einfra/deepseek-v4-pro": {
     "name": "deepseek-v4-pro",
     "text_inputs": true,
