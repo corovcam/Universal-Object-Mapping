@@ -198,6 +198,7 @@ services:
       - uom
 
   everspring-mcp:
+    container_name: everspring-mcp
     build:
       context: ./external/everspring-mcp
     restart: unless-stopped

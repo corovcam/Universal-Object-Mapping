@@ -746,29 +746,39 @@ Core translation contract:
 3. Preserve behavior, field intent, and query semantics.
 4. Keep translated query methods semantically equivalent to the source query method. Do not introduce synthetic validator parameters (for example sortByField/ascending) unless they already exist in source query code.
 5. Keep schema code and query code separated.
-{"""6. For SCHEMA translations, produce structured output:
-    - translated_schema_code: See EXAMPLES.
-    - source_validation_schema_code: See VALIDATION ENTRYPOINT EXAMPLES.
-    - source_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.
-    - target_validation_schema_code: See VALIDATION ENTRYPOINT EXAMPLES.
-    - target_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.""" if state.translation_type == TranslationType.SCHEMA else ""}
-{"""6. For QUERY or BOTH translations, produce structured output:
-   - translated_schema_code: See EXAMPLES.
-   - translated_query_code: See EXAMPLES.
-   - source_validation_harness_code: See VALIDATION ENTRYPOINT EXAMPLES.
-   - source_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.
-   - target_validation_harness_code: See VALIDATION ENTRYPOINT EXAMPLES.
-   - target_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.""" if state.translation_type in [TranslationType.QUERY, TranslationType.BOTH] else ""}
-7. Structured output fields already separate content. Do NOT wrap field values with XML tags.
+{"""6. For SCHEMA translations, you MUST persist each of the following fields by calling its dedicated save_* tool (one tool call per field). Do NOT return them as a single JSON blob — save them individually as you produce them:
+    - save_translated_schema_code: See EXAMPLES.
+    - save_source_validation_schema_code: See VALIDATION ENTRYPOINT EXAMPLES.
+    - save_source_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.
+    - save_target_validation_schema_code: See VALIDATION ENTRYPOINT EXAMPLES.
+    - save_target_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.""" if state.translation_type == TranslationType.SCHEMA else ""}{"""6. For QUERY or BOTH translations, you MUST persist each of the following fields by calling its dedicated save_* tool (one tool call per field). Do NOT return them as a single JSON blob — save them individually as you produce them:
+   - save_translated_schema_code: See EXAMPLES.
+   - save_translated_query_code: See EXAMPLES.
+   - save_source_validation_harness_code: See VALIDATION ENTRYPOINT EXAMPLES.
+   - save_source_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.
+   - save_target_validation_harness_code: See VALIDATION ENTRYPOINT EXAMPLES.
+   - save_target_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.""" if state.translation_type in [TranslationType.QUERY, TranslationType.BOTH] else ""}
+7. Pass each field's raw code as the save_* tool's `content` argument. Do NOT wrap values with XML tags or markdown code fences.
 8. All code should be properly indented, including line breaks, with properly formatted blocks of code without any additional markdown formatting.
 9. DO NOT USE COMMENTS OR PLACEHOLDERS IN TRANSLATED CODE. THIS CODE WILL BE EXECUTED.
-10. PRODUCE OUTPUT IN THE EXACT STRUCTURED FORMAT JSON SCHEMA AS REQUESTED. DO NOT SHORTEN, OMIT OR REPLACE ANY FIELDS WITH NULL OR PLACEHOLDER VALUES.
+10. You are NOT producing a final structured JSON output. The translation is complete only once you have called the save_* tool for EVERY field listed above. Do not omit any field, and never save null or placeholder values.
 
 Framework rules:
 1. For Java schema classes, avoid public access modifier unless explicitly required.
 2. For Spring Data MongoDB queries, use MongoTemplate with Query/Criteria API.
 3. For Spring Data Neo4j queries, use Neo4jTemplate and Cypher-DSL (Statement-based), not raw string concatenation.
 4. Keep translated query method shape close to source query method shape. Avoid adding extra method parameters unless required by source query.
+
+Additional rules:
+1. You have access to tools that can individually validate source and target code for correctness and equivalence. Use these tools to ensure that the translated code is correct and equivalent to the source code.
+    - First SAVE the harness code (save_source_validation_harness_code / save_target_validation_harness_code) and its entry type name, THEN validate.
+    - Validate the .NET side (validate_dotnet_code) and the Java side (validate_java_code), then run check_query_equivalence.
+    - Pass to validate_dotnet_code / validate_java_code the EXACT same code string you saved with the corresponding save_* tool (the validator infers source-vs-target by matching the code against the saved harness). The entry_type_name argument must match the value you saved.
+    - If any validation fails, fix the code, RE-SAVE the corrected field with its save_* tool, and rerun until all required validations pass.
+2. You also have access to tools that can search web, or query for the framework documentation and code examples.
+    - Use `search_spring_docs` to query the Spring documentation. Specifically use these parameters: `query` (the search string), `module` (spring-data), `submodule` ("mongodb" for Spring Data MongoDB and "neo4j" for Spring Data Neo4j with "spring-data" as `module`), and `version_major` (the major version number from the pom.xml, e.g., 5 for Spring Data MongoDB 5.x, 8 for Spring Data Neo4j 8.x).
+    - Use `microsoft_docs_search`, `microsoft_code_sample_search`, and `microsoft_docs_fetch` to query the Microsoft documentation and code samples. Read the tool descriptions for details on how to use them.
+3. In case it is needed, you also have access to the entire Java sandbox filesystem, where the generated target code using `validate_java_code` is saved inside `/workspace/**/*` subdirectories.
 
 --- Validation setup configuration ---
 Source ({state.source_target.value})

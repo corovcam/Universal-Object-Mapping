@@ -11,6 +11,7 @@ from typing import Any, Awaitable, Callable, Literal, Union, cast
 
 import logfire
 import orjson
+from deepagents.middleware.filesystem import FilesystemMiddleware
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     AgentMiddleware,
@@ -18,6 +19,7 @@ from langchain.agents.middleware import (
     ContextEditingMiddleware,
     ModelFallbackMiddleware,
     ModelRetryMiddleware,
+    SummarizationMiddleware,
     ToolRetryMiddleware,
 )
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
@@ -28,6 +30,7 @@ from langchain.agents.structured_output import (
 from langchain.messages import AIMessage
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_daytona import DaytonaSandbox
 from langgraph.cache.memory import InMemoryCache
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -52,17 +55,20 @@ from react_agent.constants import (
     DotnetFramework,
     FrameworkEnum,
     JavaFramework,
+    SandboxType,
     SourceFramework,
     TargetFramework,
     TranslationType,
 )
 from react_agent.context import Context
+from react_agent.custom_tools.docs_search import load_docs_mcp_tools
 from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
 from react_agent.custom_tools.java_validator import validate_java_code
 from react_agent.custom_tools.mcp_database import load_mongodb_tools, load_toolbox_tools
 from react_agent.custom_tools.query_validator import (
     check_query_equivalence,
 )
+from react_agent.custom_tools.sandbox_tools import ValidationSandbox
 from react_agent.prompts import (
     SYSTEM_PROMPT_EXTRACTION,
     SYSTEM_PROMPT_SCHEMA_INSPECTOR,
@@ -74,6 +80,13 @@ from react_agent.state import (
     State,
 )
 from react_agent.tools import TOOLS
+from react_agent.translation_draft import (
+    ARTIFACT_FIELDS,
+    VALIDATION_RESULT_FIELDS,
+    TranslationDraftMiddleware,
+    build_translation_save_tools,
+    required_draft_fields,
+)
 from react_agent.utils import (
     create_example_for_prompt,
     get_database_mapping_json,
@@ -85,6 +98,7 @@ from react_agent.utils.deterministic_checks import (
     _latest_validation_outcome,
 )
 from react_agent.utils.utils import override_pydantic_model_schema
+from uom_deep_agent.local_context import LocalContextMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -936,15 +950,72 @@ Source Code:
     return updates
 
 
+def _distill_translation_feedback(state: State) -> str:
+    """Build a plain-text feedback note for a *regeneration* attempt.
+
+    On the first attempt (`translation_loop_count <= 0`) there is no feedback. On a retry we must
+    NOT replay `state.translation_messages` directly: those carry `AIMessage`s with `tool_calls`
+    for tools (validators, save_*) that are re-bound on each fresh agent, and replaying orphaned
+    tool_calls is rejected by strict sglang/OpenAI-compatible backends. Instead we distill the
+    salient failure signal — the evaluator explanation, the most recent tool outputs, and the
+    query-equivalence diffs — into a single human-readable note.
+
+    Args:
+        state (State): The current graph state.
+
+    Returns:
+        str: A feedback note, or "" if this is the first attempt.
+    """
+    if state.translation_loop_count <= 0:
+        return ""
+
+    parts: list[str] = [
+        "Your previous translation attempt was rejected. Fix the issues below, then re-save every "
+        "required field with the save_* tools."
+    ]
+    if state.explanation_message:
+        parts.append(f"\nEvaluation / failure detail:\n{state.explanation_message}")
+
+    # Pull the text content of the last few ToolMessages (compiler/run output) without replaying
+    # any AIMessage tool_calls.
+    recent_tool_texts: list[str] = []
+    for msg in reversed(list(state.translation_messages)):
+        if isinstance(msg, ToolMessage) and msg.content:
+            recent_tool_texts.append(str(msg.content))
+        if len(recent_tool_texts) >= 4:
+            break
+    if recent_tool_texts:
+        parts.append(
+            "\nRecent tool output (most recent last):\n"
+            + "\n---\n".join(reversed(recent_tool_texts))
+        )
+
+    if state.query_equivalence_deep_diffs:
+        parts.append(
+            "\nQuery equivalence diffs (source vs target must match):\n"
+            + orjson.dumps(
+                state.query_equivalence_deep_diffs, option=orjson.OPT_INDENT_2
+            ).decode("utf-8")
+        )
+    return "\n".join(parts)
+
+
 async def generate_translation_node(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ) -> dict[str, Any]:
-    """Deterministically generate the translation using structured LLM output via a React Agent without tools.
+    """Generate the translation with a tool-using ReAct agent that saves artifacts to state.
 
-    This node acts as the core "Generation" step in the iterative translation loop.
-    It takes the extracted source code, the schema context, and the previous translation
-    attempts/feedback (if any) and generates the translated code and execution harnesses
-    using a strongly-typed Pydantic model (`TranslationOutput`).
+    This node is the core "Generation" step of the iterative translation loop. Rather than asking
+    the model for one giant strict-JSON structured blob (which the new e-INFRA sglang models do not
+    honor), it runs a ReAct agent with *every* tool at its disposal — research (docs/web), database
+    inspection (MCP), sandbox execution + validators, and a set of gated `save_*` tools. The agent
+    persists each translation artifact individually by calling the corresponding `save_*` tool
+    *during* its run; those writes land on `TranslationDraftState` channels (declared by
+    `TranslationDraftMiddleware`) and are harvested back into the graph `State` here.
+
+    No structured output is requested. If the agent finishes without saving every required artifact,
+    the node surfaces a `[Structured Output Error]`-marked message so `route_post_translation`
+    diverts to `human_intervention_node` instead of pushing empty code into validation.
 
     Args:
         state (State): The current state of the graph.
@@ -952,11 +1023,14 @@ async def generate_translation_node(
         runtime (Runtime[Context]): The execution runtime containing context.
 
     Returns:
-        dict[str, Any]: State updates containing the generated translation outputs.
+        dict[str, Any]: State updates with the harvested translation artifacts (or a surfaced
+        failure).
     """
-    TranslationOutput = await _create_translation_output_model(state)
+    translation_type = state.translation_type or TranslationType.BOTH
 
-    model = await get_model(config, runtime, temperature=0)
+    model = await get_model(
+        config, runtime, model_name_override=AvailableModel.EINFRA_QWEN3_5, temperature=0, reasoning=True
+    )
 
     system_prompt = await build_system_prompt(state)
 
@@ -966,74 +1040,90 @@ Source Code:
 {f"<source_schema_code>\n{state.source_schema_code}\n</source_schema_code>" if state.source_schema_code else ""}{f"\n<source_query_code>\n{state.source_query_code}\n</source_query_code>" if state.source_query_code else ""}
 """
 
-    agent = create_agent(
-        model,
-        response_format=ProviderStrategy(TranslationOutput, strict=True),
-        system_prompt=system_prompt,
-        middleware=[
-            # Outermost: only escalate to fallback models on *genuine* failures (transient API
-            # errors, outages). Structured-output validation errors never reach here — the
-            # middleware below handles them on the same model and returns gracefully.
-            ModelFallbackMiddleware(
-                await get_model(
-                    config, runtime, AvailableModel.EINFRA_THINKER, temperature=0
-                ),
-                await get_model(
-                    config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0
-                ),
-            ),
-            # Retries StructuredOutputValidationError in place on the same model, feeding the
-            # error back so the model can self-correct (ProviderStrategy has no built-in
-            # handle_errors like ToolStrategy).
-            StructuredOutputRetryMiddleware(),
-            ToolRetryMiddleware(),
-        ],
-    )
+    save_tools = build_translation_save_tools(translation_type)
 
-    # Invoke the agent
-    response = await agent.ainvoke(
-        {
-            "messages": [*state.translation_messages]
-            if len(state.translation_messages) > 0
-            else [HumanMessage(content=message)]
-        }
-    )
+    async with (
+        load_docs_mcp_tools() as docs_tools,
+    ):
+        all_tools = [*TOOLS, *docs_tools, *save_tools]
+        agent = create_agent(
+            model,
+            tools=all_tools,
+            system_prompt=system_prompt,
+            store=runtime.store,
+            middleware=[
+                # Declares TranslationDraftState so the save_* tools and inline validators can write
+                # their Command(update=...) channels (and they survive into the returned state).
+                TranslationDraftMiddleware(),
+                SummarizationMiddleware(model, trigger=("fraction", 0.9)),
+                ModelFallbackMiddleware(
+                    await get_model(
+                        config, runtime, AvailableModel.EINFRA_THINKER
+                    ),
+                    await get_model(
+                        config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B
+                    ),
+                ),
+                ToolRetryMiddleware(),
+            ],
+        )
+
+        # Fresh prompt every attempt; on retries append distilled text feedback rather than
+        # replaying translation_messages (which carry orphaned tool_calls).
+        input_messages: list[BaseMessage] = [HumanMessage(content=message)]
+        feedback = _distill_translation_feedback(state)
+        if feedback:
+            input_messages.append(HumanMessage(content=feedback))
+
+        response = await agent.ainvoke({"messages": input_messages}) # type: ignore
 
     updates: dict[str, Any] = {
         "translation_loop_count": state.translation_loop_count + 1,
     }
 
-    if "structured_response" not in response:
-        # The model could not produce a valid structured response even after in-place retries.
-        # Surface the error to the user as a normal assistant message — a raised exception becomes
-        # an opaque graph run error that never reaches the frontend message stream, whereas a
-        # message on the `messages` channel renders in chat (same path as the success message).
-        # `route_post_translation` detects the `[Structured Output Error]` marker and diverts to
-        # human intervention instead of pushing empty/invalid code into validation.
+    # Harvest the artifacts the agent saved + any validation results it produced inline.
+    for field_name in (*ARTIFACT_FIELDS, *VALIDATION_RESULT_FIELDS):
+        value = response.get(field_name)
+        if value:
+            updates[field_name] = value
+
+    required = required_draft_fields(translation_type)
+    missing = [f for f in required if not response.get(f)]
+
+    if missing:
+        # The agent finished without persisting every required artifact. Surface the failure as a
+        # normal assistant message so it renders in chat and `route_post_translation` diverts to
+        # human intervention (it keys on the ERROR_PREFIX marker).
         logger.error(
-            "generate_translation_node: no structured response after retries; surfacing error."
+            "generate_translation_node: missing required saved fields after run: %s",
+            missing,
         )
-        response_messages = list(response.get("messages", []))
-        last_content = (
-            str(response_messages[-1].content) if response_messages else ""
-        )
-        # The retry middleware already emits a detailed `[Structured Output Error]` message; reuse
-        # its detail when present, otherwise fall back to a generic explanation.
         detail = (
-            last_content
-            if StructuredOutputRetryMiddleware.ERROR_PREFIX in last_content
-            else f"{StructuredOutputRetryMiddleware.ERROR_PREFIX} The model did not return a valid translation in the expected structured format."
+            f"{StructuredOutputRetryMiddleware.ERROR_PREFIX} The translation agent finished without "
+            f"saving the required field(s): {', '.join(missing)}. Call the corresponding save_* "
+            f"tool for each before finishing."
         )
         failure_message = AIMessage(content=detail)
-        surfaced = [
-            *(response_messages[:-1] if response_messages else []),
-            failure_message,
-        ]
-        updates["messages"] = surfaced
-        updates["translation_messages"] = surfaced
+        updates["messages"] = [failure_message]
+        updates["translation_messages"] = [failure_message]
         updates["explanation_message"] = detail
         return updates
 
+    saved_summary = {f: updates.get(f) for f in required if updates.get(f) is not None}
+    summary_message = AIMessage(
+        content=(
+            "Translation generated successfully. Saved artifacts:\n```json\n"
+            + orjson.dumps(
+                {
+                    k: (v if not isinstance(v, str) or len(v) <= 4000 else v[:4000] + " …[truncated]")
+                    for k, v in saved_summary.items()
+                },
+                option=orjson.OPT_INDENT_2,
+            ).decode("utf-8")
+            + "\n```"
+        )
+    )
+    updates["translation_messages"] = [summary_message]
     output = response["structured_response"]
     updates.update(output.model_dump(warnings="error", exclude_unset=True))
 
@@ -1044,8 +1134,7 @@ Source Code:
 {orjson.dumps(output.model_dump(mode="json", exclude_unset=False), option=orjson.OPT_INDENT_2).decode('utf-8')}
 ```
 """)]
-    updates["messages"] = msg
-    updates["translation_messages"] = msg
+    updates["messages"] = [msg]
 
     return updates
 
