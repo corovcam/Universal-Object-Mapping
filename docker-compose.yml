@@ -1,26 +1,26 @@
 name: universal-object-mapping
-include:
-  - path:
-      - ./services/orchestrator/docker-compose.yml
-      - ./docker-compose.langgraph.override.yml
+# include: # uncomment if needed to test production-like environment of langgraph
+#   - path:
+#       - ./services/orchestrator/docker-compose.yml
+#       - ./docker-compose.langgraph.override.yml
 services:
-  frontend:
-    build:
-      context: ./frontend/uom-translator-ui
-      args:
-        OUTER_HOST_GATEWAY_IP: ${OUTER_HOST_GATEWAY_IP:-host-gateway}
-    environment:
-      NODE_ENV: production
-      PORT: "3000"
-      NEXT_PUBLIC_LANGGRAPH_API_URL: "http://localhost:${FRONTEND_PORT}/api"
-      LANGGRAPH_API_URL: "http://langgraph-api:8000"
-      OUTER_HOST_GATEWAY_IP: ${OUTER_HOST_GATEWAY_IP:-host-gateway}
-    ports:
-      - "${FRONTEND_PORT}:3000"
-    restart: unless-stopped
-    networks:
-      - default
-      - uom
+  # frontend: # uncomment if needed to test production-like environment of frontend
+  #   build:
+  #     context: ./frontend/uom-translator-ui
+  #     args:
+  #       OUTER_HOST_GATEWAY_IP: ${OUTER_HOST_GATEWAY_IP:-host-gateway}
+  #   environment:
+  #     NODE_ENV: production
+  #     PORT: "3000"
+  #     NEXT_PUBLIC_LANGGRAPH_API_URL: "http://localhost:${FRONTEND_PORT}/api"
+  #     LANGGRAPH_API_URL: "http://langgraph-api:8000"
+  #     OUTER_HOST_GATEWAY_IP: ${OUTER_HOST_GATEWAY_IP:-host-gateway}
+  #   ports:
+  #     - "${FRONTEND_PORT}:3000"
+  #   restart: unless-stopped
+  #   networks:
+  #     - default
+  #     - uom
 
   ollama-autossh-tunnel:
     image: jnovack/autossh:2.1.0
@@ -193,6 +193,18 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+    networks:
+      - default
+      - uom
+
+  aimock:
+    image: ghcr.io/copilotkit/aimock:latest
+    command: ["-f", "/app/fixtures", "-h", "0.0.0.0", "--metrics", "--proxy-only", "--watch", "--latency", "5", "--upstream-timeout-ms", "300000", "--body-timeout-ms", "300000", "--log-level", "debug", "--provider-openai", "https://llm.ai.e-infra.cz"]
+    ports:
+      - "4010:4010"
+    volumes:
+      - ./services/orchestrator/tests/aimock:/app/fixtures
+    restart: unless-stopped
     networks:
       - default
       - uom
