@@ -9,9 +9,10 @@
         "openai": "https://llm.ai.e-infra.cz/v1",
         "ollama": "http://localhost:11434"
       },
-      "fixturePath": "./tests/aimock/recorded",
+      "fixturePath": "./misc/aimock/recorded",
       "recordFullModelVersion": false,
-      "proxyOnly": true
+      "upstreamTimeoutMs": 300000,
+      "bodyTimeoutMs": 300000
     }
   }
 }

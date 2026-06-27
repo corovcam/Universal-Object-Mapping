@@ -35,7 +35,7 @@ langgraphics:
 	uv run langgraphics-server
 
 mock_server:
-	npx -p @copilotkit/aimock --config aimock.json --port 4010
+	npx @copilotkit/aimock --config aimock.json --port 4020
 
 ######################
 # TESTS

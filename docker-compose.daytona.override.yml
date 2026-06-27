@@ -17,7 +17,6 @@ services:
       # - HEALTH_CHECK_API_KEY=${DAYTONA_HEALTH_CHECK_API_KEY}
       - DEFAULT_SNAPSHOT=${DAYTONA_DEFAULT_SNAPSHOT:-corovcam/uom-default-snapshot:1.0.0}
     networks:
-      - default
       - uom
 
   proxy:
@@ -25,7 +24,6 @@ services:
       - OIDC_PUBLIC_DOMAIN=http://localhost:5356/dex
       # - PROXY_API_KEY=${DAYTONA_PROXY_API_KEY}
     networks:
-      - default
       - uom
 
   runner:
@@ -41,16 +39,15 @@ services:
     #   - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
     #   - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer otel_collector_api_key
     networks:
-      - default
       - uom
     extra_hosts:
       - "host.docker.internal:${OUTER_HOST_GATEWAY_IP:-host-gateway}"
     volumes:
-      - ../../services/daytona/runner/set-host-docker-internal.sh:/usr/local/bin/set-host-docker-internal.sh
+      - ../../../services/daytona/runner/set-host-docker-internal.sh:/usr/local/bin/set-host-docker-internal.sh
   
   dex:
     volumes:
-      - ../../services/daytona/dex/config.yaml:/etc/dex/config.yaml
+      - ../../../services/daytona/dex/config.yaml:/etc/dex/config.yaml
     ports: !override
       - 5356:5556
 
@@ -62,7 +59,6 @@ services:
     # environment:
     #   - API_KEY=${DAYTONA_SSH_GATEWAY_API_KEY}
     networks:
-      - default
       - uom
   
   maildev: !reset null
@@ -72,6 +68,14 @@ services:
   otel-collector: !reset null
 
 networks:
+  # Pin daytona-network off 172.20.0.0/16. The Daytona runner hardcodes its
+  # inner DinD sandbox bridge ("runner-bridge") to 172.20.0.0/16; if the outer
+  # daytona-network auto-allocates the same /16, the runner can't route to
+  # sandboxes and CREATE_SANDBOX fails with "timeout waiting for daemon to start".
+  daytona-network:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
   uom:
     external: true
     name: uom
