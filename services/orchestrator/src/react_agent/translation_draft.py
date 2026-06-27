@@ -1,15 +1,18 @@
-"""Incremental, tool-driven translation drafting (no final structured output).
+"""Tool-driven translation drafting with deterministic harness assembly.
 
-The new e-INFRA sglang models do not honor strict JSON structured output for a single giant
-zero-shot blob (the old `ProviderStrategy(BaseTranslationOutput)` path). They are tuned for long
-agentic sessions with many small tool calls. This module replaces the one-shot structured response
-with **state-writing save tools**: the ReAct agent persists each translation artifact individually
-*during* its execution by calling a dedicated `save_*` tool, and a middleware declares the extra
-state channels so those `Command(update=...)` writes are valid and survive in the agent's final
-state. `generate_translation_node` then harvests those channels back into the graph `State`.
+The new e-INFRA sglang models do not honor a single giant strict-JSON structured output, and they
+reliably mis-reproduce the invariant harness boilerplate (imports, serializer, runtime support)
+when asked to emit whole files. This module replaces both failure modes:
 
-The fields mirror `BaseTranslationOutput`; the per-`TranslationType` gating mirrors
-`_create_translation_output_model` so the model is only asked for the artifacts it actually needs.
+1. **One** state-writing ``save_translation`` tool (not a dozen per-field tools) collects the
+   genuinely dataset-specific code the model authors — the translated production schema/queries and
+   the *body* of each validation harness (entity classes + query classes + entrypoint ``main``),
+   *without* the boilerplate prelude.
+2. :mod:`react_agent.utils.harness_assembler` then injects the canonical, byte-stable prelude
+   (imports + serializer + template factory) around those bodies in ``generate_translation_node``.
+
+A middleware declares the extra state channels so the tool's ``Command(update=...)`` writes are
+valid and survive into the agent's final state, where the node harvests them.
 """
 
 from __future__ import annotations
@@ -19,209 +22,145 @@ from typing import Annotated
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import AgentState
 from langchain_core.messages import ToolMessage
-from langchain_core.tools import BaseTool, InjectedToolCallId, tool
+from langchain_core.tools import BaseTool, InjectedToolCallId, StructuredTool
 from langgraph.types import Command
+from pydantic import BaseModel, Field, create_model
 from typing_extensions import NotRequired
 
 from react_agent.constants import TranslationType
-from react_agent.utils.types import QueryEquivalenceDeepDiff, QueryValidationResults
+
+# The draft channels the single save tool writes. The two ``*_validation_body`` fields hold the
+# model-authored harness body (no prelude); the node assembles them into the full
+# ``*_validation_harness_code`` / ``*_validation_schema_code`` the downstream validators read.
+#
+# Note: the generation step deliberately does NOT produce the clean, user-facing
+# ``translated_schema_code`` / ``translated_query_code`` anymore. Those are derived *after*
+# acceptance by ``finalize_translation_node`` from the VALIDATED harness (so the published answer is
+# always a projection of code that actually compiled, ran, and passed equivalence — and is stable
+# enough to use as a CodeBleu baseline). Generation only authors the two harness bodies.
+DRAFT_FIELDS: tuple[str, ...] = (
+    "source_validation_body",
+    "target_validation_body",
+)
 
 
 class TranslationDraftState(AgentState):
-    """Agent state extended with every channel the translation ReAct agent writes.
+    """Agent state extended with the channels the ``save_translation`` tool writes."""
 
-    Two groups of keys are declared here so the agent's tools can issue `Command(update=...)`
-    against them without LangGraph rejecting an unknown channel:
-
-    1. The translation artifacts, written by the `save_*` tools in this module (mirrors the
-       `BaseTranslationOutput` fields).
-    2. The validation results, written by the *real* validators (`validate_dotnet_code`,
-       `validate_java_code`, `check_query_equivalence`) when the agent runs them inline. These
-       targets exist on the graph `State` but not on the default `AgentState`, so they must be
-       declared here too or an inline validator call would crash the node.
-    """
-
-    # --- Translation artifacts (written by save_* tools) ---
-    translated_schema_code: NotRequired[str]
-    translated_query_code: NotRequired[str]
-    source_validation_schema_code: NotRequired[str]
-    source_validation_harness_code: NotRequired[str]
-    target_validation_schema_code: NotRequired[str]
-    target_validation_harness_code: NotRequired[str]
-    source_validation_entry_type_name: NotRequired[str]
-    target_validation_entry_type_name: NotRequired[str]
-
-    # --- Validation results (written by the inline validator tools) ---
-    source_query_validation_results: NotRequired[QueryValidationResults]
-    target_query_validation_results: NotRequired[QueryValidationResults]
-    query_equivalence_deep_diffs: NotRequired[dict[str, QueryEquivalenceDeepDiff]]
+    source_validation_body: NotRequired[str]
+    target_validation_body: NotRequired[str]
 
 
 class TranslationDraftMiddleware(AgentMiddleware):
-    """Middleware whose sole job is to register `TranslationDraftState` on the agent.
-
-    Declaring the extended schema here (rather than via `create_agent(state_schema=...)`) keeps the
-    save-tool writes and the inline-validator `Command` updates valid, and makes the harvested keys
-    appear in the dict returned by `agent.ainvoke(...)`.
-    """
+    """Registers :class:`TranslationDraftState` so the save tool's writes are valid and surface."""
 
     state_schema = TranslationDraftState
 
 
-def _save_tool(field_name: str, description: str) -> BaseTool:
-    """Build a single state-writing save tool for one translation artifact field.
-
-    Args:
-        field_name: The `TranslationDraftState` / graph `State` key to write.
-        description: The tool description shown to the model (reused from
-            `BaseTranslationOutput`).
-
-    Returns:
-        BaseTool: An async tool returning a `Command` that persists the value into state.
-    """
-
-    async def _save(
-        content: str, tool_call_id: Annotated[str, InjectedToolCallId]
-    ) -> Command:
-        return Command(
-            update={
-                field_name: content,
-                "messages": [
-                    ToolMessage(
-                        content=f"Saved `{field_name}` ({len(content)} chars).",
-                        tool_call_id=tool_call_id,
-                        name=f"save_{field_name}",
-                    )
-                ],
-            }
-        )
-
-    return tool(f"save_{field_name}", description=description)(_save)
-
-
-# Per-field descriptions, mirrored from `BaseTranslationOutput` so the model gets the same guidance
-# it had when these were structured-output fields.
-_DESCRIPTIONS: dict[str, str] = {
-    "translated_schema_code": (
-        "Save the precise translated schema definitions (entities/models) and "
-        "context/session/config/bootstrap setup with runtime configs. Plain code only. Do not "
-        "include usage queries. Corresponds to the example code below the "
-        "`--- Schema and Related Settings ---` comment."
+# Per-field guidance shown to the model as the save tool's argument descriptions.
+_FIELD_DESCRIPTIONS: dict[str, str] = {
+    "source_validation_body": (
+        "The SOURCE-side validation harness BODY: the source entity classes (+ any "
+        "context/session/config bootstrap), the source query classes/methods, and the entrypoint "
+        "class containing `main`/`Main` that validates each entity and runs each query, writing the "
+        "JSON results to the environment path. Start directly at the schema/entity declarations. Do "
+        "NOT write any `import`/`using`/`package`/`namespace` lines and do NOT (re)declare the "
+        "provided serializer / runtime-support / template-factory classes — those are injected for "
+        "you. You MUST declare the entrypoint class named exactly `{source_entry}`."
     ),
-    "translated_query_code": (
-        "Save the precise translated production queries only. Keep query semantics and method "
-        "shape equivalent to the source query code. Plain code only. Do not include schema "
-        "definitions, validation harness helpers, or synthetic validator-only parameters unless "
-        "they already exist in the source query code. Corresponds to the `QueryX`/`queryX` methods."
-    ),
-    "source_validation_schema_code": (
-        "Save the SOURCE schema validation code: imports, serialization, runtime config, "
-        "context/session/config/bootstrap setup, and everything needed to run, keeping the Schema "
-        "and Related Settings logic equivalent to the original source schema (without JSON "
-        "serialization annotations). Fully valid and runnable with an entrypoint. Include simple "
-        "one-entity fetch queries to validate each entity. No source query code here."
-    ),
-    "source_validation_harness_code": (
-        "Save the full execution harness code for the SOURCE queries: source schema, query "
-        "methods, any necessary helper classes/records, and the main entry point that executes the "
-        "source queries and writes the resulting JSON to the environment path."
-    ),
-    "target_validation_schema_code": (
-        "Save the TARGET schema validation code: imports, serialization, runtime config, "
-        "context/session/config/bootstrap setup, and everything needed to run, keeping the Schema "
-        "and Related Settings logic equivalent to the translated schema (without JSON "
-        "serialization annotations). Fully valid and runnable with an entrypoint. Include simple "
-        "one-entity fetch queries to validate each entity. No target query code here."
-    ),
-    "target_validation_harness_code": (
-        "Save the full execution harness code for the translated TARGET queries: translated query "
-        "methods, any necessary helper classes/records, and the main entry point that executes the "
-        "target queries and writes the resulting JSON to the environment path."
-    ),
-    "source_validation_entry_type_name": (
-        "Save the name of the main entry point type (class) in the source validation code. Just "
-        "the class/type name, without namespace or module prefix. Examples: `EFCoreQueryEntrypoint`, "
-        "`NHibernateQueryEntrypoint`, `DapperQueryEntrypoint`. It must be declared in the source "
-        "validation code you saved."
-    ),
-    "target_validation_entry_type_name": (
-        "Save the name of the main entry point type (class) in the target validation code. Just "
-        "the class/type name, without namespace or module prefix. Examples: `MongoQueryEntrypoint`, "
-        "`Neo4jQueryEntrypoint`. It must be declared in the target validation code you saved."
+    "target_validation_body": (
+        "The TARGET-side validation harness BODY: the translated entity classes, the translated "
+        "query classes/methods, and the entrypoint class containing `main`/`Main` that validates "
+        "each entity and runs each query, writing the JSON results to the environment path. Start "
+        "directly at the schema/entity declarations. Do NOT write any "
+        "`import`/`using`/`package`/`namespace` lines and do NOT (re)declare the provided serializer "
+        "/ runtime-support / template-factory classes — those are injected for you. You MUST declare "
+        "the entrypoint class named exactly `{target_entry}`."
     ),
 }
-
-# Which artifact fields are required per translation type — mirrors `_create_translation_output_model`.
-_FIELDS_BY_TYPE: dict[TranslationType, tuple[str, ...]] = {
-    TranslationType.SCHEMA: (
-        "translated_schema_code",
-        "source_validation_schema_code",
-        "source_validation_entry_type_name",
-        "target_validation_schema_code",
-        "target_validation_entry_type_name",
-    ),
-    TranslationType.QUERY: (
-        "translated_schema_code",
-        "translated_query_code",
-        "source_validation_harness_code",
-        "source_validation_entry_type_name",
-        "target_validation_harness_code",
-        "target_validation_entry_type_name",
-    ),
-    TranslationType.BOTH: (
-        "translated_schema_code",
-        "translated_query_code",
-        "source_validation_harness_code",
-        "source_validation_entry_type_name",
-        "target_validation_harness_code",
-        "target_validation_entry_type_name",
-    ),
-}
-
-
-# Every artifact channel the save_* tools may write (harvested back into the graph State).
-ARTIFACT_FIELDS: tuple[str, ...] = (
-    "translated_schema_code",
-    "translated_query_code",
-    "source_validation_schema_code",
-    "source_validation_harness_code",
-    "target_validation_schema_code",
-    "target_validation_harness_code",
-    "source_validation_entry_type_name",
-    "target_validation_entry_type_name",
-)
-
-# Validation result channels the inline validator tools may write (also harvested back).
-VALIDATION_RESULT_FIELDS: tuple[str, ...] = (
-    "source_query_validation_results",
-    "target_query_validation_results",
-    "query_equivalence_deep_diffs",
-)
 
 
 def required_draft_fields(translation_type: TranslationType) -> tuple[str, ...]:
-    """Return the artifact fields the agent must save for the given translation type."""
-    return _FIELDS_BY_TYPE.get(translation_type, ())
+    """Return the draft fields the model must provide for the given translation type.
+
+    The generation step always authors exactly the two validation harness bodies regardless of
+    translation type — the clean ``translated_*_code`` answer is derived later, post-acceptance, by
+    ``finalize_translation_node``. The argument is retained for call-site compatibility.
+    """
+    return DRAFT_FIELDS
 
 
-def build_translation_save_tools(translation_type: TranslationType) -> list[BaseTool]:
-    """Build the gated set of `save_*` tools for the given translation type.
+def build_save_translation_tool(
+    translation_type: TranslationType,
+    source_entry: str,
+    target_entry: str,
+) -> BaseTool:
+    """Build the single ``save_translation`` tool, gated to the required fields for this type.
 
     Args:
-        translation_type: SCHEMA, QUERY, or BOTH — selects which artifact fields are exposed.
+        translation_type: SCHEMA, QUERY, or BOTH — selects which fields are required.
+        source_entry: Deterministic source entrypoint class name (baked into the field guidance).
+        target_entry: Deterministic target entrypoint class name (baked into the field guidance).
 
     Returns:
-        list[BaseTool]: One save tool per required artifact field.
+        BaseTool: An async tool that persists the provided draft fields to state via ``Command``.
     """
     fields = required_draft_fields(translation_type)
-    return [_save_tool(field, _DESCRIPTIONS[field]) for field in fields]
+
+    schema_fields: dict[str, object] = {}
+    for name in fields:
+        desc = _FIELD_DESCRIPTIONS[name].format(
+            source_entry=source_entry, target_entry=target_entry
+        )
+        schema_fields[name] = (str, Field(description=desc))
+    # tool_call_id is injected by the runtime (not surfaced to the model) so we can build the
+    # ToolMessage that closes out the tool call; it must be declared in the args schema with the
+    # InjectedToolCallId annotation for LangChain to recognize and supply it.
+    schema_fields["tool_call_id"] = (
+        Annotated[str, InjectedToolCallId],
+        Field(default=""),
+    )
+    args_model: type[BaseModel] = create_model(  # type: ignore[call-overload]
+        "SaveTranslationArgs", **schema_fields
+    )
+
+    async def _save(
+        source_validation_body: str = "",
+        target_validation_body: str = "",
+        tool_call_id: str = "",
+    ) -> Command:
+        values = {
+            "source_validation_body": source_validation_body,
+            "target_validation_body": target_validation_body,
+        }
+        update: dict[str, object] = {
+            name: values[name] for name in fields if values.get(name)
+        }
+        saved = ", ".join(f"`{n}`" for n in update) or "(nothing)"
+        update["messages"] = [
+            ToolMessage(
+                content=f"Saved translation draft: {saved}.",
+                tool_call_id=tool_call_id,
+                name="save_translation",
+            )
+        ]
+        return Command(update=update)
+
+    return StructuredTool.from_function(
+        coroutine=_save,
+        name="save_translation",
+        description=(
+            "Persist the completed translation. Call this ONCE, at the end, with every required "
+            "field filled. This is how you finish — there is no separate JSON output."
+        ),
+        args_schema=args_model,
+    )
 
 
 __all__ = [
     "TranslationDraftState",
     "TranslationDraftMiddleware",
-    "build_translation_save_tools",
+    "build_save_translation_tool",
     "required_draft_fields",
-    "ARTIFACT_FIELDS",
-    "VALIDATION_RESULT_FIELDS",
+    "DRAFT_FIELDS",
 ]

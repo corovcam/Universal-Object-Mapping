@@ -44,6 +44,12 @@ async def load_docs_mcp_tools() -> AsyncGenerator[list[BaseTool], None]:
         }
 
     tools: list[BaseTool] = []
+    # The context manager MUST yield exactly once on every path — including total failure — or the
+    # caller's `async with` raises "generator didn't yield/stop" and crashes the node. This flag
+    # guarantees a single yield even when the Microsoft Learn session (or any server) is unreachable
+    # from the current environment (e.g. a host-run dev server that can't reach docker-internal MCP
+    # hostnames), in which case we degrade to whatever tools loaded — possibly an empty list.
+    yielded = False
     try:
         client = MultiServerMCPClient(servers, tool_name_prefix=True)
         async with client.session("microsoft_learn") as docs_mcp_session:
@@ -55,7 +61,6 @@ async def load_docs_mcp_tools() -> AsyncGenerator[list[BaseTool], None]:
             # The Spring Docs MCP server relies on NPX to run a transient Node.js application process.
             # If the user doesn't have NPX installed or the command fails, we want to catch it gracefully
             # instead of aborting the agent's graph iteration.
-            spring_docs_mcp_yielded = False
             try:
                 async with client.session("spring_docs") as spring_docs_session:
                     spring_tools = await load_mcp_tools(spring_docs_session)
@@ -64,19 +69,21 @@ async def load_docs_mcp_tools() -> AsyncGenerator[list[BaseTool], None]:
                         "Loaded Spring Docs MCP tools: %s",
                         [tool.name for tool in spring_tools],
                     )
-                    # We yield here if Spring is available, otherwise we'll yield in the except block
                     yield tools
-                    spring_docs_mcp_yielded = True
+                    yielded = True
             except Exception:
                 logger.warning(
                     "Failed to load Spring Docs MCP tools.",
                     exc_info=True,
                 )
-                if not spring_docs_mcp_yielded:
+                if not yielded:
                     yield tools
+                    yielded = True
     except Exception:
         logger.warning(
             "Failed to load MCP documentation tools. "
             "Only fallback `search` tool with Tavily will be available.",
             exc_info=True,
         )
+        if not yielded:
+            yield tools

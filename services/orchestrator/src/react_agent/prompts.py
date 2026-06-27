@@ -718,12 +718,33 @@ Your task:
    - For MongoDB: use mongodb tools to list collections, inspect document schemas, and sample documents.
    - For Neo4j: use the prebuilt neo4j tools to list node labels, relationship types, and sample nodes/edges.
 2. Inspect the TARGET database schema if applicable (e.g., if translating from SQL to MongoDB, inspect what MongoDB collections exist).
-3. Return a concise but complete summary of the relevant source and target schemas.
+3. Focus on ONLY the entities/models/relationships and their relationships relevant to the code being translated.
+4. Return a concise but complete summary of the relevant source and target schemas. Do not include a preamble or postamble. The summary will become part of the system prompt for another LLM agent that will perform the actual code translation.
 
 System time: {system_time}
 """
 """Schema inspection prompt used prior to code translation.
 Guides the agent to use the MCP tools to interact with live relational and NoSQL databases."""
+
+
+SYSTEM_PROMPT_FINALIZE = """You are a Universal Object Mapping finalizer.
+
+A translation has just been VALIDATED end-to-end: the harness you are given compiled, executed against the database, and passed semantic equivalence against the source. The translation is already CORRECT. Your job is NOT to translate. Your job is to EXTRACT the clean, production-ready target code from the validated harness, removing only the validation scaffolding.
+
+Hard rules:
+1. SOURCE OF TRUTH is the validated harness. Copy the entity definitions and the query logic VERBATIM from it. Do NOT re-translate, rename, reorder fields, or change any query predicate, filter, projection, sort, or aggregation — those exact semantics are what equivalence verified.
+2. REMOVE only validation-only scaffolding:
+   - the JSON serializer class, the runtime-support class, the template/context/db factory class, logging setup, and their imports.
+   - the entrypoint class's main/Main method, validate*/ValidateEntity methods, and all results-collection / JSON-writing / env-path code.
+   - per-query validation helpers (harness()/RunQuery, count/firstSample/lastSample, and deterministic ORDER BY / Sort / limit / skip that exist ONLY to make validation deterministic and were not in the user's original query).
+   - JSON-serialization annotations that are not part of the object mapping (e.g. [JsonPropertyName], @JsonIgnoreProperties, @ReadOnlyProperty added for validation). KEEP genuine ORM mapping annotations: @Document, @Field, @Id, @Node, @Property, @DocumentReference, [Table], [Key], [ForeignKey], [Column], etc.
+3. KEEP the genuine production code: the entity/model classes with their ORM mapping, and the production query method(s) carrying the exact validated predicate. Place the queries in a single clean query class with one method per source query, named to match the source (query1..queryN / Query1..QueryN), each returning the production result (not the validation metadata map).
+4. Include the minimal imports needed for the production code to compile. Do not include validation-only imports. IF the imports contain `*` wildcards, LEAVE IT AS IS. DO NOT touch or change the other imports not specifically mentioned above. 
+5. Emit CANONICAL, STABLE structure — this code is compared across runs with a CodeBleu (AST + data-flow) metric, so structure must be deterministic: entities in the same declaration order as the validated harness (one class per entity), then the query class with methods in source order. Consistent 4-space indentation. No comments, no markdown code fences, no prose, no placeholders.
+
+You return structured output. Each code field is plain source code only (no fences, no XML tags)."""
+"""Finalization prompt. Runs only AFTER a translation is accepted; turns the validated harness into
+clean, user-facing production code with a stable structure suitable as a CodeBleu baseline."""
 
 
 async def build_system_prompt(state: State) -> str:
@@ -735,6 +756,9 @@ async def build_system_prompt(state: State) -> str:
     into the prompt context so the LLM understands the exact versions it is translating for.
     """
     assert state.source_target is not None and state.destination_target is not None
+    is_schema = state.translation_type == TranslationType.SCHEMA
+    source_entry = (await get_snippet_content(state.source_target, is_schema=is_schema))["entry_type_name"]
+    target_entry = (await get_snippet_content(state.destination_target, is_schema=is_schema))["entry_type_name"]
     base_prompt = f"""You are a Universal Object Mapping architect. Your goal is to aid in translating database schema structures and query logic between diverse languages and frameworks.
 
 Source Framework: {state.source_target.value}
@@ -746,22 +770,16 @@ Core translation contract:
 3. Preserve behavior, field intent, and query semantics.
 4. Keep translated query methods semantically equivalent to the source query method. Do not introduce synthetic validator parameters (for example sortByField/ascending) unless they already exist in source query code.
 5. Keep schema code and query code separated.
-{"""6. For SCHEMA translations, you MUST persist each of the following fields by calling its dedicated save_* tool (one tool call per field). Do NOT return them as a single JSON blob — save them individually as you produce them:
-    - save_translated_schema_code: See EXAMPLES.
-    - save_source_validation_schema_code: See VALIDATION ENTRYPOINT EXAMPLES.
-    - save_source_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.
-    - save_target_validation_schema_code: See VALIDATION ENTRYPOINT EXAMPLES.
-    - save_target_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.""" if state.translation_type == TranslationType.SCHEMA else ""}{"""6. For QUERY or BOTH translations, you MUST persist each of the following fields by calling its dedicated save_* tool (one tool call per field). Do NOT return them as a single JSON blob — save them individually as you produce them:
-   - save_translated_schema_code: See EXAMPLES.
-   - save_translated_query_code: See EXAMPLES.
-   - save_source_validation_harness_code: See VALIDATION ENTRYPOINT EXAMPLES.
-   - save_source_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.
-   - save_target_validation_harness_code: See VALIDATION ENTRYPOINT EXAMPLES.
-   - save_target_validation_entry_type_name: See VALIDATION ENTRYPOINT EXAMPLES.""" if state.translation_type in [TranslationType.QUERY, TranslationType.BOTH] else ""}
-7. Pass each field's raw code as the save_* tool's `content` argument. Do NOT wrap values with XML tags or markdown code fences.
-8. All code should be properly indented, including line breaks, with properly formatted blocks of code without any additional markdown formatting.
-9. DO NOT USE COMMENTS OR PLACEHOLDERS IN TRANSLATED CODE. THIS CODE WILL BE EXECUTED.
-10. You are NOT producing a final structured JSON output. The translation is complete only once you have called the save_* tool for EVERY field listed above. Do not omit any field, and never save null or placeholder values.
+6. CRITICAL — translate ONLY what the user provided. Translate exclusively the entities and fields present in the user's `<source_schema_code>` and the queries in `<source_query_code>`. NEVER introduce an entity, field, or query that is not in the user's input. The examples below demonstrate STRUCTURE ONLY — do not copy their domain content (e.g. WideWorldImporters' Customer/Order/OrderLine fields) unless the user actually supplied them.
+7. You finish by calling the single `save_translation` tool EXACTLY ONCE with every required field filled. There is no separate JSON output. The required fields are:
+   - source_validation_body: the {"schema-validation" if state.translation_type == TranslationType.SCHEMA else "query-execution harness"} BODY for the SOURCE side (see below).
+   - target_validation_body: the {"schema-validation" if state.translation_type == TranslationType.SCHEMA else "query-execution harness"} BODY for the TARGET side (see below).
+   You do NOT output the clean production schema/query separately — once these bodies pass validation, the user-facing translated code is derived from them automatically. Put all of your translation effort into making these two bodies correct, complete, and runnable.
+8. The `*_validation_body` fields are the RUNNABLE harness body ONLY: start directly at the schema/entity declarations, then the query classes, then the entrypoint class with `main`/`Main` that validates each entity and runs each query. The fixed boilerplate — `import`/`using`/`package`/`namespace` lines, the JSON serializer, the runtime-support and DB template-factory classes — is INJECTED FOR YOU around your body. Do NOT write those lines and do NOT redeclare those classes.
+   - source_validation_body MUST declare the source entrypoint class named exactly `{source_entry}`.
+   - target_validation_body MUST declare the target entrypoint class named exactly `{target_entry}`.
+   - Inside the entrypoint, reference the provided helpers directly (e.g. the serializer, `QueryRuntimeSupport`, the template factory) — they exist in the injected prelude.
+9. All code must be properly indented with real line breaks. DO NOT wrap field values in XML tags or markdown code fences. DO NOT use comments or placeholders in code — it WILL be executed. Never save null or empty values.
 
 Framework rules:
 1. For Java schema classes, avoid public access modifier unless explicitly required.
@@ -770,15 +788,11 @@ Framework rules:
 4. Keep translated query method shape close to source query method shape. Avoid adding extra method parameters unless required by source query.
 
 Additional rules:
-1. You have access to tools that can individually validate source and target code for correctness and equivalence. Use these tools to ensure that the translated code is correct and equivalent to the source code.
-    - First SAVE the harness code (save_source_validation_harness_code / save_target_validation_harness_code) and its entry type name, THEN validate.
-    - Validate the .NET side (validate_dotnet_code) and the Java side (validate_java_code), then run check_query_equivalence.
-    - Pass to validate_dotnet_code / validate_java_code the EXACT same code string you saved with the corresponding save_* tool (the validator infers source-vs-target by matching the code against the saved harness). The entry_type_name argument must match the value you saved.
-    - If any validation fails, fix the code, RE-SAVE the corrected field with its save_* tool, and rerun until all required validations pass.
-2. You also have access to tools that can search web, or query for the framework documentation and code examples.
-    - Use `search_spring_docs` to query the Spring documentation. Specifically use these parameters: `query` (the search string), `module` (spring-data), `submodule` ("mongodb" for Spring Data MongoDB and "neo4j" for Spring Data Neo4j with "spring-data" as `module`), and `version_major` (the major version number from the pom.xml, e.g., 5 for Spring Data MongoDB 5.x, 8 for Spring Data Neo4j 8.x).
-    - Use `microsoft_docs_search`, `microsoft_code_sample_search`, and `microsoft_docs_fetch` to query the Microsoft documentation and code samples. Read the tool descriptions for details on how to use them.
-3. In case it is needed, you also have access to the entire Java sandbox filesystem, where the generated target code using `validate_java_code` is saved inside `/workspace/**/*` subdirectories.
+1. You do NOT run validators or compile code. After you call `save_translation`, the translated code is assembled with the canonical prelude and validated automatically by a downstream pipeline (compile + run on both sides, then equivalence). If it fails, you will be re-invoked with concrete feedback to fix and re-save. Focus on producing correct, complete bodies.
+2. You have research tools — use them to get the exact API right before saving:
+    - Use `search_spring_docs` to query the Spring documentation: `query` (search string), `top_k` (number of results to return, max 10), `module` (spring-data), `submodule` ("mongodb" or "neo4j"), and `version_major` (major version from the pom.xml, e.g. 5 for Spring Data MongoDB 5.x, 8 for Spring Data Neo4j 8.x).
+    - Use `microsoft_docs_search`, `microsoft_code_sample_search`, and `microsoft_docs_fetch` for Microsoft documentation and code samples.
+    - Use `search` to query the web for specific API usage or examples if you cannot find it in the above sources.
 
 --- Validation setup configuration ---
 Source ({state.source_target.value})
@@ -786,7 +800,8 @@ Source ({state.source_target.value})
 Target ({state.destination_target.value})
 {await get_framework_config_content(state.destination_target)}
 
---- EXAMPLES (example <input> and <output> for translated_schema_code and translated_query_code) ---
+--- TARGET-LANGUAGE MAPPING REFERENCE ---
+The <input>/<output> pairs below illustrate ONLY how source types/annotations map to the target language (e.g. C# `decimal?` -> Java `BigDecimal`, `[Table]`/`[Key]` -> `@Document`/`@Id`, naming conventions). They are NOT separate output fields — you output only the two `*_validation_body` fields. Reuse these mapping patterns when you author the entity and query classes INSIDE those bodies, but use exclusively the user's own entities, fields, and queries.
 
 <example translation_type="schema" source_target=".NET Entity Framework Core" destination_target="Java Spring Data MongoDB">
 <input>
@@ -1022,65 +1037,38 @@ public static class NHibernateQueryEntrypoint
 </example>
 """
 
-# Mandatory validation workflow:
-# 1. Translate schema first.
-# 2. Validate schema using validate_java_code or validate_dotnet_code.
-# 3. For query translations, run tools in this strict order:
-#    [validate_dotnet_code, validate_java_code] in parallel -> check_query_equivalence.
-# 4. If any validation fails, fix code and rerun until all required validations pass.
-# 5. Do not finalize query translations unless all three query validation steps pass.
+    # Validation-body reference: show ONLY the region below the schema seam (the part the model must
+    # author). The prelude above the seam — imports + serializer + runtime support + template factory
+    # — is injected deterministically by `harness_assembler`, so it is intentionally NOT shown here.
+    # This both removes the contaminating boilerplate duplication and signals the model's exact
+    # output region.
+    schema_marker = "// --- Schema and Related Settings ---"
 
-    snippets = "\n--- VALIDATION ENTRYPOINT EXAMPLES (example structured <output> for source_validation_schema_code, source_validation_harness_code, source_validation_entry_type_name, target_validation_schema_code, target_validation_harness_code, target_validation_entry_type_name) ---\n"
-    
-    # Add source validation harness examples
-    if state.translation_type == TranslationType.SCHEMA:
-        src_example = await get_snippet_content(state.source_target, is_schema=True)
-        snippets += f"""
-<example translation_type="schema" source_target="{state.source_target.value}" destination_target="{state.destination_target.value if state.destination_target else ""}">
-<output>
-source_validation_schema_code:
-```csharp
-{src_example["content"]}```
-source_validation_entry_type_name:
-{src_example["entry_type_name"]}
-"""
-    else:
-        src_example = await get_snippet_content(state.source_target, is_schema=False)
-        snippets += f"""
-<example translation_type="both" source_target="{state.source_target.value}" destination_target="{state.destination_target.value if state.destination_target else ""}">
-<output>
-source_validation_harness_code:
-```csharp
-{src_example['content']}
-source_validation_entry_type_name:
-{src_example["entry_type_name"]}
-```
+    def _body(content: str) -> str:
+        return content.split(schema_marker, 1)[1].strip() if schema_marker in content else content.strip()
 
-"""
+    src_example = await get_snippet_content(state.source_target, is_schema=is_schema)
+    tgt_example = await get_snippet_content(state.destination_target, is_schema=is_schema)
 
-    # Add target validation harness examples
-    if state.translation_type == TranslationType.SCHEMA:
-        tgt_example = await get_snippet_content(state.destination_target, is_schema=True)
-        snippets += f"""
-target_validation_schema_code:
-```java
-{tgt_example['content']}```
-target_validation_entry_type_name:
-{tgt_example['entry_type_name']}
-```
-"""
-    else:
-        tgt_example = await get_snippet_content(state.destination_target, is_schema=False)
-        snippets += f"""
-target_validation_harness_code:
-```java
-{tgt_example['content']}
-```
-target_validation_entry_type_name:
-{tgt_example['entry_type_name']}
-```
-</output>
-</example>
+    snippets = f"""
+--- VALIDATION BODY STRUCTURE REFERENCE ---
+The examples below show the exact STRUCTURE your `source_validation_body` and `target_validation_body`
+must follow for this framework pair. Each is the region BELOW the `{schema_marker}` seam only: entity
+classes, query classes, then the entrypoint class with `validate*`/`main`. The imports, JSON
+serializer, runtime support, and DB template factory that normally sit ABOVE the seam are injected for
+you automatically — they MUST NOT appear in your body, and you must NOT redeclare them.
+
+Imitate the SHAPE only (class layout, query/harness method signatures, the validate-each-entity +
+run-each-query main). Use exclusively the user's own entities, fields, and queries — never this
+example's WideWorldImporters domain content.
+
+<body_structure side="source" framework="{state.source_target.value}" entrypoint_class="{src_example['entry_type_name']}">
+{_body(src_example['content'])}
+</body_structure>
+
+<body_structure side="target" framework="{state.destination_target.value}" entrypoint_class="{tgt_example['entry_type_name']}">
+{_body(tgt_example['content'])}
+</body_structure>
 
 System time: {datetime.now(tz=UTC).isoformat()}
 """
