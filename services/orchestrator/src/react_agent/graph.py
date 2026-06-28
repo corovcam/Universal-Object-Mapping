@@ -65,7 +65,6 @@ from react_agent.constants import (
     TargetFramework,
     TranslationType,
 )
-from react_agent.aimock_recorder import maybe_start_recorder, stop_recorder
 from react_agent.context import Context
 from react_agent.custom_tools.docs_search import load_docs_mcp_tools
 from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
@@ -574,10 +573,6 @@ async def extract_input(
     snippets) needed to begin the translation process. If it fails, it updates the extraction
     loop counter and may terminate the graph if the maximum retry limit is reached.
 
-    When ``EVALUATION_RUN`` is set, this node also spawns a per-thread aimock recording proxy
-    (the thread_id is only available from the runtime at this point). The recorder writes LLM
-    fixtures to ``tests/experiments/{dataset}/{thread_id}__{timestamp}/``.
-
     Args:
         state (State): The current state of the graph.
         config (RunnableConfig): Configuration parameters for the run.
@@ -587,19 +582,6 @@ async def extract_input(
         dict[str, Any] | Command: State updates with extracted parameters or a Command to
         terminate the graph on failure.
     """
-    # --- aimock evaluation recording ---------------------------------------------------
-    # Spawn a per-thread aimock proxy so that every LLM request/response is persisted as a
-    # fixture file.  This is a no-op unless EVALUATION_RUN=true.  We start here (rather
-    # than at graph entry) because the thread_id is only available from the runtime.
-    configurable = runtime.config.get("configurable", {}) if runtime.config else {}
-    thread_id = (
-        runtime.execution_info.thread_id
-        if runtime.execution_info
-        else configurable.get("thread_id", "unknown_thread")
-    )
-    timestamp = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H-%M-%S")
-    await maybe_start_recorder(thread_id, timestamp=timestamp)
-    # -----------------------------------------------------------------------------------
 
     # model = await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B)
     # structured_llm = model.with_structured_output(ExtractionOutput)
@@ -680,7 +662,7 @@ Conversation:
                 ],
                 "extraction_loop_count": state.extraction_loop_count + 1,
             },
-            goto="cleanup_recorder_node",
+            goto=END,
         )
     
     # Verification gate: ensure the extracted output contains the absolute minimum requirements
@@ -705,7 +687,7 @@ Conversation:
                         AIMessage(content=f"Extraction agent has reached the maximum number of {MAX_EXTRACTION_LOOPS} loops. Please fix your input message or provide the structured input manually."),
                     ]
                 },
-                goto="cleanup_recorder_node",
+                goto=END,
             )
         msg = [*response["messages"], AIMessage(content="Extraction agent could not extract inputs.")]
     
@@ -1950,35 +1932,9 @@ async def finalize_translation_node(
     return updates
 
 
-async def cleanup_recorder_node(
-    state: State, config: RunnableConfig, runtime: Runtime[Context]
-) -> dict[str, Any]:
-    """Stop the aimock recorder (if any) for the current thread.
-
-    This node is a no-op when ``EVALUATION_RUN`` is not set or when no recorder
-    was started (e.g. the thread never reached ``extract_input``).
-
-    Args:
-        state (State): The current state of the graph.
-        config (RunnableConfig): Configuration parameters for the run.
-        runtime (Runtime[Context]): The execution runtime containing context.
-
-    Returns:
-        dict[str, Any]: Empty state update (pass-through).
-    """
-    configurable = runtime.config.get("configurable", {}) if runtime.config else {}
-    thread_id = (
-        runtime.execution_info.thread_id
-        if runtime.execution_info
-        else configurable.get("thread_id", "unknown_thread")
-    )
-    await stop_recorder(thread_id)
-    return {}
-
-
 def route_post_evaluation(
     state: State,
-) -> Literal["generate_translation_node", "human_intervention_node", "finalize_translation_node", "cleanup_recorder_node"]:
+) -> Literal["generate_translation_node", "human_intervention_node", "finalize_translation_node", "__end__"]:
     """Determine the next state transition after evaluation.
 
     If the evaluation was rejected or failed, it routes back to `generate_translation_node`
@@ -2005,7 +1961,7 @@ def route_post_evaluation(
         # Baseline arm: one shot, no self-repair loop and no human hand-off — terminate so the
         # experiment records the single-pass failure (validation results stay in state).
         if state.single_pass:
-            return "cleanup_recorder_node"
+            return "__end__"
         # We check the translation_loop_count to prevent infinite loops of failing compilation.
         # If [Structured Output Error] occured in this last evaluation stage, we don't want to run expensive translation again, we let the user decide.
         # If it exceeds the maximum (typically 3), we route to 'human_intervention_node' to let the user fix the issue manually.
@@ -2015,7 +1971,7 @@ def route_post_evaluation(
     return "finalize_translation_node"
 
 
-def should_extract_input(state: State) -> Literal["schema_inspection", "extract_input", "cleanup_recorder_node"]:
+def should_extract_input(state: State) -> Literal["schema_inspection", "extract_input", "__end__"]:
     """Determine the next state transition during the initial extraction phase.
 
     Checks if all required structured inputs have been successfully parsed. If so, it routes
@@ -2026,7 +1982,7 @@ def should_extract_input(state: State) -> Literal["schema_inspection", "extract_
         state (State): The current state of the graph.
 
     Returns:
-        Literal["schema_inspection", "extract_input", "cleanup_recorder_node"]: The next node.
+        Literal["schema_inspection", "extract_input", "__end__"]: The next node.
     """
     if is_input_extracted(state):
         return "schema_inspection"
@@ -2034,13 +1990,13 @@ def should_extract_input(state: State) -> Literal["schema_inspection", "extract_
         return "extract_input"
     else:
         logger.error(f"Failed to extract input after {MAX_EXTRACTION_LOOPS} attempts.")
-        return "cleanup_recorder_node"
+        return "__end__"
 
 
 def route_post_translation(
     state: State,
 ) -> Literal[
-    "prep_schema_validation", "prep_query_validation", "human_intervention_node", "cleanup_recorder_node"
+    "prep_schema_validation", "prep_query_validation", "human_intervention_node", "__end__"
 ]:
     """Determine the next validation state transition after code generation.
 
@@ -2054,7 +2010,7 @@ def route_post_translation(
         state (State): The current state of the graph.
 
     Returns:
-        Literal["prep_schema_validation", "prep_query_validation", "human_intervention_node"]:
+        Literal["prep_schema_validation", "prep_query_validation", "human_intervention_node", "__end__"]:
         The next node.
     """
     last_msg = (
@@ -2065,7 +2021,7 @@ def route_post_translation(
     if StructuredOutputRetryMiddleware.ERROR_PREFIX in last_msg:
         # Baseline arm: a failed single-shot generation terminates rather than interrupting for a
         # human (which would block batch experiment runs).
-        return "cleanup_recorder_node" if state.single_pass else "human_intervention_node"
+        return "__end__" if state.single_pass else "human_intervention_node"
     if state.translation_type == TranslationType.SCHEMA:
         return "prep_schema_validation"
     return "prep_query_validation"
@@ -2078,7 +2034,7 @@ def route_post_schema_validation(
     "generate_translation_node",
     "human_intervention_node",
     "finalize_translation_node",
-    "cleanup_recorder_node",
+    "__end__",
 ]:
     """Determine the next state transition after schema validation.
 
@@ -2092,7 +2048,7 @@ def route_post_schema_validation(
         state (State): The current state of the graph.
 
     Returns:
-        Literal["prep_query_validation", "generate_translation_node", "human_intervention_node", "finalize_translation_node"]: The next node.
+        Literal["prep_query_validation", "generate_translation_node", "human_intervention_node", "finalize_translation_node", "__end__"]: The next node.
     """
     last_msg = (
         state.translation_messages[-1].content if state.translation_messages else ""
@@ -2100,7 +2056,7 @@ def route_post_schema_validation(
     if "Failed]" in last_msg:
         # Baseline arm: no self-repair loop, no human hand-off — terminate on schema compile failure.
         if state.single_pass:
-            return "cleanup_recorder_node"
+            return "__end__"
         if state.translation_loop_count >= MAX_TRANSLATION_LOOPS:
             return "human_intervention_node"
         return "generate_translation_node"
@@ -2264,13 +2220,6 @@ builder.add_edge("prep_query_equivalence", "check_query_equivalence_node")
 builder.add_edge("check_query_equivalence_node", "evaluation_node")
 
 builder.add_conditional_edges("evaluation_node", route_post_evaluation)
-# Cleanup node: stop the aimock recorder (if any) before the graph ends.  This is a no-op when
-# EVALUATION_RUN is not set.  Wired after finalize_translation_node so fixtures are flushed.
-builder.add_node(
-    cleanup_recorder_node,  # type: ignore
-)
-builder.add_edge("finalize_translation_node", "cleanup_recorder_node")
-builder.add_edge("cleanup_recorder_node", END)
 # human_intervention_node routes dynamically via Command(goto=...): generate_translation_node on
 # reject, finalize_translation_node on accept. No static edge here — it would co-fire with the
 # Command and, on accept, wrongly re-run generation in parallel with finalize.
