@@ -61,6 +61,17 @@ class InputState:
     destination_target: FrameworkEnum | None = field(default=None)
     destination_target_version: str | None = field(default=None)
 
+    single_pass: bool = field(default=False)
+    """
+    Experiment run-mode flag (the evaluation baseline arm). When True, the pipeline runs as a
+    SINGLE-SHOT translator: `generate_translation_node` does one direct model call with just the
+    save tool (no ReAct research loop, no docs MCP), and the validation routers do NOT loop back to
+    regenerate or hand off to human intervention on failure — they terminate. This isolates the
+    value of the agentic self-repair loop (the only difference from the default full-loop run) while
+    producing the same deterministic assemble→validate→finalize artifacts for an apples-to-apples
+    comparison. Settable at invoke because the conditional-edge routers read it from state.
+    """
+
 
 @dataclass
 class OutputState:

@@ -1,0 +1,21 @@
+# Dependencies for the evaluation scripts (evaluation/scripts/*).
+# Install into a SEPARATE venv so the orchestrator service env stays untouched:
+#   uv venv evaluation/.venv-eval --python 3.12
+#   uv pip install --python evaluation/.venv-eval -r evaluation/eval-requirements.txt
+#
+# aggregate_traces.py / extract_predictions.py need: langsmith, python-dotenv
+# score_predictions.py needs: codebleu + tree-sitter grammars (VERSION-PINNED — see below)
+
+langsmith>=0.8,<0.9
+python-dotenv>=1.0
+pandas>=2.0
+
+# CodeBLEU + tree-sitter. These pins are the verified-working combo for codebleu 0.7.0:
+# tree-sitter 0.23.x is required by tree-sitter-java 0.23.5 (ABI 14, which codebleu accepts),
+# but tree-sitter-c-sharp 0.23.5 emits ABI 15 (rejected: "Must be between 13 and 14"), so the
+# C# grammar is pinned to 0.21.3 (ABI 14). Bumping these unpinned WILL break with
+# "Incompatible Language version" / "an integer is required".
+codebleu==0.7.0
+tree-sitter==0.23.2
+tree-sitter-java==0.23.5
+tree-sitter-c-sharp==0.21.3

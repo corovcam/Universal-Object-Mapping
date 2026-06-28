@@ -1,0 +1,4 @@
+# eval venv + regenerable outputs (predictions/out are derived from traces; reference is frozen)
+.venv-eval/
+out/
+predictions/

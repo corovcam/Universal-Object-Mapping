@@ -48,7 +48,7 @@ from langgraph.types import (
     default_retry_on,
     interrupt,
 )
-from pydantic import BaseModel, Field, ValidationError, create_model, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from react_agent.constants import (
@@ -65,6 +65,7 @@ from react_agent.constants import (
     TargetFramework,
     TranslationType,
 )
+from react_agent.aimock_recorder import maybe_start_recorder, stop_recorder
 from react_agent.context import Context
 from react_agent.custom_tools.docs_search import load_docs_mcp_tools
 from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
@@ -573,6 +574,10 @@ async def extract_input(
     snippets) needed to begin the translation process. If it fails, it updates the extraction
     loop counter and may terminate the graph if the maximum retry limit is reached.
 
+    When ``EVALUATION_RUN`` is set, this node also spawns a per-thread aimock recording proxy
+    (the thread_id is only available from the runtime at this point). The recorder writes LLM
+    fixtures to ``tests/experiments/{dataset}/{thread_id}__{timestamp}/``.
+
     Args:
         state (State): The current state of the graph.
         config (RunnableConfig): Configuration parameters for the run.
@@ -582,6 +587,20 @@ async def extract_input(
         dict[str, Any] | Command: State updates with extracted parameters or a Command to
         terminate the graph on failure.
     """
+    # --- aimock evaluation recording ---------------------------------------------------
+    # Spawn a per-thread aimock proxy so that every LLM request/response is persisted as a
+    # fixture file.  This is a no-op unless EVALUATION_RUN=true.  We start here (rather
+    # than at graph entry) because the thread_id is only available from the runtime.
+    configurable = runtime.config.get("configurable", {}) if runtime.config else {}
+    thread_id = (
+        runtime.execution_info.thread_id
+        if runtime.execution_info
+        else configurable.get("thread_id", "unknown_thread")
+    )
+    timestamp = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H-%M-%S")
+    await maybe_start_recorder(thread_id, timestamp=timestamp)
+    # -----------------------------------------------------------------------------------
+
     # model = await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B)
     # structured_llm = model.with_structured_output(ExtractionOutput)
 
@@ -661,7 +680,7 @@ Conversation:
                 ],
                 "extraction_loop_count": state.extraction_loop_count + 1,
             },
-            goto=END,
+            goto="cleanup_recorder_node",
         )
     
     # Verification gate: ensure the extracted output contains the absolute minimum requirements
@@ -686,7 +705,7 @@ Conversation:
                         AIMessage(content=f"Extraction agent has reached the maximum number of {MAX_EXTRACTION_LOOPS} loops. Please fix your input message or provide the structured input manually."),
                     ]
                 },
-                goto=END,
+                goto="cleanup_recorder_node",
             )
         msg = [*response["messages"], AIMessage(content="Extraction agent could not extract inputs.")]
     
@@ -1083,42 +1102,50 @@ Translate ONLY the entities, fields, and queries that appear above. Do not inven
     # The validators/sandbox tools are also excluded: validation runs in the proven outer state
     # machine (parallel dotnet+java → gate → equivalence → eval), which avoids double-validation and
     # keeps compiler/run output out of the generation context.
-    async with (
-        load_docs_mcp_tools() as docs_tools,
-    ):
-        research_tools = [search, *docs_tools, save_tool]
-        agent = create_agent(
-            model,
-            tools=research_tools,
-            system_prompt=system_prompt,
-            store=runtime.store,
-            middleware=[
-                # Declares TranslationDraftState so the save_translation tool's Command(update=...)
-                # writes are valid and survive into the agent's returned state.
-                TranslationDraftMiddleware(),
-                SummarizationMiddleware(model, trigger=("fraction", 0.9)),
-                ModelFallbackMiddleware(
-                    await get_model(
-                        config, runtime, AvailableModel.EINFRA_THINKER
-                    ),
-                    await get_model(
-                        config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B
-                    ),
-                ),
-                ToolRetryMiddleware(),
-            ],
-        )
+    # Fresh prompt every attempt; on retries append distilled text feedback rather than
+    # replaying translation_messages (which carry orphaned tool_calls).
+    input_messages: list[BaseMessage] = [HumanMessage(content=message)]
+    feedback = _distill_translation_feedback(state)
+    if feedback:
+        input_messages.append(HumanMessage(content=feedback))
 
-        # Fresh prompt every attempt; on retries append distilled text feedback rather than
-        # replaying translation_messages (which carry orphaned tool_calls).
-        input_messages: list[BaseMessage] = [HumanMessage(content=message)]
-        feedback = _distill_translation_feedback(state)
-        if feedback:
-            input_messages.append(HumanMessage(content=feedback))
+    if state.single_pass:
+        # Baseline (evaluation) arm: skip the ReAct research agent and docs MCP entirely. The
+        # single-shot generation is the system prompt + human prompt straight into the model with
+        # only the save tool — performed by the shared forced-call path below, which an empty
+        # response triggers (every required field becomes "missing" → exactly one direct
+        # save_translation call). This is the apples-to-apples lower bound for the agentic loop.
+        response: dict[str, Any] = {}
+    else:
+        async with (
+            load_docs_mcp_tools() as docs_tools,
+        ):
+            research_tools = [search, *docs_tools, save_tool]
+            agent = create_agent(
+                model,
+                tools=research_tools,
+                system_prompt=system_prompt,
+                store=runtime.store,
+                middleware=[
+                    # Declares TranslationDraftState so the save_translation tool's
+                    # Command(update=...) writes are valid and survive into the agent's state.
+                    TranslationDraftMiddleware(),
+                    SummarizationMiddleware(model, trigger=("fraction", 0.9)),
+                    ModelFallbackMiddleware(
+                        await get_model(
+                            config, runtime, AvailableModel.EINFRA_THINKER
+                        ),
+                        await get_model(
+                            config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B
+                        ),
+                    ),
+                    ToolRetryMiddleware(),
+                ],
+            )
 
-        response = await agent.ainvoke(
-            {"messages": input_messages}, {"recursion_limit": 60}
-        )  # type: ignore
+            response = await agent.ainvoke(
+                {"messages": input_messages}, {"recursion_limit": 60}
+            )  # type: ignore
 
     updates: dict[str, Any] = {
         "translation_loop_count": state.translation_loop_count + 1,
@@ -1135,20 +1162,27 @@ Translate ONLY the entities, fields, and queries that appear above. Do not inven
         # likely as the translation grows. Force the issue with one direct call that REQUIRES the
         # save tool. (the model reliably emits a complete, untruncated draft this way; the
         # failure is the agent's optional-tool finish, not the model's output capacity.)
-        logger.warning(
-            "generate_translation_node: agent finished without %s; forcing save_translation",
-            missing,
-        )
+        if state.single_pass:
+            logger.info("generate_translation_node: single-pass baseline — one forced save_translation call")
+        else:
+            logger.warning(
+                "generate_translation_node: agent finished without %s; forcing save_translation",
+                missing,
+            )
         try:
             # Use a FRESH model instance (not the one handed to create_agent, which is bound to the
-            # research tools + fallback/summarization middleware) and require the save tool. 
+            # research tools + fallback/summarization middleware) and require the save tool.
             # This reliably returns a complete draft (~38s) on the real prompt.
+            # For the single-pass BASELINE this is the primary (and only) generation call, so match
+            # the full-loop agent's reasoning mode (line ~1064, reasoning=True) to hold the model
+            # config constant across arms — the ablation then isolates the tools+loop, not reasoning.
+            # In the full-loop FALLBACK case it stays reasoning=False (a fast forced completion).
             forced_model = await get_model(
                 config,
                 runtime,
                 model_name_override=AvailableModel.EINFRA_QWEN3_5,
                 temperature=0,
-                reasoning=False,
+                reasoning=state.single_pass,
             )
             forced = forced_model.bind_tools([save_tool], tool_choice="any")
             forced_resp = await forced.ainvoke(
@@ -1733,45 +1767,26 @@ Evaluation:
     }
 
 
-def _build_finalize_output_model(translation_type: TranslationType) -> type[BaseModel]:
-    """Build a small Pydantic model for the finalized production code, gated by translation type.
+# Matches a fenced code block, capturing its body. The opening fence may carry an optional language
+# tag (```java / ```csharp / ```cs / bare ```). Used to parse the finalize model's prose output.
+_CODE_FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\s*\n(.*?)```", re.DOTALL)
 
-    SCHEMA -> only ``translated_schema_code``; QUERY -> only ``translated_query_code``;
-    BOTH -> both. Keeping the structured-output schema to the minimum required fields avoids the
-    large-many-field strict-JSON fragility that plagued the original monolithic translation output.
+
+def _extract_code_fences(text: str) -> list[str]:
+    """Extract the bodies of fenced code blocks from a markdown/prose string, in order.
+
+    The finalize model emits its answer as fenced code blocks rather than a tool-call/strict-JSON
+    object: the e-INFRA sglang models collapse multi-line code in tool-call JSON to its first line
+    (an unescaped-newline truncation), whereas fenced prose preserves the full multi-line code. This
+    is the proven-reliable transport for getting code-sized output from these models.
 
     Args:
-        translation_type: The scope of the translation.
+        text: The model's textual response.
 
     Returns:
-        type[BaseModel]: A dynamic model with exactly the relevant code field(s).
+        list[str]: The stripped contents of each fenced code block, in document order.
     """
-    fields: dict[str, object] = {}
-    if translation_type in (TranslationType.SCHEMA, TranslationType.BOTH):
-        fields["translated_schema_code"] = (
-            str,
-            Field(
-                min_length=1,
-                description=(
-                    "The clean, production-ready target entity/model classes extracted VERBATIM from "
-                    "the validated harness (ORM mapping preserved; validation scaffolding and "
-                    "JSON-serialization annotations removed). Plain code only, no markdown."
-                ),
-            ),
-        )
-    if translation_type in (TranslationType.QUERY, TranslationType.BOTH):
-        fields["translated_query_code"] = (
-            str,
-            Field(
-                min_length=1,
-                description=(
-                    "The clean, production-ready target query class with one method per source query "
-                    "(named query1..queryN), each carrying the exact validated predicate (no count/"
-                    "sample/sort validation wiring). Plain code only, no markdown."
-                ),
-            ),
-        )
-    return create_model("FinalizedTranslationOutput", **fields)  # type: ignore[call-overload]
+    return [block.strip() for block in _CODE_FENCE_RE.findall(text) if block.strip()]
 
 
 async def finalize_translation_node(
@@ -1812,33 +1827,53 @@ async def finalize_translation_node(
     markdown_lang = FRAMEWORK_TO_LANGUAGE_TYPE[state.destination_target].value
 
     if translation_type == TranslationType.SCHEMA:
-        type_specific = "Produce ONLY translated_schema_code (the clean target entity/model classes). There are no queries to finalize."
+        type_specific = "Produce ONLY the clean target entity/model classes. There are no queries to finalize."
+        fence_instruction = (
+            f"Return EXACTLY ONE fenced ```{markdown_lang} code block and nothing else (no prose, no "
+            "second block): the clean entity/model class definitions."
+        )
+        expected_blocks = 1
     elif translation_type == TranslationType.QUERY:
-        type_specific = "Produce ONLY translated_query_code (the clean target query class). Do not emit entity/model class definitions."
+        type_specific = "Produce ONLY the clean target query class. Do not emit entity/model class definitions."
+        fence_instruction = (
+            f"Return EXACTLY ONE fenced ```{markdown_lang} code block and nothing else (no prose, no "
+            "second block): the clean query class with one method per source query."
+        )
+        expected_blocks = 1
     else:
-        type_specific = "Produce BOTH translated_schema_code (entity/model classes) and translated_query_code (query class)."
+        type_specific = "Produce BOTH the entity/model classes and the query class."
+        fence_instruction = (
+            f"Return EXACTLY TWO fenced ```{markdown_lang} code blocks and nothing else (no prose "
+            f"between or around them): the FIRST block is the entity/model classes, the SECOND block "
+            "is the query class with one method per source query."
+        )
+        expected_blocks = 2
 
     # Build the human message by f-string (NOT str.format): the validated code contains many braces
     # that would break format-string substitution.
     human = f"""Finalize the accepted translation from {state.source_target.value} to {state.destination_target.value} (type: {translation_type.value}).
 {type_specific}
 
+{fence_instruction}
+
 --- VALIDATED TARGET HARNESS ({state.destination_target.value}) — SOURCE OF TRUTH, copy semantics verbatim ---
 {target_validated}
 
 --- ORIGINAL SOURCE CODE (reference for naming/ordering only; do NOT pull semantics from here) ---
 {f"<source_schema_code>\n{state.source_schema_code}\n</source_schema_code>" if state.source_schema_code else ""}{f"\n<source_query_code>\n{state.source_query_code}\n</source_query_code>" if state.source_query_code else ""}
-
-For cross-reference only, the validated SOURCE-side harness ({state.source_target.value}):
-{source_validated}
 """
 
     # Pin a SINGLE model (no fallback) for finalization. This node's output is the CodeBleu baseline
     # input — a silent fallback to a different model would emit differently-structured code and
     # confound AST/data-flow comparison across runs (a metric delta could be a model swap, not a
-    # translation change). Use the same forced-tool-call mechanism proven for generation rather than
-    # `ProviderStrategy(strict=True)`: the e-INFRA sglang models do not reliably honor strict-JSON
-    # structured output for code-sized fields (that finding is why generation was rebuilt this way).
+    # translation change).
+    #
+    # Transport = PROSE with fenced code blocks (parsed below), NOT a tool call / strict-JSON: the
+    # e-INFRA sglang models collapse multi-line code in tool-call JSON to its first line (verified
+    # live — both fields came back as just `package uom.services;`), whereas fenced prose returns the
+    # full multi-line code reliably (verified: complete clean schema+query in ~14s). The socket
+    # timeout is raised above the hardcoded 120s default because finalizing a full schema+queries can
+    # legitimately stream for longer.
     finalize_model_name = AvailableModel.EINFRA_QWEN3_5
     model = await get_model(
         config,
@@ -1847,32 +1882,38 @@ For cross-reference only, the validated SOURCE-side harness ({state.source_targe
         temperature=0,
         reasoning=False,
     )
-    OutputModel = _build_finalize_output_model(translation_type)
-    # bound = model.with_structured_output(OutputModel, strict=True)
-    bound = model.bind_tools([OutputModel], tool_choice="any")
+    try:
+        model.request_timeout = 300  # type: ignore[attr-defined]
+    except Exception:
+        pass
 
     updates: dict[str, Any] = {}
     schema_code: str | None = None
     query_code: str | None = None
     try:
-        response = await bound.ainvoke(
-            [SystemMessage(content=SYSTEM_PROMPT_FINALIZE), HumanMessage(content=human)]
+        response = await model.ainvoke(
+            [
+                SystemMessage(content=SYSTEM_PROMPT_FINALIZE),
+                HumanMessage(content=human),
+            ]
         )
-        # if response:
-        #     schema_code = response.translated_schema_code # type: ignore
-        #     query_code = response.translated_query_code # type: ignore
-        calls = getattr(response, "tool_calls", None) or []
-        args = next(
-            (c.get("args") for c in calls if c.get("name") == OutputModel.__name__),
-            None,
-        )
-        if args is None and calls:
-            args = calls[0].get("args")
-        if args:
-            schema_code = args.get("translated_schema_code") or None
-            query_code = args.get("translated_query_code") or None
+        text = response.content if isinstance(response.content, str) else ""
+        blocks = _extract_code_fences(text)
+        if translation_type == TranslationType.QUERY:
+            query_code = blocks[0] if blocks else None
+        elif translation_type == TranslationType.SCHEMA:
+            schema_code = blocks[0] if blocks else None
+        else:
+            schema_code = blocks[0] if len(blocks) >= 1 else None
+            query_code = blocks[1] if len(blocks) >= 2 else None
+        if len(blocks) < expected_blocks:
+            logger.warning(
+                "finalize_translation_node: expected %d code block(s), parsed %d.",
+                expected_blocks,
+                len(blocks),
+            )
     except Exception:
-        logger.exception("finalize_translation_node: forced finalize call failed")
+        logger.exception("finalize_translation_node: finalize call failed")
 
     logger.info(
         "finalize_translation_node: finalized with model=%s (schema=%s, query=%s)",
@@ -1909,9 +1950,35 @@ For cross-reference only, the validated SOURCE-side harness ({state.source_targe
     return updates
 
 
+async def cleanup_recorder_node(
+    state: State, config: RunnableConfig, runtime: Runtime[Context]
+) -> dict[str, Any]:
+    """Stop the aimock recorder (if any) for the current thread.
+
+    This node is a no-op when ``EVALUATION_RUN`` is not set or when no recorder
+    was started (e.g. the thread never reached ``extract_input``).
+
+    Args:
+        state (State): The current state of the graph.
+        config (RunnableConfig): Configuration parameters for the run.
+        runtime (Runtime[Context]): The execution runtime containing context.
+
+    Returns:
+        dict[str, Any]: Empty state update (pass-through).
+    """
+    configurable = runtime.config.get("configurable", {}) if runtime.config else {}
+    thread_id = (
+        runtime.execution_info.thread_id
+        if runtime.execution_info
+        else configurable.get("thread_id", "unknown_thread")
+    )
+    await stop_recorder(thread_id)
+    return {}
+
+
 def route_post_evaluation(
     state: State,
-) -> Literal["generate_translation_node", "human_intervention_node", "finalize_translation_node"]:
+) -> Literal["generate_translation_node", "human_intervention_node", "finalize_translation_node", "cleanup_recorder_node"]:
     """Determine the next state transition after evaluation.
 
     If the evaluation was rejected or failed, it routes back to `generate_translation_node`
@@ -1935,6 +2002,10 @@ def route_post_evaluation(
         or "[Evaluation Error]" in last_msg
         or "[Structured Output Error]" in last_msg
     ):
+        # Baseline arm: one shot, no self-repair loop and no human hand-off — terminate so the
+        # experiment records the single-pass failure (validation results stay in state).
+        if state.single_pass:
+            return "cleanup_recorder_node"
         # We check the translation_loop_count to prevent infinite loops of failing compilation.
         # If [Structured Output Error] occured in this last evaluation stage, we don't want to run expensive translation again, we let the user decide.
         # If it exceeds the maximum (typically 3), we route to 'human_intervention_node' to let the user fix the issue manually.
@@ -1944,7 +2015,7 @@ def route_post_evaluation(
     return "finalize_translation_node"
 
 
-def should_extract_input(state: State) -> Literal["schema_inspection", "extract_input", "__end__"]:
+def should_extract_input(state: State) -> Literal["schema_inspection", "extract_input", "cleanup_recorder_node"]:
     """Determine the next state transition during the initial extraction phase.
 
     Checks if all required structured inputs have been successfully parsed. If so, it routes
@@ -1955,7 +2026,7 @@ def should_extract_input(state: State) -> Literal["schema_inspection", "extract_
         state (State): The current state of the graph.
 
     Returns:
-        Literal["schema_inspection", "extract_input", "__end__"]: The next node.
+        Literal["schema_inspection", "extract_input", "cleanup_recorder_node"]: The next node.
     """
     if is_input_extracted(state):
         return "schema_inspection"
@@ -1963,13 +2034,13 @@ def should_extract_input(state: State) -> Literal["schema_inspection", "extract_
         return "extract_input"
     else:
         logger.error(f"Failed to extract input after {MAX_EXTRACTION_LOOPS} attempts.")
-        return "__end__"
+        return "cleanup_recorder_node"
 
 
 def route_post_translation(
     state: State,
 ) -> Literal[
-    "prep_schema_validation", "prep_query_validation", "human_intervention_node"
+    "prep_schema_validation", "prep_query_validation", "human_intervention_node", "cleanup_recorder_node"
 ]:
     """Determine the next validation state transition after code generation.
 
@@ -1992,7 +2063,9 @@ def route_post_translation(
         else ""
     )
     if StructuredOutputRetryMiddleware.ERROR_PREFIX in last_msg:
-        return "human_intervention_node"
+        # Baseline arm: a failed single-shot generation terminates rather than interrupting for a
+        # human (which would block batch experiment runs).
+        return "cleanup_recorder_node" if state.single_pass else "human_intervention_node"
     if state.translation_type == TranslationType.SCHEMA:
         return "prep_schema_validation"
     return "prep_query_validation"
@@ -2005,6 +2078,7 @@ def route_post_schema_validation(
     "generate_translation_node",
     "human_intervention_node",
     "finalize_translation_node",
+    "cleanup_recorder_node",
 ]:
     """Determine the next state transition after schema validation.
 
@@ -2024,6 +2098,9 @@ def route_post_schema_validation(
         state.translation_messages[-1].content if state.translation_messages else ""
     )
     if "Failed]" in last_msg:
+        # Baseline arm: no self-repair loop, no human hand-off — terminate on schema compile failure.
+        if state.single_pass:
+            return "cleanup_recorder_node"
         if state.translation_loop_count >= MAX_TRANSLATION_LOOPS:
             return "human_intervention_node"
         return "generate_translation_node"
@@ -2187,7 +2264,13 @@ builder.add_edge("prep_query_equivalence", "check_query_equivalence_node")
 builder.add_edge("check_query_equivalence_node", "evaluation_node")
 
 builder.add_conditional_edges("evaluation_node", route_post_evaluation)
-builder.add_edge("finalize_translation_node", END)
+# Cleanup node: stop the aimock recorder (if any) before the graph ends.  This is a no-op when
+# EVALUATION_RUN is not set.  Wired after finalize_translation_node so fixtures are flushed.
+builder.add_node(
+    cleanup_recorder_node,  # type: ignore
+)
+builder.add_edge("finalize_translation_node", "cleanup_recorder_node")
+builder.add_edge("cleanup_recorder_node", END)
 # human_intervention_node routes dynamically via Command(goto=...): generate_translation_node on
 # reject, finalize_translation_node on accept. No static edge here — it would co-fire with the
 # Command and, on accept, wrongly re-run generation in parallel with finalize.

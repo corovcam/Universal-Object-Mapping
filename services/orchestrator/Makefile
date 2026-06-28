@@ -60,7 +60,7 @@ extended_tests:
 	python -m pytest --only-extended $(TEST_FILE)
 
 record_requests:
-	npx -p @copilotkit/aimock llmock --port 4020 --record --watch --latency 5 --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock/
+	npx -p @copilotkit/aimock llmock --port 4020 --record --proxy-only --latency 5 --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock/
 # 	node ../../../aimock/dist/cli.js --record --watch --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock
 
 init_daytona_snaphosts:
