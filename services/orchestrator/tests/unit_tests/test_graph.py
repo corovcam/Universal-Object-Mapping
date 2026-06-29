@@ -177,7 +177,7 @@ async def test_list_code_fields_are_joined() -> None:
 # ---------------------------------------------------------------------------
 
 
-class _BindableFakeChatModel(FakeMessagesListChatModel):
+class BindableFakeChatModel(FakeMessagesListChatModel):
     """Fake chat model that supports `bind_tools` (required by the agent's ProviderStrategy path).
 
     Records the messages passed on every model call in `seen_messages` so tests can assert that
@@ -224,13 +224,13 @@ def _invalid_schema_payload() -> str:
 async def _make_agent(responses, *, max_retries, fallback_responses=None):
     """Build an agent over a fake model using the production middleware ordering."""
     model = await _create_translation_output_model(_make_state(TranslationType.SCHEMA))
-    _BindableFakeChatModel.seen_messages = []
-    primary = _BindableFakeChatModel(responses=list(responses))
+    BindableFakeChatModel.seen_messages = []
+    primary = BindableFakeChatModel(responses=list(responses))
     middleware = []
     if fallback_responses is not None:
         middleware.append(
             ModelFallbackMiddleware(
-                _BindableFakeChatModel(responses=list(fallback_responses))
+                BindableFakeChatModel(responses=list(fallback_responses))
             )
         )
     middleware.append(StructuredOutputRetryMiddleware(max_retries=max_retries))
@@ -255,7 +255,7 @@ async def test_retry_middleware_self_corrects_and_feeds_back_error() -> None:
 
     # The model was called twice; the second call received an extra feedback HumanMessage
     # containing the actionable validator error.
-    calls = _BindableFakeChatModel.seen_messages
+    calls = BindableFakeChatModel.seen_messages
     assert len(calls) == 2
     assert len(calls[1]) == len(calls[0]) + 1
     feedback = str(calls[1][-1].content)
@@ -274,7 +274,7 @@ async def test_retry_middleware_succeeds_first_try_without_feedback() -> None:
     result = await agent.ainvoke({"messages": [HumanMessage(content="translate")]})
 
     assert result.get("structured_response") is not None
-    assert len(_BindableFakeChatModel.seen_messages) == 1
+    assert len(BindableFakeChatModel.seen_messages) == 1
 
 
 @pytest.mark.asyncio
@@ -286,7 +286,7 @@ async def test_retry_middleware_caps_attempts_then_raises() -> None:
         await agent.ainvoke({"messages": [HumanMessage(content="translate")]})
 
     # Initial attempt + 2 retries = 3 model calls (no fallback configured).
-    assert len(_BindableFakeChatModel.seen_messages) == 3
+    assert len(BindableFakeChatModel.seen_messages) == 3
 
 
 @pytest.mark.asyncio
@@ -302,7 +302,7 @@ async def test_retry_middleware_escalates_to_fallback_after_exhaustion() -> None
 
     assert result.get("structured_response") is not None
     # 2 primary attempts (initial + 1 retry) before the fallback resolved it.
-    assert len(_BindableFakeChatModel.seen_messages) >= 3
+    assert len(BindableFakeChatModel.seen_messages) >= 3
 
 
 def test_format_structured_output_error_extracts_validation_detail() -> None:

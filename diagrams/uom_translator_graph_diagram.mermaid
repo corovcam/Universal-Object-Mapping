@@ -1,0 +1,52 @@
+---
+config:
+  flowchart:
+    curve: basis
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	extract_input(extract_input)
+	schema_inspection(schema_inspection)
+	generate_translation_node(generate_translation_node)
+	human_intervention_node(human_intervention_node)
+	prep_schema_validation(prep_schema_validation)
+	prep_query_validation(prep_query_validation)
+	validate_schema_node(validate_schema_node)
+	validate_query_node(validate_query_node)
+	prep_query_equivalence(prep_query_equivalence)
+	check_query_equivalence_node(check_query_equivalence_node)
+	evaluation_node(evaluation_node)
+	finalize_translation_node(finalize_translation_node)
+	__end__([<p>__end__</p>]):::last
+	__start__ -.-> __end__;
+	__start__ -.-> extract_input;
+	__start__ -.-> schema_inspection;
+	check_query_equivalence_node --> evaluation_node;
+	evaluation_node -.-> __end__;
+	evaluation_node -.-> finalize_translation_node;
+	evaluation_node -.-> generate_translation_node;
+	evaluation_node -.-> human_intervention_node;
+	extract_input -.-> __end__;
+	extract_input -.-> schema_inspection;
+	generate_translation_node -.-> __end__;
+	generate_translation_node -.-> human_intervention_node;
+	generate_translation_node -.-> prep_query_validation;
+	generate_translation_node -.-> prep_schema_validation;
+	human_intervention_node -.-> finalize_translation_node;
+	human_intervention_node -.-> generate_translation_node;
+	prep_query_equivalence --> check_query_equivalence_node;
+	prep_query_validation --> validate_query_node;
+	prep_schema_validation --> validate_schema_node;
+	schema_inspection --> generate_translation_node;
+	validate_query_node -.-> evaluation_node;
+	validate_query_node -.-> prep_query_equivalence;
+	validate_schema_node -.-> __end__;
+	validate_schema_node -.-> finalize_translation_node;
+	validate_schema_node -.-> generate_translation_node;
+	validate_schema_node -.-> human_intervention_node;
+	validate_schema_node -.-> prep_query_validation;
+	finalize_translation_node --> __end__;
+	extract_input -.-> extract_input;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

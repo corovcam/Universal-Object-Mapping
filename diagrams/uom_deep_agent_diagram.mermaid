@@ -1,0 +1,38 @@
+stateDiagram-v2
+    [*] --> PatchToolCallsMiddleware_before_agent
+    
+    state "PatchToolCallsMiddleware.before_agent" as PatchToolCallsMiddleware_before_agent
+    state "LocalContextMiddleware.before_agent" as LocalContextMiddleware_before_agent
+    state "model" as model
+    state "HumanInTheLoopMiddleware.after_model" as HumanInTheLoopMiddleware_after_model
+    state "TodoListMiddleware.after_model" as TodoListMiddleware_after_model
+    state "tools" as tools
+    
+    note right of LocalContextMiddleware_before_agent
+        before_agent: Detects environment (Git status, files, tree, runtimes, Makefile)
+        wrap_model_call: Injects local context markdown into the LLM system prompt
+    end note
+    
+    note left of HumanInTheLoopMiddleware_after_model
+        after_model: Pauses execution to request human-in-the-loop approval
+        for tool calls (edit_file, write_file, execute) based on mode config
+    end note
+
+    note right of TodoListMiddleware_after_model
+        after_model: Manages list of planned tasks to be done,
+        decides if execution is complete, needs tool invocation, or direct model loop
+    end note
+
+    PatchToolCallsMiddleware_before_agent --> LocalContextMiddleware_before_agent : Preprocess tool calls
+    LocalContextMiddleware_before_agent --> model : Enriched system prompt
+    model --> HumanInTheLoopMiddleware_after_model : Model responds with text/tool calls
+    HumanInTheLoopMiddleware_after_model --> TodoListMiddleware_after_model : User approved or bypassed
+    
+    state todo_list_routing_gate <<choice>>
+    TodoListMiddleware_after_model --> todo_list_routing_gate
+    
+    todo_list_routing_gate --> tools : Tools need to be called
+    todo_list_routing_gate --> model : Direct model loop (no tool execution)
+    todo_list_routing_gate --> [*] : Task completed / Done
+    
+    tools --> model : Feed tool results back to model
