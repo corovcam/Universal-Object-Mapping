@@ -42,6 +42,7 @@ class AvailableModel(str, Enum):
     EINFRA_QWEN3_CODER_NEXT = "einfra/qwen3-coder-next"
     EINFRA_QWEN3_5_122B = "einfra/qwen3.5-122b"
     EINFRA_GLM_5_2 = "einfra/glm-5.2"
+    EINFRA_GEMMA4 = "einfra/gemma4"
 
 
 class TranslationType(str, Enum):

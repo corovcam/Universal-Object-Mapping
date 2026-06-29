@@ -81,6 +81,7 @@ from react_agent.prompts import (
     SYSTEM_PROMPT_SCHEMA_INSPECTOR,
     build_system_prompt,
     build_translation_user_message,
+    eval_cache_bust_header,
 )
 from react_agent.state import (
     InputState,
@@ -671,7 +672,7 @@ async def extract_input(
     # model = await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B)
     # structured_llm = model.with_structured_output(ExtractionOutput)
 
-    system_prompt = SYSTEM_PROMPT_EXTRACTION.format(
+    system_prompt = eval_cache_bust_header(runtime, config) + SYSTEM_PROMPT_EXTRACTION.format(
         origin_frameworks=[f.value for f in SourceFramework],
         destination_frameworks=[f.value for f in TargetFramework],
     )
@@ -834,7 +835,8 @@ async def schema_inspection(
                 AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING,
             ),
             tools=db_tools,
-            system_prompt=SYSTEM_PROMPT_SCHEMA_INSPECTOR.format(system_time=datetime.now(tz=UTC).isoformat()),
+            system_prompt=eval_cache_bust_header(runtime, config)
+            + SYSTEM_PROMPT_SCHEMA_INSPECTOR.format(system_time=datetime.now(tz=UTC).isoformat()),
             middleware=[
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
@@ -941,7 +943,7 @@ async def translation_agent(
 
     all_tools = TOOLS
 
-    system_prompt = await build_system_prompt(state)
+    system_prompt = eval_cache_bust_header(runtime, config) + await build_system_prompt(state)
 
     # Create the ReAct agent
     agent = create_agent(
@@ -1152,11 +1154,23 @@ async def generate_translation_node(
     source_entry = (await get_snippet_content(source_fw, is_schema=is_schema))["entry_type_name"]
     target_entry = (await get_snippet_content(target_fw, is_schema=is_schema))["entry_type_name"]
 
+    # Production default is EINFRA_QWEN3_5 with reasoning on; the evaluation harness can swap the
+    # generation model (model sweep) and/or force reasoning via Context (set per-invoke, never a
+    # global — see Context.translation_model_override). Both this agent's model and the forced-save
+    # fallback below honour the same override so an experiment stays internally consistent.
+    _override = runtime.context.translation_model_override
+    translation_model = (
+        AvailableModel(_override) if _override else AvailableModel.EINFRA_QWEN3_5
+    )
+    _reasoning_override = runtime.context.translation_reasoning_override
     model = await get_model(
-        config, runtime, model_name_override=AvailableModel.EINFRA_QWEN3_5, reasoning=True
+        config,
+        runtime,
+        model_name_override=translation_model,
+        reasoning=(_reasoning_override if _reasoning_override is not None else True),
     )
 
-    system_prompt = await build_system_prompt(state)
+    system_prompt = eval_cache_bust_header(runtime, config) + await build_system_prompt(state)
 
     message = build_translation_user_message(state)
 
@@ -1250,9 +1264,13 @@ async def generate_translation_node(
             forced_model = await get_model(
                 config,
                 runtime,
-                model_name_override=AvailableModel.EINFRA_QWEN3_5,
+                model_name_override=translation_model,
                 temperature=0,
-                reasoning=state.single_pass,
+                reasoning=(
+                    _reasoning_override
+                    if _reasoning_override is not None
+                    else state.single_pass
+                ),
             )
             forced = forced_model.bind_tools([save_tool], tool_choice="any")
             forced_resp = await forced.ainvoke(
@@ -1773,7 +1791,7 @@ async def evaluation_node(
 
     last_msgs = [str(msg) for msg in state.translation_messages[-4:]]
 
-    prompt = f"""Evaluate the following validation results for a schema/query translation.
+    prompt = eval_cache_bust_header(runtime, config) + f"""Evaluate the following validation results for a schema/query translation.
 Based on the validation output and DeepDiff equivalence results, decide if the translation is ACCEPTABLE or if it should be REJECTED and retried.
 
 <validation_results>
@@ -1965,7 +1983,9 @@ async def finalize_translation_node(
     try:
         response = await model.ainvoke(
             [
-                SystemMessage(content=SYSTEM_PROMPT_FINALIZE),
+                SystemMessage(
+                    content=eval_cache_bust_header(runtime, config) + SYSTEM_PROMPT_FINALIZE
+                ),
                 HumanMessage(content=human),
             ]
         )

@@ -160,5 +160,17 @@
     "structured_output": true,
     "reasoning_output": true,
     "temperature": true
+  },
+  "einfra/gemma4": {
+    "name": "gemma4",
+    "text_inputs": true,
+    "text_outputs": true,
+    "image_inputs": true,
+    "max_input_tokens": 262144,
+    "max_output_tokens": 32000,
+    "tool_calling": true,
+    "tool_choice": true,
+    "structured_output": true,
+    "temperature": true
   }
 }

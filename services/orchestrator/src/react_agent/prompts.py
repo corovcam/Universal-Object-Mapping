@@ -6,7 +6,9 @@ They are dynamically interpolated at runtime using str.format() to inject
 the chosen frameworks and context variables.
 """
 
+import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from react_agent.constants import TranslationType
 from react_agent.state import State
@@ -15,6 +17,31 @@ from react_agent.utils.utils import get_framework_config_content, get_snippet_co
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
+
+
+def eval_cache_bust_header(runtime: Any = None, config: Any = None) -> str:
+    """Return a per-run cache-busting header for EVALUATION mode, or ``""`` in production.
+
+    Why: e-INFRA models have prompt/KV caching enabled. For clean per-iteration latency/cost
+    measurements the evaluation harness must defeat that caching. A timestamp at the *bottom* of an
+    otherwise-static prompt (as ``build_system_prompt`` already appends) only breaks whole-prompt
+    exact-match — the long static *prefix* still hits the prefix cache. So in eval mode we prepend a
+    fresh nonce at the very TOP of every system prompt. Second-resolution time alone collides at
+    ``max_concurrency >= 2``, so the nonce also carries the run id and a ``uuid4``.
+
+    Gated entirely on ``Context.eval_mode`` — returns ``""`` (a no-op) whenever eval mode is off, so
+    the production prompt is byte-for-byte unchanged. Duck-typed (``runtime``/``config`` accepted as
+    ``Any``) to avoid importing the LangGraph ``Runtime``/``Context`` types here.
+    """
+    ctx = getattr(runtime, "context", None)
+    if not getattr(ctx, "eval_mode", False):
+        return ""
+    cfg = config or {}
+    run_id = cfg.get("run_id") or cfg.get("configurable", {}).get("thread_id") or ""
+    return (
+        f"<!-- eval-run-nonce run_id={run_id} "
+        f"ts={datetime.now(tz=UTC).isoformat()} nonce={uuid.uuid4().hex} -->\n\n"
+    )
 
 SYSTEM_PROMPT_TRANSLATOR = """You are a Universal Object Mapping architect. Your goal is to aid in translating database schema structures and query logic between diverse languages and frameworks.
 

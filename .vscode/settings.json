@@ -24,7 +24,7 @@
     }
   ],
   "python.analysis.useNearestConfiguration": true,
-  "python.analysis.include": ["./services/orchestrator/[src,tests]/**"],
+  "python.analysis.include": ["./services/${workspaceFolder:uom-orchestrator}/[src,tests]/**", "./services/orchestrator/${workspaceFolder:evaluation}/scripts/**"],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
   "pythonTestExplorer.testFramework": "pytest",
