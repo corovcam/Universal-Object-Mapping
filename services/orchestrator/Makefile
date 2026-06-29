@@ -86,6 +86,11 @@ JUDGE_MODEL ?= einfra/gemma4
 REPS        ?= 15
 CONCURRENCY ?= 2
 EVAL_ENV    ?= .env.dev
+# Record LLM traffic per run into its own dir under AIMOCK_ROOT (mirrors the predictions tree). On by
+# default for the eval runs (the user wants fixtures saved for every experiment); set RECORD= to disable.
+RECORD      ?= 1
+AIMOCK_ROOT ?= evaluation/aimock
+RECORD_FLAG := $(if $(RECORD),--record-fixtures --aimock-root $(AIMOCK_ROOT),)
 
 # Build/refresh the bundled per-pair examples in the "UOM Final Experiments" dataset (idempotent).
 eval_dataset:
@@ -103,19 +108,19 @@ eval_judge_check:
 eval_small:
 	EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants small \
 		--judge-model $(JUDGE_MODEL) --repetitions $(REPS) --max-concurrency $(CONCURRENCY) \
-		--pred-root evaluation/predictions --env $(EVAL_ENV)
+		--pred-root evaluation/predictions $(RECORD_FLAG) --env $(EVAL_ENV)
 
 # Full ~15-query matrix across all pairs, default generate-model.
 eval_full:
 	EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants full \
 		--judge-model $(JUDGE_MODEL) --repetitions $(REPS) --max-concurrency $(CONCURRENCY) \
-		--pred-root evaluation/predictions --env $(EVAL_ENV)
+		--pred-root evaluation/predictions $(RECORD_FLAG) --env $(EVAL_ENV)
 
 # Opt-in 4-model generate_translation_node sweep (qwen3.5 / kimi-k2.7 / glm-5.2 / deepseek-v4-pro-thinking).
 eval_sweep:
 	EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants full --sweep \
 		--judge-model $(JUDGE_MODEL) --repetitions $(REPS) --max-concurrency $(CONCURRENCY) \
-		--pred-root evaluation/predictions --env $(EVAL_ENV)
+		--pred-root evaluation/predictions $(RECORD_FLAG) --env $(EVAL_ENV)
 
 # Staged: preflight-gated small variant FIRST, then the full matrix; both default generate-model.
 # Logs to evaluation/out/full-experiment-<ts>.log. The runner aborts fast if the live stack is unreachable.
@@ -125,7 +130,7 @@ eval_full_experiment:
 		echo "full experiment eval -> $$log"; \
 		EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants small full \
 			--judge-model $(JUDGE_MODEL) --repetitions $(REPS) --max-concurrency $(CONCURRENCY) \
-			--pred-root evaluation/predictions --env $(EVAL_ENV) 2>&1 | tee $$log
+			--pred-root evaluation/predictions $(RECORD_FLAG) --env $(EVAL_ENV) 2>&1 | tee $$log
 
 # Post-hoc CodeBLEU over the predictions the runs wrote (separate eval venv with codebleu pinned).
 eval_codebleu:

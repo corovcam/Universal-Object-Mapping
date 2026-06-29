@@ -72,6 +72,8 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE.parents[1] / "src"))  # services/orchestrator/src
 
+from aimock_recorder import DEFAULT_UPSTREAM  # noqa: E402 — sibling script (LLM-traffic recorder)
+
 DATASET_ID = "56708f08-2697-4af2-b3b7-9172c0e68b4b"  # "UOM Final Experiments"
 DATASET_NAME = "UOM Final Experiments"
 # Judge model is finicky on e-INFRA (verified empirically): thinking models (deepseek-v4-pro-thinking,
@@ -142,8 +144,13 @@ async def _make_target(
     pred_root: str,
     dataset: str,
     run_tag: str,
+    pair: str | None = None,
+    variant: str | None = None,
     translation_model_override: str | None = None,
     translation_reasoning_override: bool | None = None,
+    record_fixtures: bool = False,
+    aimock_root: str | None = None,
+    aimock_upstream: str = DEFAULT_UPSTREAM,
 ):
     """Build an async ``aevaluate`` target that runs the graph ONCE per example and returns BOTH the
     translated code (for the LLM judges) AND the deterministic metrics (for the non-LLM evaluators),
@@ -159,21 +166,42 @@ async def _make_target(
     rep, not the run.
 
     No-overwrite: predictions are written under a per-INVOCATION ``run_tag`` (timestamp) AND a fresh
-    per-run uuid leaf, so re-running never clobbers a previous batch's artifacts."""
+    per-run uuid leaf, so re-running never clobbers a previous batch's artifacts.
+
+    Fixture recording (opt-in, ``record_fixtures``): when on, EACH run gets its OWN throwaway aimock
+    instance (auto-picked free port, concurrency-safe) that proxies to ``aimock_upstream`` and SAVES
+    the run's LLM traffic into its own directory under
+    ``<aimock_root>/<dataset>/<run_tag>/<pair>/<gen_model>/<approach>-<uuid8>/recorded/`` — mirroring
+    the predictions layout so a run's fixtures and predictions sit in parallel trees and never mingle
+    with another run's. eval_mode's per-run cache-bust header keeps every prompt distinct, so aimock's
+    in-memory replay cache never short-circuits a recording."""
+    import uuid as _uuid
+
     from extract_predictions import _write_artifacts, slug
     from run_experiment import run_one
 
     single_pass = approach == "baseline"
     gen_model_tag = translation_model_override or "default"
+    pair_tag = _pair_short(pair) if pair else "unknown"
 
     async def target(inputs: dict[str, Any]) -> dict[str, Any]:
         try:
             prompt = _source_prompt(inputs)
+            # Per-run aimock recording dir (known BEFORE invoke; run_one's own run_id isn't available
+            # yet, so the leaf carries a fresh uuid). aimock writes under <record_dir>/recorded/.
+            record_dir = None
+            if record_fixtures and aimock_root:
+                leaf = f"{approach}-{variant or 'na'}-{_uuid.uuid4().hex[:8]}"
+                record_dir = (
+                    Path(aimock_root) / dataset / run_tag / pair_tag / slug(gen_model_tag) / leaf
+                )
             # eval_mode=True turns on the per-run cache-bust header; the sweep model (if any) is forced
             # on generate_translation_node via Context. run_one returns the full metric bundle + raw
-            # code and never raises (it catches graph exceptions internally).
+            # code and never raises (it catches graph exceptions internally). record_dir!=None spawns a
+            # recording aimock for THIS run and points the model base URL at it.
             r = await run_one(
                 prompt, single_pass, None, approach, "langsmith",
+                record_dir=record_dir, upstream=aimock_upstream,
                 eval_mode=True,
                 translation_model_override=translation_model_override,
                 translation_reasoning_override=translation_reasoning_override,
@@ -204,6 +232,7 @@ async def _make_target(
                 "pair": r.get("pair"),
                 "generate_model": gen_model_tag,
                 "predictions": predictions,
+                "aimock_dir": str(record_dir) if record_dir is not None else None,
                 "error": r.get("error"),
             }
         except Exception as e:  # noqa: BLE001 — last-resort guard so aevaluate always continues
@@ -526,6 +555,9 @@ async def main_async(args: argparse.Namespace) -> None:
     print(f"=== run_tag={run_tag} | {len(plan)} experiment(s): {len(pairs)} pair x {len(variants)} "
           f"variant x {len(models)} model | approach={args.approach} reps={args.repetitions} "
           f"concurrency={args.max_concurrency} judges={len(evaluators)} ===")
+    if args.record_fixtures:
+        print(f"  recording LLM traffic per run → {args.aimock_root}/{args.dataset}/{run_tag}/"
+              "<pair>/<gen_model>/<approach>-<uuid>/recorded/ (one aimock per run)")
 
     # Each experiment is isolated: a failure in ONE (LangSmith API error, auth blip, etc.) is caught
     # and logged so the remaining experiments still run — the overnight matrix is never aborted by a
@@ -545,7 +577,10 @@ async def main_async(args: argparse.Namespace) -> None:
             continue
         target = await _make_target(
             args.approach, pred_root=args.pred_root, dataset=args.dataset, run_tag=run_tag,
+            pair=pair, variant=variant,
             translation_model_override=gen_model, translation_reasoning_override=gen_reasoning,
+            record_fixtures=args.record_fixtures, aimock_root=args.aimock_root,
+            aimock_upstream=args.aimock_upstream,
         )
         print(f"\n--- ({i}/{len(plan)}) {prefix}  ({len(examples)} example(s) x {args.repetitions} reps) ---")
         rec = {"experiment": prefix, "pair": pair, "variant": variant,
@@ -617,6 +652,14 @@ def main() -> None:
     ap.add_argument("--run-tag", default=None,
                     help="batch tag grouping this invocation's predictions/summary (default: timestamp; "
                          "guarantees re-runs never overwrite a previous batch)")
+    ap.add_argument("--record-fixtures", action="store_true",
+                    help="spawn a throwaway aimock per run that RECORDS LLM traffic to its OWN dir "
+                         "(under --aimock-root, mirroring the predictions tree); needs the live "
+                         "upstream + the real OPENAI_API_KEY")
+    ap.add_argument("--aimock-root", default="../aimock",
+                    help="base dir for recorded fixtures (per-run subfolder created underneath)")
+    ap.add_argument("--aimock-upstream", default=DEFAULT_UPSTREAM,
+                    help="real OpenAI-compatible provider aimock proxies to (no trailing /v1)")
     ap.add_argument("--dry-run", action="store_true",
                     help="echo target (no graph/Daytona) to validate dataset+judge plumbing")
     ap.add_argument("--no-judges", action="store_true", help="skip LLM judges (deterministic only)")

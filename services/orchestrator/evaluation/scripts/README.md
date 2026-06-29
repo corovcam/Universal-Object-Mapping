@@ -194,6 +194,15 @@ make eval_sweep
 - **Preflight** (on by default; `--no-preflight` to skip): a stdlib-socket TCP liveness check of the
   model endpoint, Daytona, MSSQL, MongoDB, Neo4j BEFORE submitting, so a misfire fails fast instead of
   producing a night of errored runs.
+- **Fixture recording** (`--record-fixtures`, **on by default for the `make eval_*` targets** via
+  `RECORD=1`; set `RECORD=` to disable): every run spawns its OWN throwaway aimock (`aimock_recorder.py`,
+  auto-picked free port → concurrency-safe) that proxies to e-INFRA and SAVES the run's LLM traffic to
+  its own dir at `evaluation/aimock/<dataset>/<run_tag>/<pair>/<gen_model>/<approach>-<uuid>/recorded/`
+  — the SAME layout the predictions tree uses, so a run's fixtures and predictions sit in parallel
+  trees and never mingle across runs. The real `OPENAI_API_KEY` is forwarded upstream and stripped from
+  saved fixtures (no secret on disk). Override the base dir with `AIMOCK_ROOT=…` (make) or
+  `--aimock-root` (script). eval_mode's per-run cache-bust header keeps every prompt distinct, so
+  aimock's in-memory replay cache never short-circuits a recording.
 - **Reference-free judges (graded against the SOURCE):** `code_correctness`, `conciseness`,
   `hallucination` (source as `context`), and custom `translation_equivalence`. No gold reference exists;
   for reference-based CodeBLEU use the frozen pair reference (`extract_predictions.py --reference` +
