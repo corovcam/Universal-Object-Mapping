@@ -63,8 +63,16 @@ extended_tests:
 # request as a fixture under ./tests/aimock/recorded/.
 RECORD_FIXTURES_DIR ?= ./tests/aimock
 record_requests:
-	npx -p @copilotkit/aimock llmock --port 4020 --record --proxy-only --latency 5 --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock/
-# 	node ../../../aimock/dist/cli.js --record --watch --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock
+	npx -p @copilotkit/aimock llmock --port 4020 --record --latency 5 --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f $(RECORD_FIXTURES_DIR)
+
+# Integrated recorder: drive the pipeline on a WWI fixture and spawn a FRESH aimock per run, so
+# each thread's traffic is saved into its OWN folder under evaluation/aimock/. Needs the live stack
+# (e-INFRA, Daytona, WWI DBs) and the orchestrator venv. FIXTURE/APPROACHES override the defaults.
+FIXTURE ?= efcore-mongodb-q1
+APPROACHES ?= our_approach
+record_experiment:
+	uv run python evaluation/scripts/run_experiment.py --fixture $(FIXTURE) --approaches $(APPROACHES) \
+		--record-fixtures --aimock-root evaluation/aimock --pred-root evaluation/predictions --out evaluation/out --env .env
 
 init_daytona_snaphosts:
 	./scripts/init_daytona_snapshots.sh

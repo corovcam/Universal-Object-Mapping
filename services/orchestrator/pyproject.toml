@@ -44,6 +44,9 @@ dependencies = [
 
 [project.optional-dependencies]
 opt = ["rich>=15.0.0"]
+eval = [
+    "openevals>=0.2.0",
+]
 
 [dependency-groups]
 dev = [

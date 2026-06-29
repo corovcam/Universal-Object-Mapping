@@ -2252,6 +2252,21 @@ wheels = [
 ]
 
 [[package]]
+name = "openevals"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain" },
+    { name = "langchain-openai" },
+    { name = "langsmith" },
+    { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b0/b1/028a05846136805b29b7a3afb58a940c2d213fa2c3d0a7d7003c7fbaa115/openevals-0.2.0.tar.gz", hash = "sha256:7e95fa64625be53eaa8c657d7f69b842a52bda10bdf3bb91781c7d09a385b069", size = 140711, upload-time = "2026-04-07T19:45:22.749Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4a/8b/00f402b7f3475e235c339a9bc82d2eaf46cc08b53ecd85d4a117850170d3/openevals-0.2.0-py3-none-any.whl", hash = "sha256:2bce5964be9d162e3d38c2dfd026739156e1ac521536ade6b8e2f0a89b632f2c", size = 106958, upload-time = "2026-04-07T19:45:21.575Z" },
+]
+
+[[package]]
 name = "opentelemetry-api"
 version = "1.42.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3581,6 +3596,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+eval = [
+    { name = "openevals" },
+]
 opt = [
     { name = "rich" },
 ]
@@ -3628,6 +3646,7 @@ requires-dist = [
     { name = "langgraph-api", specifier = ">=0.9.0" },
     { name = "logfire", extras = ["httpx", "requests"], specifier = ">=4.32.1" },
     { name = "ollama", specifier = ">=0.6.2" },
+    { name = "openevals", marker = "extra == 'eval'", specifier = ">=0.2.0" },
     { name = "orjson", specifier = ">=3.11.8" },
     { name = "pydantic", specifier = ">=2.13.3" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
@@ -3639,7 +3658,7 @@ requires-dist = [
     { name = "types-aiofiles", specifier = ">=24.1.0" },
     { name = "uvicorn", specifier = ">=0.46.0" },
 ]
-provides-extras = ["opt"]
+provides-extras = ["opt", "eval"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -96,6 +96,54 @@ stamped with `metadata.approach` for joining).
 Fixtures (all WideWorldImporters): `dapper-mongodb`, `efcore-mongodb`, `efcore-mongodb-q1`,
 `efcore-neo4j`, `nhibernate-mongodb` (in `tests/fixtures/`).
 
+### Recording each run's LLM traffic (`--record-fixtures`)
+
+Add `--record-fixtures` and every run spawns its OWN throwaway aimock (`aimock_recorder.py`) that
+proxies to e-INFRA and **saves** the run's LLM traffic into its own folder, so threads never mingle:
+
+```bash
+.venv/bin/python evaluation/scripts/run_experiment.py --fixture efcore-mongodb-q1 \
+    --approaches our_approach --record-fixtures --aimock-root evaluation/aimock
+# or: make record_experiment FIXTURE=efcore-mongodb-q1 APPROACHES=our_approach
+```
+
+Per-run captures land in `evaluation/aimock/<dataset>/<fixture>__<approach>__<timestamp>/recorded/`
+(the `recorded/` segment is appended by aimock). The runner points that run's `Context.openai_api_url`
+at the instance (so `get_model` routes through it) and keeps the real `OPENAI_API_KEY` — aimock
+forwards auth upstream and **strips it from saved fixtures**, so no secret lands on disk.
+
+> **`--record` saves; `--record --proxy-only` saves NOTHING.** aimock's `persistFixture` early-returns
+> when `proxyOnly` is set — the two flags together (the old Makefile `record_requests`) recorded
+> nothing. We pass `--record` alone. The one tradeoff: an *identical* request recurring within a run
+> replays aimock's in-memory cache instead of re-hitting e-INFRA (distinct prompts never trigger it;
+> only an exact retry would) — harmless for recording, and the reason proxy-only can't also save.
+> **Port note:** the einfra path does `openai_api_url.rstrip("/v1")` (a char-set strip), so a port
+> ending in `1` is mangled — `aimock_recorder` only ever picks ports whose last digit isn't `1`.
+
+## 5. `export_manual_prompts.py` — copy-pasteable prompt for MANUAL SOTA-model baselines
+
+Proprietary SOTA models (Claude, GPT, Gemini) are only reachable here through chat UIs / CLIs (Claude
+Code, Claude.ai, Gemini app, Google AI Studio, Antigravity), not API keys. This emits the **exact**
+translation-stage system + user prompt for a fixture so the baseline can be run by hand:
+
+```bash
+.venv/bin/python evaluation/scripts/export_manual_prompts.py --fixture efcore-mongodb-q1 \
+    --out evaluation/manual-eval --env .env
+```
+
+It drives the real graph with `interrupt_before=["generate_translation_node"]` — so live
+`extract_input` + `schema_inspection` populate the State — then renders with the SAME
+`build_system_prompt` / `build_translation_user_message` the node uses (single source of truth in
+`react_agent/prompts.py`). What you paste is byte-for-byte what the pipeline sends its own model. It
+stops **before** the translation model call, so it spends no SOTA tokens and never touches the
+proprietary models (it does need the live stack for extract_input/schema_inspection).
+
+Per fixture, under `<out>/wwi/<fixture>__<timestamp>/`: `system.txt`, `user.txt` (raw, cleanest to
+copy), and `prompt.md` (both + per-platform paste instructions + a manual-run adaptation that turns
+the `save_translation` tool-call into two labeled `*_validation_body` code blocks + an output-capture
+template). See `evaluation/manual-eval/SAMPLE/` for an illustrative render. Capture each model's two
+bodies and assemble→validate→finalize them through the same pipeline for an apples-to-apples score.
+
 **Gate the FIRST live baseline run** (the one path not testable without infra): open its LangSmith
 trace and confirm **exactly one `generate_translation_node` span and zero docs-MCP tool calls**.
 `translation_loops==1` alone does not prove single-pass — a full-loop run that succeeds on the first
@@ -111,6 +159,37 @@ uses the default — a minor, documented difference.)
 a **decided `failed`** outcome (not excluded `incomplete`), so the baseline's characteristic
 early-failures stay in the funnel denominator. It reads `metadata.single_pass`/`metadata.approach`
 stamped by this runner.
+
+## 6. `run_langsmith_eval.py` — LangSmith-native experiment + LLM-as-judge
+
+Runs the graph over the **"UOM Final Experiments"** dataset (ID `56708f08-2697-4af2-b3b7-9172c0e68b4b`)
+via LangSmith's `aevaluate`, so results land as a proper **Experiment** with per-example LLM-judge
+feedback scores in the UI (vs `run_experiment.py`, which writes its own JSON). Needs the ORCHESTRATOR
+venv with the `eval` extra (`uv sync --extra eval` for openevals) and the live stack.
+
+```bash
+# validate dataset + aevaluate plumbing with an echo target (no model calls, no Daytona):
+uv run python evaluation/scripts/run_langsmith_eval.py --dry-run --no-judges --env .env
+# real run (our_approach) with judges on e-INFRA:
+uv run python evaluation/scripts/run_langsmith_eval.py --approach our_approach \
+    --judge-model einfra/kimi-k2.6 --max-concurrency 2 --env .env
+```
+
+- **Reference-free judges (graded against the SOURCE in each example):** `code_correctness`,
+  `conciseness`, `hallucination` (source passed as `context` — flags invented entities/fields),
+  and a custom `translation_equivalence` (faithful, complete, nothing invented). The dataset has **no
+  gold reference** (`outputs.message` is a dev artifact, ignored).
+- **No first-accepted-as-reference judge here on purpose:** that only makes sense across runs of the
+  *same* input; these examples are *different* queries. For reference-based CodeBLEU keep using the
+  frozen pair-level reference from `extract_predictions.py --reference` + `score_predictions.py`.
+- **Judge model:** runs on e-INFRA (no proprietary keys). Default `llama-4-scout` (non-thinking,
+  ~1s). openevals' *own* scorer hangs on e-INFRA's structured-output path, so we keep openevals'
+  **prompts** but make the call ourselves (`with_structured_output` → JSON-fallback → graceful
+  `None`, per-judge timeout) and declare `score` before `reasoning` (these models truncate long
+  reasoning). **Call path** verified via `--dry-run` (~17/20 calls return a verdict) — but that graded
+  the dry-run **stub**, so judge *discrimination on real translations is unverified*; spot-check judge
+  comments on the first real run. Thinking models (gpt-oss/mini/qwen-coder) hang the grading prompts —
+  avoid them as judges. The graph **target** still needs the full live stack (Daytona + WWI).
 
 ## Notes
 - The funnel runs over **query-bearing decided runs** (`translation_type` in query/both that reached
