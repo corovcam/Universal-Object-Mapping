@@ -32,7 +32,7 @@ Needs the LIVE stack (e-INFRA model endpoint, Daytona sandboxes, WWI DBs) and th
 
     uv sync --extra eval
     uv run python evaluation/scripts/run_langsmith_eval.py --approach our_approach \
-        --judge-model einfra/kimi-k2.6 --env .env
+        --judge-model einfra/gemma4 --env .env
 
 Use ``--dry-run`` to validate dataset/judge plumbing with a trivial echo target (no graph, no
 Daytona) before spending tokens on a real run.
@@ -141,13 +141,25 @@ async def _make_target(
     *,
     pred_root: str,
     dataset: str,
+    run_tag: str,
     translation_model_override: str | None = None,
     translation_reasoning_override: bool | None = None,
 ):
     """Build an async ``aevaluate`` target that runs the graph ONCE per example and returns BOTH the
     translated code (for the LLM judges) AND the deterministic metrics (for the non-LLM evaluators),
     writing prediction artifacts for the post-hoc CodeBLEU pass. Reuses ``run_experiment.run_one`` so
-    the invoke / equivalence-scrape / metrics logic is shared (no second graph execution anywhere)."""
+    the invoke / equivalence-scrape / metrics logic is shared (no second graph execution anywhere).
+
+    Fault tolerance: this target NEVER raises. ``run_one`` already catches graph-execution exceptions
+    (network blips, Daytona/DB errors, model errors — the model calls also retry internally via
+    litellm + ModelFallbackMiddleware) and returns them as ``error`` rather than propagating, so one
+    bad example can't abort the experiment. We additionally wrap the artifact-write / dict-build here:
+    on ANY unexpected failure the target returns a minimal error dict, so ``aevaluate`` records the
+    example and moves on. With ``num_repetitions`` (e.g. 15), a transient per-rep failure costs one
+    rep, not the run.
+
+    No-overwrite: predictions are written under a per-INVOCATION ``run_tag`` (timestamp) AND a fresh
+    per-run uuid leaf, so re-running never clobbers a previous batch's artifacts."""
     from extract_predictions import _write_artifacts, slug
     from run_experiment import run_one
 
@@ -155,38 +167,49 @@ async def _make_target(
     gen_model_tag = translation_model_override or "default"
 
     async def target(inputs: dict[str, Any]) -> dict[str, Any]:
-        prompt = _source_prompt(inputs)
-        # eval_mode=True turns on the per-run cache-bust header; the sweep model (if any) is forced on
-        # generate_translation_node via Context. run_one returns the full metric bundle + raw code.
-        r = await run_one(
-            prompt, single_pass, None, approach, "langsmith",
-            eval_mode=True,
-            translation_model_override=translation_model_override,
-            translation_reasoning_override=translation_reasoning_override,
-        )
-        predictions: list = []
-        if r.get("accepted"):
-            base = (
-                Path(pred_root) / dataset / r["pair_slug"] / slug(gen_model_tag)
-                / f"{approach}-{r['run_id'][:8]}"
+        try:
+            prompt = _source_prompt(inputs)
+            # eval_mode=True turns on the per-run cache-bust header; the sweep model (if any) is forced
+            # on generate_translation_node via Context. run_one returns the full metric bundle + raw
+            # code and never raises (it catches graph exceptions internally).
+            r = await run_one(
+                prompt, single_pass, None, approach, "langsmith",
+                eval_mode=True,
+                translation_model_override=translation_model_override,
+                translation_reasoning_override=translation_reasoning_override,
             )
-            predictions = _write_artifacts(base, r.get("_schema_code"), r.get("_query_code"), r["ext"])
-        return {
-            "translated_schema_code": r.get("_schema_code"),
-            "translated_query_code": r.get("_query_code"),
-            "explanation_message": None,
-            "accepted": bool(r.get("accepted")),
-            "compile_pass": bool(r.get("compile_pass")),
-            "pass_at_1": r.get("pass_at_1"),
-            "translation_loops": r.get("translation_loops"),
-            "wall_clock_s": r.get("wall_clock_s"),
-            "queries_total": r.get("queries_total"),
-            "queries_equivalent": r.get("queries_equivalent"),
-            "pair": r.get("pair"),
-            "generate_model": gen_model_tag,
-            "predictions": predictions,
-            "error": r.get("error"),
-        }
+            predictions: list = []
+            if r.get("accepted"):
+                try:
+                    base = (
+                        Path(pred_root) / dataset / run_tag / r["pair_slug"] / slug(gen_model_tag)
+                        / f"{approach}-{r['run_id'][:8]}"
+                    )
+                    predictions = _write_artifacts(
+                        base, r.get("_schema_code"), r.get("_query_code"), r["ext"]
+                    )
+                except Exception as we:  # noqa: BLE001 — a disk hiccup must not lose the metrics
+                    predictions = [f"artifact-write-failed: {type(we).__name__}: {we}"]
+            return {
+                "translated_schema_code": r.get("_schema_code"),
+                "translated_query_code": r.get("_query_code"),
+                "explanation_message": None,
+                "accepted": bool(r.get("accepted")),
+                "compile_pass": bool(r.get("compile_pass")),
+                "pass_at_1": r.get("pass_at_1"),
+                "translation_loops": r.get("translation_loops"),
+                "wall_clock_s": r.get("wall_clock_s"),
+                "queries_total": r.get("queries_total"),
+                "queries_equivalent": r.get("queries_equivalent"),
+                "pair": r.get("pair"),
+                "generate_model": gen_model_tag,
+                "predictions": predictions,
+                "error": r.get("error"),
+            }
+        except Exception as e:  # noqa: BLE001 — last-resort guard so aevaluate always continues
+            return {"accepted": False, "compile_pass": False, "pass_at_1": None,
+                    "generate_model": gen_model_tag,
+                    "error": f"target-fatal: {type(e).__name__}: {e}"}
 
     return target
 
@@ -494,38 +517,74 @@ async def main_async(args: argparse.Namespace) -> None:
     variants = sorted(set(args.variants), key=lambda v: 0 if v == "small" else 1)
     models = SWEEP_MODELS if args.sweep else [(None, None)]
 
+    # Per-INVOCATION tag (timestamp): groups this batch's predictions/summary and guarantees a re-run
+    # never overwrites a previous batch's artifacts.
+    import time
+    run_tag = args.run_tag or time.strftime("%Y%m%d-%H%M%S")
+
     plan = [(v, p, m) for v in variants for p in pairs for m in models]
-    print(f"=== {len(plan)} experiment(s): {len(pairs)} pair x {len(variants)} variant "
-          f"x {len(models)} model | approach={args.approach} reps={args.repetitions} "
+    print(f"=== run_tag={run_tag} | {len(plan)} experiment(s): {len(pairs)} pair x {len(variants)} "
+          f"variant x {len(models)} model | approach={args.approach} reps={args.repetitions} "
           f"concurrency={args.max_concurrency} judges={len(evaluators)} ===")
 
-    for variant, pair, (gen_model, gen_reasoning) in plan:
+    # Each experiment is isolated: a failure in ONE (LangSmith API error, auth blip, etc.) is caught
+    # and logged so the remaining experiments still run — the overnight matrix is never aborted by a
+    # single transient fault. (Per-EXAMPLE faults are already absorbed inside the target + run_one.)
+    summary: list[dict] = []
+    for i, (variant, pair, (gen_model, gen_reasoning)) in enumerate(plan, 1):
         examples = [
             e for e in all_examples
             if _meta(e).get("pair") == pair and _meta(e).get("variant") == variant
         ]
-        if not examples:
-            print(f"  (skip) no examples for {pair} [{variant}]")
-            continue
-        target = await _make_target(
-            args.approach, pred_root=args.pred_root, dataset=args.dataset,
-            translation_model_override=gen_model, translation_reasoning_override=gen_reasoning,
-        )
         prefix = (args.experiment_prefix or "uom") + \
             f"-{args.approach}-{_pair_short(pair)}-{variant}-{_model_short(gen_model)}"
-        print(f"\n--- {prefix}  ({len(examples)} example(s) x {args.repetitions} reps) ---")
-        await aevaluate(
-            target, data=examples, evaluators=[*evaluators, *det_evaluators],
-            experiment_prefix=prefix, max_concurrency=args.max_concurrency,
-            num_repetitions=args.repetitions,
-            metadata={
-                "approach": args.approach, "pair": pair, "variant": variant,
-                "generate_model": gen_model or "default", "judge_model": args.judge_model,
-            },
+        if not examples:
+            print(f"  ({i}/{len(plan)} skip) no examples for {pair} [{variant}]")
+            summary.append({"experiment": prefix, "pair": pair, "variant": variant,
+                            "generate_model": gen_model or "default", "status": "skipped-no-examples"})
+            continue
+        target = await _make_target(
+            args.approach, pred_root=args.pred_root, dataset=args.dataset, run_tag=run_tag,
+            translation_model_override=gen_model, translation_reasoning_override=gen_reasoning,
         )
-    print("\nDone. Open LangSmith → Datasets → 'UOM Final Experiments' → Experiments to compare.")
+        print(f"\n--- ({i}/{len(plan)}) {prefix}  ({len(examples)} example(s) x {args.repetitions} reps) ---")
+        rec = {"experiment": prefix, "pair": pair, "variant": variant,
+               "generate_model": gen_model or "default", "examples": len(examples)}
+        try:
+            await aevaluate(
+                target, data=examples, evaluators=[*evaluators, *det_evaluators],
+                experiment_prefix=prefix, max_concurrency=args.max_concurrency,
+                num_repetitions=args.repetitions,
+                metadata={
+                    "approach": args.approach, "pair": pair, "variant": variant, "run_tag": run_tag,
+                    "generate_model": gen_model or "default", "judge_model": args.judge_model,
+                },
+            )
+            rec["status"] = "ok"
+        except Exception as e:  # noqa: BLE001 — one experiment's failure must not abort the rest
+            rec["status"] = "failed"
+            rec["error"] = f"{type(e).__name__}: {e}"
+            print(f"  ✘ experiment FAILED (continuing): {rec['error']}")
+        summary.append(rec)
+
+    # Durable, timestamped summary (never overwrites a prior batch) — also the fault audit trail.
+    ok = sum(1 for s in summary if s["status"] == "ok")
+    failed = [s for s in summary if s["status"] == "failed"]
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = out_dir / f"experiments-summary-{run_tag}.json"
+    summary_path.write_text(json.dumps(
+        {"run_tag": run_tag, "approach": args.approach, "judge_model": args.judge_model,
+         "ok": ok, "failed": len(failed), "experiments": summary}, indent=2))
+
+    print(f"\nDone: {ok}/{len(plan)} experiments OK, {len(failed)} failed. Summary → {summary_path}")
+    if failed:
+        print("Failed experiments (re-run just these with --pairs/--variants):")
+        for s in failed:
+            print(f"  ✘ {s['experiment']}: {s.get('error')}")
+    print("Open LangSmith → Datasets → 'UOM Final Experiments' → Experiments to compare.")
     print("→ CodeBLEU is a post-hoc pass: extract_predictions.py --reference + score_predictions.py "
-          f"over the predictions tree at {args.pred_root}.")
+          f"over the predictions tree at {args.pred_root}/{args.dataset}/{run_tag}/.")
 
 
 def main() -> None:
@@ -553,6 +612,11 @@ def main() -> None:
     ap.add_argument("--pred-root", default="../predictions",
                     help="where finalize artifacts are written for the post-hoc CodeBLEU pass")
     ap.add_argument("--dataset", default="wwi", help="predictions-tree dataset folder name")
+    ap.add_argument("--out", default="./out",
+                    help="dir for the timestamped experiments-summary JSON (fault audit trail)")
+    ap.add_argument("--run-tag", default=None,
+                    help="batch tag grouping this invocation's predictions/summary (default: timestamp; "
+                         "guarantees re-runs never overwrite a previous batch)")
     ap.add_argument("--dry-run", action="store_true",
                     help="echo target (no graph/Daytona) to validate dataset+judge plumbing")
     ap.add_argument("--no-judges", action="store_true", help="skip LLM judges (deterministic only)")

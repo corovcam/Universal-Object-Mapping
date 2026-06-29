@@ -18,12 +18,12 @@ class AvailableModel(str, Enum):
     OLLAMA_MISTRAL_SMALL_3_2 = "ollama/mistral-small3.2:latest"
     OLLAMA_QWEN3_EMBEDDING = "ollama/qwen3-embedding:latest"
 
-    # EINFRA Models (OpenAI compatible)
+    # Proxy aliases
     EINFRA_MINI = "einfra/mini"
     EINFRA_CODER = "einfra/coder"
     EINFRA_AGENTIC = "einfra/agentic"
     EINFRA_THINKER = "einfra/thinker"
-    EINFRA_QWEN3_CODER_30B = "einfra/qwen3-coder-30b"
+    
     EINFRA_GPT_OSS_120B = "einfra/gpt-oss-120b"
     EINFRA_QWEN3_RERANKER_4B = "einfra/qwen3-reranker-4b"
     EINFRA_QWEN3_EMBEDDING_4B = "einfra/qwen3-embedding-4b"
@@ -34,12 +34,9 @@ class AvailableModel(str, Enum):
     EINFRA_NOMIC_EMBED_V1_5 = "einfra/nomic-embed-text-v1.5"
     EINFRA_DEEPSEEK_V4_PRO = "einfra/deepseek-v4-pro"
     EINFRA_DEEPSEEK_V4_PRO_THINKING = "einfra/deepseek-v4-pro-thinking"
-    
-    EINFRA_MISTRAL_LARGE = "einfra/mistral-large"
-    EINFRA_KIMI_K2_6 = "einfra/kimi-k2.6"
+    EINFRA_MISTRAL_MEDIUM_3_5 = "einfra/mistral-medium-3.5"
     EINFRA_KIMI_K2_7 = "einfra/kimi-k2.7"
     EINFRA_QWEN3_5 = "einfra/qwen3.5"
-    EINFRA_QWEN3_CODER_NEXT = "einfra/qwen3-coder-next"
     EINFRA_QWEN3_5_122B = "einfra/qwen3.5-122b"
     EINFRA_GLM_5_2 = "einfra/glm-5.2"
     EINFRA_GEMMA4 = "einfra/gemma4"

@@ -28,7 +28,7 @@ class Context:
 
     model: Annotated[AvailableModel, {"__template_metadata__": {"kind": "llm"}}] = (
         field(
-            default=AvailableModel(os.environ.get("MODEL", "einfra/kimi-k2.6")),
+            default=AvailableModel(os.environ.get("MODEL", "einfra/kimi-k2.7")),
             metadata={
                 "description": "The name of the language model to use for the agent's main translation agent."
             },

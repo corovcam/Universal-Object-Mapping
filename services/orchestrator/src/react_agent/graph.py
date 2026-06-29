@@ -679,7 +679,7 @@ async def extract_input(
 
     extraction_agent = create_agent(
         await get_model(
-            config, runtime, AvailableModel.EINFRA_QWEN3_CODER_NEXT, temperature=0
+            config, runtime, AvailableModel.EINFRA_QWEN3_5_122B, temperature=0
         ),
         system_prompt=system_prompt,
         response_format=ProviderStrategy(ExtractionOutput, strict=True),
@@ -689,7 +689,7 @@ async def extract_input(
                 await get_model(
                     config,
                     runtime,
-                    AvailableModel.EINFRA_MINI,
+                    AvailableModel.EINFRA_GPT_OSS_120B,
                     temperature=0,
                     reasoning=False,
                 ),
@@ -841,10 +841,10 @@ async def schema_inspection(
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
                     await get_model(
-                        config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0
+                        config, runtime, AvailableModel.EINFRA_KIMI_K2_7
                     ),
                     await get_model(
-                        config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0
+                        config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B
                     ),
                     await get_model(config, runtime),
                     # await get_model(
@@ -957,7 +957,7 @@ async def translation_agent(
                 await get_model(
                     config,
                     runtime,
-                    AvailableModel.EINFRA_THINKER,
+                    AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING,
                     temperature=0,
                     reasoning=False,
                 ),
@@ -1214,7 +1214,7 @@ async def generate_translation_node(
                     SummarizationMiddleware(model, trigger=("fraction", 0.9)),
                     ModelFallbackMiddleware(
                         await get_model(
-                            config, runtime, AvailableModel.EINFRA_THINKER
+                            config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING
                         ),
                         await get_model(
                             config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B
@@ -1806,7 +1806,7 @@ Is the translation logically equivalent and syntactically valid? Provide your re
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
-                await get_model(config, runtime, AvailableModel.EINFRA_THINKER),
+                await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING),
                 await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B),
                 await get_model(config, runtime)
             ),

@@ -35,7 +35,7 @@ async def test_load_chat_model(context: Context) -> None:
     )
     assert model2 is not None
     model3 = await load_chat_model(
-        AvailableModel.EINFRA_QWEN3_CODER_NEXT.value,
+        AvailableModel.EINFRA_QWEN3_5_122B.value,
         {
             "openai_api_url": context.openai_api_url,
             "openai_api_key": context.openai_api_key,
@@ -48,7 +48,7 @@ async def test_load_chat_model(context: Context) -> None:
 @pytest.mark.asyncio
 async def test_load_chat_model_and_execute(context: Context) -> None:
     model1 = await load_chat_model(
-        AvailableModel.EINFRA_MINI.value,
+        AvailableModel.EINFRA_GPT_OSS_120B.value,
         {
             "openai_api_url": context.openai_api_url,
             "openai_api_key": context.openai_api_key,
@@ -138,7 +138,7 @@ async def test_load_chat_model_handles_missing_extra_body(
     monkeypatch.setattr("react_agent.utils.utils.ChatOpenAI", DummyChatModel)
 
     model = await load_chat_model(
-        AvailableModel.EINFRA_MINI.value,
+        AvailableModel.EINFRA_GPT_OSS_120B.value,
         {
             "reasoning": True,
         },

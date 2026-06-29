@@ -666,10 +666,10 @@ async def get_extra_body_for_model(model_name: AvailableModel) -> dict[str, Any]
         }
         extra_body["chat_template_kwargs"] = {
             "cache_salt": base64.b64encode(b"universal-object-mapping-cache-salt").decode(),
-            "enable_thinking": True,
-            "thinking": True,
-            "preserve_thinking": True,
-            "reasoning_effort": "high",
+            # "enable_thinking": True,
+            # "thinking": True,
+            # "preserve_thinking": True,
+            # "reasoning_effort": "high",
         }
     elif model_name == AvailableModel.EINFRA_KIMI_K2_7:
         max_tokens = MODEL_PROFILE_CACHE[model_name.value]["max_input_tokens"] if model_name.value in MODEL_PROFILE_CACHE else 262144
