@@ -1074,3 +1074,22 @@ System time: {datetime.now(tz=UTC).isoformat()}
 """
 
     return base_prompt + snippets
+
+
+def build_translation_user_message(state: State) -> str:
+    """Build the human/user message handed to the translation model.
+
+    Single source of truth for the translation-stage human prompt: it pairs with
+    `build_system_prompt` (the system half) and is consumed both by
+    `generate_translation_node` (the live model call) and by the manual-evaluation prompt
+    exporter (`evaluation/scripts/export_manual_prompts.py`), so a SOTA chat model run by hand
+    sees exactly the same request the pipeline sends. Carries the translation direction, the
+    DB schema context (when inspection produced one), and the source code to translate.
+    """
+    return f"""Translate the following Source Code ({"schema/query" if state.translation_type and state.translation_type.value == TranslationType.BOTH else (state.translation_type.value if state.translation_type else "schema")}) from {state.source_target.value if state.source_target else "Unknown"}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value if state.destination_target else "Unknown"}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
+{f"\nDatabase Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}---
+Source Code:
+{f"<source_schema_code>\n{state.source_schema_code}\n</source_schema_code>" if state.source_schema_code else ""}{f"\n<source_query_code>\n{state.source_query_code}\n</source_query_code>" if state.source_query_code else ""}
+
+Translate ONLY the entities, fields, and queries that appear above. Do not invent or carry over any entity or field that is not present in this source code.
+"""

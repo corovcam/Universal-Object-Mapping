@@ -29,6 +29,7 @@ from langchain.agents.structured_output import (
 )
 from langchain.messages import AIMessage
 from langchain_core.messages import (
+    AnyMessage,
     BaseMessage,
     HumanMessage,
     SystemMessage,
@@ -79,6 +80,7 @@ from react_agent.prompts import (
     SYSTEM_PROMPT_FINALIZE,
     SYSTEM_PROMPT_SCHEMA_INSPECTOR,
     build_system_prompt,
+    build_translation_user_message,
 )
 from react_agent.state import (
     InputState,
@@ -299,6 +301,89 @@ def _format_structured_output_error(exc: StructuredOutputValidationError) -> str
         if lines:
             return "\n".join(lines)
     return str(source)
+
+
+#: Content-block types that carry a reasoning model's *thinking* trace. These must NOT be sent back
+#: to the provider on later turns: they break LangChain's string-delta merge (so the AIMessage
+#: content stays a list of dicts), and litellm then drops them, leaving `content` as a list of bare
+#: strings — which OpenAI-compatible servers (sglang/vLLM) reject with a 400 (content list elements
+#: must be objects with a `type`, or content must be a plain string).
+_REASONING_BLOCK_TYPES = frozenset(
+    {"thinking", "reasoning", "reasoning_content", "redacted_thinking"}
+)
+
+
+def _flatten_message_content(message: AnyMessage) -> AnyMessage:
+    """Collapse a reasoning model's list-form AIMessage content into a plain text string.
+
+    A streamed reasoning turn accumulates into ``content`` as a list mixing bare text deltas
+    (e.g. ``""``, ``"\\n\\n"``) with ``{"type": "thinking", ...}`` dicts. Re-sending that list on
+    the next turn 400s (see ``_REASONING_BLOCK_TYPES``). We rebuild a single string from the text
+    parts (bare strings + ``{"type": "text"}`` blocks) and drop the thinking blocks. Tool calls live
+    on ``message.tool_calls``, not in ``content``, so an emptied-out content with tool calls stays
+    valid. Only ``AIMessage`` list content is touched; everything else is returned unchanged.
+
+    Args:
+        message (BaseMessage): A message from the outgoing request.
+
+    Returns:
+        BaseMessage: The original message, or a copy whose list content is flattened to a string.
+    """
+    if not isinstance(message, AIMessage) or not isinstance(message.content, list):
+        return message
+    text_parts: list[str] = []
+    for block in message.content:
+        if isinstance(block, str):
+            text_parts.append(block)
+        elif isinstance(block, dict):
+            btype = block.get("type")
+            if btype == "text":
+                text_parts.append(block.get("text", ""))
+            elif btype in _REASONING_BLOCK_TYPES:
+                continue  # never replay thinking back to the provider
+            # any other block type (e.g. tool_use) is represented on .tool_calls; drop from content
+    return message.model_copy(update={"content": "".join(text_parts)})
+
+
+def _sanitize_request_messages(messages: list[AnyMessage]) -> list[AnyMessage]:
+    """Apply :func:`_flatten_message_content` to every message in an outgoing request."""
+    return [_flatten_message_content(m) for m in messages]
+
+
+class ReasoningContentSanitizerMiddleware(AgentMiddleware):
+    """Flatten reasoning model list-content messages before each provider call.
+
+    Reasoning models (qwen3.5 / the EINFRA thinker, served via sglang/vLLM through litellm) return
+    an AIMessage whose ``content`` is a list of text deltas + ``thinking`` blocks. Sent back
+    verbatim on the next agent turn, litellm strips the thinking blocks and leaves a list of bare
+    strings, which the server rejects with a 400. This middleware rewrites the request's messages so
+    those AIMessages carry a plain text string instead — keeping reasoning ON without poisoning the
+    history.
+
+    It is placed LAST in each agent's middleware list (innermost, closest to the model) so it runs
+    after message-transforming middleware (summarization, context editing) and re-applies on every
+    ``ModelFallbackMiddleware`` retry — otherwise a fallback model would just hit the same 400.
+    """
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
+    ) -> ModelResponse:
+        """Flatten list-form reasoning content in the request, then delegate to the handler."""
+        return await handler(
+            request.override(messages=_sanitize_request_messages(request.messages))
+        )
+
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        """Sync counterpart of :meth:`awrap_model_call`."""
+        return handler(
+            request.override(messages=_sanitize_request_messages(request.messages))
+        )
 
 
 class StructuredOutputRetryMiddleware(AgentMiddleware):
@@ -616,6 +701,8 @@ async def extract_input(
                 ),
                 await get_model(config, runtime),
             ),
+            # Innermost (last): flatten reasoning list-content so re-sent turns don't 400.
+            ReasoningContentSanitizerMiddleware(),
         ],
         # debug=True if os.getenv("DEVELOPMENT") else False,
     )
@@ -780,6 +867,8 @@ async def schema_inspection(
                     ]
                 ),
                 # SummarizationMiddleware(model, trigger=("fraction", 0.8)),
+                # Innermost (last): flatten reasoning list-content so re-sent turns don't 400.
+                ReasoningContentSanitizerMiddleware(),
             ],
             # debug=True if os.getenv("DEVELOPMENT") else False,
         )
@@ -889,6 +978,8 @@ async def translation_agent(
                 ]
             ),
             # SummarizationMiddleware(model, trigger=("fraction", 0.8)),
+            # Innermost (last): flatten reasoning list-content so re-sent turns don't 400.
+            ReasoningContentSanitizerMiddleware(),
         ],
         # debug=True if os.getenv("DEVELOPMENT") else False,
     )
@@ -1067,13 +1158,7 @@ async def generate_translation_node(
 
     system_prompt = await build_system_prompt(state)
 
-    message = f"""Translate the following Source Code ({"schema/query" if state.translation_type and state.translation_type.value == TranslationType.BOTH else (state.translation_type.value if state.translation_type else "schema")}) from {state.source_target.value if state.source_target else "Unknown"}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value if state.destination_target else "Unknown"}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
-{f"\nDatabase Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}---
-Source Code:
-{f"<source_schema_code>\n{state.source_schema_code}\n</source_schema_code>" if state.source_schema_code else ""}{f"\n<source_query_code>\n{state.source_query_code}\n</source_query_code>" if state.source_query_code else ""}
-
-Translate ONLY the entities, fields, and queries that appear above. Do not invent or carry over any entity or field that is not present in this source code.
-"""
+    message = build_translation_user_message(state)
 
     save_tool = build_save_translation_tool(translation_type, source_entry, target_entry)
 
@@ -1122,6 +1207,9 @@ Translate ONLY the entities, fields, and queries that appear above. Do not inven
                         ),
                     ),
                     ToolRetryMiddleware(),
+                    # Innermost (last): flatten reasoning list-content so re-sent turns don't 400.
+                    # Critical here — this agent runs the reasoning models (thinker / qwen3.5).
+                    ReasoningContentSanitizerMiddleware(),
                 ],
             )
 
@@ -1705,6 +1793,8 @@ Is the translation logically equivalent and syntactically valid? Provide your re
                 await get_model(config, runtime)
             ),
             ToolRetryMiddleware(),
+            # Innermost (last): flatten reasoning list-content so re-sent turns don't 400.
+            ReasoningContentSanitizerMiddleware(),
         ],
     )
 

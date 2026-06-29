@@ -59,6 +59,9 @@ test_profile:
 extended_tests:
 	python -m pytest --only-extended $(TEST_FILE)
 
+# Manual recorder: one long-lived aimock that proxies to e-INFRA and SAVES every unmatched
+# request as a fixture under ./tests/aimock/recorded/.
+RECORD_FIXTURES_DIR ?= ./tests/aimock
 record_requests:
 	npx -p @copilotkit/aimock llmock --port 4020 --record --proxy-only --latency 5 --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock/
 # 	node ../../../aimock/dist/cli.js --record --watch --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f ./tests/aimock
