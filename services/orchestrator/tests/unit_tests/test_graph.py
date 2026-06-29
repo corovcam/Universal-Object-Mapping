@@ -24,7 +24,9 @@ from react_agent.constants import FrameworkEnum, TranslationType
 from react_agent.graph import (
     StructuredOutputRetryMiddleware,
     _create_translation_output_model,
+    _flatten_message_content,
     _format_structured_output_error,
+    _sanitize_request_messages,
 )
 from react_agent.state import State
 
@@ -326,3 +328,73 @@ def test_format_structured_output_error_extracts_validation_detail() -> None:
     assert "entry name must be declared in schema code" in formatted
     # The model's (potentially huge / truncated) input must NOT be echoed back.
     assert "input_value" not in formatted
+
+
+# ---------------------------------------------------------------------------
+# ReasoningContentSanitizerMiddleware / _flatten_message_content
+#
+# Reasoning models (qwen3.5 / the EINFRA thinker) stream an AIMessage whose content is a list of
+# bare text deltas + {"type": "thinking"} blocks. Re-sent verbatim, litellm strips the thinking
+# blocks and leaves content as a list of bare strings, which sglang/vLLM reject with a 400. The
+# helper must flatten such AIMessages to a single string while leaving everything else untouched.
+# ---------------------------------------------------------------------------
+
+
+def test_flatten_reasoning_aimessage_to_plain_string() -> None:
+    """A reasoning turn (bare strings + thinking blocks) flattens to a single string."""
+    msg = AIMessage(
+        content=[
+            "",
+            {"type": "thinking", "thinking": "Let me analyze"},
+            {"type": "thinking", "thinking": " the schema."},
+            "I'll inspect the schemas.",
+            "\n\n",
+        ]
+    )
+    out = _flatten_message_content(msg)
+    assert isinstance(out.content, str)
+    assert out.content == "I'll inspect the schemas.\n\n"
+    # No thinking text leaks back to the provider.
+    assert "analyze" not in out.content
+
+
+def test_flatten_preserves_tool_calls_when_content_empties() -> None:
+    """An AIMessage that is only reasoning + tool calls keeps its tool_calls after flattening."""
+    msg = AIMessage(
+        content=["", {"type": "thinking", "thinking": "deciding"}, "\n\n\n\n"],
+        tool_calls=[{"name": "search", "args": {"q": "x"}, "id": "call_1"}],
+    )
+    out = _flatten_message_content(msg)
+    assert isinstance(out.content, str)
+    assert out.content == "\n\n\n\n"
+    assert out.tool_calls == msg.tool_calls
+
+
+def test_flatten_leaves_plain_and_non_ai_messages_untouched() -> None:
+    """String-content AIMessages, HumanMessages, and tool-style list content are not rewritten."""
+    plain_ai = AIMessage(content="already a string")
+    human = HumanMessage(content="hello")
+    # A valid OpenAI content-part list (all dicts, no bare strings) must be preserved as-is.
+    tool_like = AIMessage(content=[{"type": "text", "text": "part"}])
+    assert _flatten_message_content(plain_ai) is plain_ai
+    assert _flatten_message_content(human) is human
+    flattened_tool_like = _flatten_message_content(tool_like)
+    # All-dict text parts still flatten (harmless), and crucially produce a valid string.
+    assert flattened_tool_like.content == "part"
+
+
+def test_sanitize_request_messages_removes_all_bare_string_lists() -> None:
+    """After sanitizing, no message content is a list containing a bare string (the 400 trigger)."""
+    messages = [
+        HumanMessage(content="translate this"),
+        AIMessage(
+            content=["", {"type": "thinking", "thinking": "t"}, "answer"],
+            tool_calls=[{"name": "save", "args": {}, "id": "c1"}],
+        ),
+    ]
+    out = _sanitize_request_messages(messages)
+    for m in out:
+        if isinstance(m.content, list):
+            assert not any(isinstance(b, str) for b in m.content)
+    assert isinstance(out[1].content, str) and out[1].content == "answer"
+    assert out[1].tool_calls == messages[1].tool_calls
