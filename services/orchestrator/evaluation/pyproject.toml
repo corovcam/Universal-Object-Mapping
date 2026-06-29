@@ -5,6 +5,7 @@ description = "Evaluation suite for Universal Object Mapping (UOM) Assistant"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "uom-orchestrator",
     "codebleu>=0.7.0",
     "tree-sitter>=0.22.0,<0.23.0",
     "tree-sitter-c-sharp<0.22.0",
@@ -13,3 +14,22 @@ dependencies = [
     "python-dotenv>=1.0",
     "pandas>=2.0",
 ]
+
+[tool.uv.sources]
+uom-orchestrator = { workspace = true }
+
+[project.scripts]
+run_experiment = "scripts.run_experiment:main"
+run_langsmith_eval = "scripts.run_langsmith_eval:main"
+export_manual_prompts = "scripts.export_manual_prompts:main"
+
+[build-system]
+requires = ["setuptools>=73.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = [
+    "scripts",
+]
+[tool.setuptools.package-dir]
+"scripts" = "scripts"

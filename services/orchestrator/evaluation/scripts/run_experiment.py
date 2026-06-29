@@ -92,6 +92,10 @@ async def run_one(
     fixture: str,
     record_dir: Path | None = None,
     upstream: str = DEFAULT_UPSTREAM,
+    *,
+    eval_mode: bool = False,
+    translation_model_override: str | None = None,
+    translation_reasoning_override: bool | None = None,
 ) -> dict:
     from langchain_core.messages import HumanMessage
     from langgraph.checkpoint.memory import MemorySaver
@@ -122,6 +126,16 @@ async def run_one(
             ctx_kwargs["model"] = model
         if base_url:
             ctx_kwargs["openai_api_url"] = base_url
+        # Evaluation-only knobs (production-safe defaults: off). eval_mode turns on the per-run
+        # cache-bust header; translation_model_override drives the generate_translation_node model
+        # sweep. These are set per-invoke on Context (never a global) so concurrent eval runs can't
+        # race. See react_agent.context.Context.
+        if eval_mode:
+            ctx_kwargs["eval_mode"] = True
+        if translation_model_override:
+            ctx_kwargs["translation_model_override"] = translation_model_override
+        if translation_reasoning_override is not None:
+            ctx_kwargs["translation_reasoning_override"] = translation_reasoning_override
         ctx = Context(**ctx_kwargs)
         await g.ainvoke(
             {"messages": [HumanMessage(content=fixture_text)], "single_pass": single_pass},

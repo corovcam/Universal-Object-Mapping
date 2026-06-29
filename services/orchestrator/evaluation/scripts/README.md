@@ -8,12 +8,12 @@ uv venv evaluation/.venv-eval --python 3.12
 uv pip install --python evaluation/.venv-eval -r evaluation/eval-requirements.txt
 ```
 
-`LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` / `LANGSMITH_ENDPOINT` are read from `../.env`.
+`LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` / `LANGSMITH_ENDPOINT` are read from `../.env.dev`.
 
 ## 1. `aggregate_traces.py` — E1 funnel + E4 internal stats + verifier confusion matrix
 
 ```bash
-.venv-eval/bin/python scripts/aggregate_traces.py --limit 50 --env ../.env --out ./out --stratify
+.venv-eval/bin/python scripts/aggregate_traces.py --limit 50 --env ../.env.dev --out ./out --stratify
 ```
 
 Reconstructs, per run (root span `Universal Object Mapping Translator`), from the **current**
@@ -42,9 +42,9 @@ post-finalize-split graph — not the old structured-output contract:
 
 ```bash
 # predictions from every accepted run:
-.venv-eval/bin/python scripts/extract_predictions.py --limit 50 --env ../.env --root ../predictions
+.venv-eval/bin/python scripts/extract_predictions.py --limit 50 --env ../.env.dev --root ../predictions
 # freeze ONE manually-reviewed accepted run as the CodeBLEU baseline for its (dataset, pair):
-.venv-eval/bin/python scripts/extract_predictions.py --limit 1 --env ../.env --reference --root ../reference
+.venv-eval/bin/python scripts/extract_predictions.py --limit 1 --env ../.env.dev --reference --root ../reference
 # offline, from a LangGraph run export (lacks the pair → pass it):
 .venv-eval/bin/python scripts/extract_predictions.py --from-export '../../run-*.json' --pair efcore->mongo --lang java --root ../predictions
 ```
@@ -128,7 +128,7 @@ translation-stage system + user prompt for a fixture so the baseline can be run 
 
 ```bash
 .venv/bin/python evaluation/scripts/export_manual_prompts.py --fixture efcore-mongodb-q1 \
-    --out evaluation/manual-eval --env .env
+    --out evaluation/manual-eval --env .env.dev
 ```
 
 It drives the real graph with `interrupt_before=["generate_translation_node"]` — so live
@@ -160,36 +160,81 @@ a **decided `failed`** outcome (not excluded `incomplete`), so the baseline's ch
 early-failures stay in the funnel denominator. It reads `metadata.single_pass`/`metadata.approach`
 stamped by this runner.
 
-## 6. `run_langsmith_eval.py` — LangSmith-native experiment + LLM-as-judge
+## 6. `run_langsmith_eval.py` — UNIFIED LangSmith experiment (judges + deterministic metrics)
 
 Runs the graph over the **"UOM Final Experiments"** dataset (ID `56708f08-2697-4af2-b3b7-9172c0e68b4b`)
-via LangSmith's `aevaluate`, so results land as a proper **Experiment** with per-example LLM-judge
-feedback scores in the UI (vs `run_experiment.py`, which writes its own JSON). Needs the ORCHESTRATOR
-venv with the `eval` extra (`uv sync --extra eval` for openevals) and the live stack.
+via LangSmith's `aevaluate`, so results land as proper **Experiments** with per-example feedback in the
+UI. **The two eval suites are joined:** each example runs the pipeline **ONCE** (via the shared
+`run_experiment.run_one`), and that single run feeds BOTH the LLM judges (grade the translated code)
+AND cheap **non-LLM evaluators** that surface the deterministic metrics (`accepted`, `compile_pass`,
+`pass_at_1`, `translation_loops`, `wall_clock_s`, …) — so the provider is **not hit twice**. It also
+writes prediction artifacts for the post-hoc CodeBLEU pass. Needs the ORCHESTRATOR venv with the `eval`
+extra (`uv sync --extra eval`) and the live stack.
+
+**One Experiment per source→target PAIR.** Examples are tagged `metadata.{pair,variant}` (see §7);
+the runner filters per pair client-side and calls `aevaluate` once per `(variant, pair, generate-model)`.
+`--repetitions 15` realises "15 iterations" per pair; `--max-concurrency 2` is the parallelism.
 
 ```bash
-# validate dataset + aevaluate plumbing with an echo target (no model calls, no Daytona):
-uv run python evaluation/scripts/run_langsmith_eval.py --dry-run --no-judges --env .env
-# real run (our_approach) with judges on e-INFRA:
-uv run python evaluation/scripts/run_langsmith_eval.py --approach our_approach \
-    --judge-model einfra/kimi-k2.6 --max-concurrency 2 --env .env
+# A/B the judge model with an echo target (no graph/Daytona) BEFORE spending pipeline tokens:
+uv run python evaluation/scripts/run_langsmith_eval.py --dry-run --judge-model einfra/gemma4 --env .env.dev
+# fast gate: small (<=5 query) variant, all pairs, default generate-model:
+make eval_small          # (or: run_langsmith_eval.py --variants small ...)
+# full ~15-query matrix, all pairs:
+make eval_full
+# opt-in 4-model generate_translation_node sweep:
+make eval_sweep
 ```
 
-- **Reference-free judges (graded against the SOURCE in each example):** `code_correctness`,
-  `conciseness`, `hallucination` (source passed as `context` — flags invented entities/fields),
-  and a custom `translation_equivalence` (faithful, complete, nothing invented). The dataset has **no
-  gold reference** (`outputs.message` is a dev artifact, ignored).
-- **No first-accepted-as-reference judge here on purpose:** that only makes sense across runs of the
-  *same* input; these examples are *different* queries. For reference-based CodeBLEU keep using the
-  frozen pair-level reference from `extract_predictions.py --reference` + `score_predictions.py`.
-- **Judge model:** runs on e-INFRA (no proprietary keys). Default `llama-4-scout` (non-thinking,
-  ~1s). openevals' *own* scorer hangs on e-INFRA's structured-output path, so we keep openevals'
-  **prompts** but make the call ourselves (`with_structured_output` → JSON-fallback → graceful
-  `None`, per-judge timeout) and declare `score` before `reasoning` (these models truncate long
-  reasoning). **Call path** verified via `--dry-run` (~17/20 calls return a verdict) — but that graded
-  the dry-run **stub**, so judge *discrimination on real translations is unverified*; spot-check judge
-  comments on the first real run. Thinking models (gpt-oss/mini/qwen-coder) hang the grading prompts —
-  avoid them as judges. The graph **target** still needs the full live stack (Daytona + WWI).
+- **Staging / sweep:** `--variants small full` runs the small gate first then the full matrix.
+  `--sweep` adds the 4 generate-models (`qwen3.5` / `kimi-k2.7` / `glm-5.2` / `deepseek-v4-pro-thinking`)
+  — opt-in, off by default. The generate-model is forced via `Context.translation_model_override`
+  (set per-invoke, never a global, so concurrent runs don't race). NB: `glm-5.2`'s `model_profiles`
+  extra_body forces thinking on, so its "non-reasoning" sweep arm may still think (flagged, not fixed).
+- **Preflight** (on by default; `--no-preflight` to skip): a stdlib-socket TCP liveness check of the
+  model endpoint, Daytona, MSSQL, MongoDB, Neo4j BEFORE submitting, so a misfire fails fast instead of
+  producing a night of errored runs.
+- **Reference-free judges (graded against the SOURCE):** `code_correctness`, `conciseness`,
+  `hallucination` (source as `context`), and custom `translation_equivalence`. No gold reference exists;
+  for reference-based CodeBLEU use the frozen pair reference (`extract_predictions.py --reference` +
+  `score_predictions.py`). No first-accepted-as-reference judge — incoherent across *different* queries.
+- **Judge model:** e-INFRA (no proprietary keys). Default **`einfra/gemma4`** (non-thinking, 32k out).
+  The old `llama-4-scout` default is actually `redhatai-scout` capped at `max_tokens: 50` → it
+  TRUNCATED every verdict; thinking models (deepseek-v4-pro-thinking / gpt-oss / qwen-coder) HANG the
+  structured-output path on long grading prompts — avoid both as judges. openevals' own scorer also
+  hangs, so we keep openevals' **prompts** but call ourselves (`with_structured_output` →
+  JSON-fallback → graceful `None`, per-judge timeout) with `score` declared before `reasoning`.
+  **Spot-check a couple of judge comments on the first real run** to confirm discrimination on real
+  (long) translations — `--dry-run` only proves the call path against a stub.
+
+### Run full experiment
+`make eval_full_experiment` runs the preflight-gated **small gate then full matrix**, exports
+`EVAL_MODE=1` (per-run cache-bust header at the TOP of every system prompt to defeat e-INFRA
+prompt/KV caching), and tees to `evaluation/out/full-experiment-<ts>.log`. Schedule it with `at` or a
+systemd timer, e.g.:
+
+```bash
+# one-shot at 1am (keep the shell/tunnel/Daytona up):
+echo 'cd /…/services/orchestrator && make eval_full_experiment' | at 01:00
+# or a systemd-timer / cron entry calling the same `make eval_full_experiment`.
+```
+
+## 7. `build_eval_dataset.py` — benchmark→dataset harvester (generalization queries)
+
+Generates the bundled per-pair examples in "UOM Final Experiments". The ~15 queries are derived from the
+`.NET` ORM `benchmarks/` (EFCore LINQ / Dapper SQL / NHibernate LINQ-over-ISession) spanning the
+benchmark categories (selection, range, IN, text, paging, grouped aggregation, relationships, sorting,
+distinct, projection, compound filter) over the self-contained 4-entity WWI subset — so the **full
+schema is sent once per prompt** (the "bundle per pair" decision; no per-query entity-subset assembly).
+Six pairs × {`small` (first 5 queries), `full` (~15)} = 12 examples, each tagged
+`metadata.{pair,variant,source_fw,target_fw}`. **Idempotent** (keyed by `(pair,variant)` → updates,
+not duplicates).
+
+```bash
+uv run python evaluation/scripts/build_eval_dataset.py --dry-run          # print prompts, no upload
+uv run python evaluation/scripts/build_eval_dataset.py --env .env.dev         # upsert for real
+make eval_dataset                                                          # same, via Makefile
+```
 
 ## Notes
 - The funnel runs over **query-bearing decided runs** (`translation_type` in query/both that reached

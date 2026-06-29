@@ -62,7 +62,6 @@ import json
 import os
 import re
 import sys
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -75,12 +74,14 @@ sys.path.insert(0, str(_HERE.parents[1] / "src"))  # services/orchestrator/src
 
 DATASET_ID = "56708f08-2697-4af2-b3b7-9172c0e68b4b"  # "UOM Final Experiments"
 DATASET_NAME = "UOM Final Experiments"
-# Judge model is finicky on e-INFRA (verified empirically): thinking models (gpt-oss-120b, mini,
-# qwen-coder) reason heavily on the long grading prompts and HANG `with_structured_output`;
-# llama-4-scout is non-thinking and fast (<1s) but occasionally drops the schema. The judge call is
-# made robust (structured → JSON-fallback → graceful None, per-judge timeout), and the model is a CLI
-# knob so it can be tuned on the live stack. Default to the fast non-thinking instruct model.
-DEFAULT_JUDGE_MODEL = "einfra/deepseek-v4-pro-thinking"
+# Judge model is finicky on e-INFRA (verified empirically): thinking models (deepseek-v4-pro-thinking,
+# gpt-oss-120b, mini, qwen-coder) reason heavily on the long grading prompts and HANG
+# `with_structured_output`; the e-INFRA "llama-4-scout" alias is actually `redhatai-scout` capped at
+# `max_tokens: 50`, which TRUNCATES every verdict. `gemma4` (google/gemma-4-31B-it) is non-thinking,
+# multimodal, fast, and has a full 32k output budget — hence the default. The judge call is still made
+# robust (structured → JSON-fallback → graceful None, per-judge timeout) and the model is a CLI knob,
+# so it can be A/B'd against a non-thinking fallback (e.g. einfra/mistral-medium-3.5) on the live stack.
+DEFAULT_JUDGE_MODEL = "einfra/gemma4"
 
 
 # --------------------------------------------------------------------------- inputs/outputs helpers
@@ -120,56 +121,71 @@ def _translation_text(outputs: dict[str, Any]) -> str:
     return "\n\n".join(blocks)
 
 
-# ------------------------------------------------------------------------------------------- target
-async def _make_target(approach: str, model_name: str | None):
-    """Build an async ``aevaluate`` target that runs the graph on one dataset example."""
-    from langchain_core.messages import HumanMessage
-    from langgraph.checkpoint.memory import MemorySaver
+# --------------------------------------------------------------- generate-model sweep (opt-in)
+# The 4-model sweep the user called exploratory (qwen3.5 / kimi-k2.7 / glm-5.2 non-reasoning /
+# deepseek-v4-pro-thinking). Each tuple is (generate_translation_node model override, reasoning
+# override). qwen3.5 with reasoning=None reproduces the PRODUCTION default (so the default arm is in
+# the sweep). NOTE: glm-5.2's model_profiles extra_body forces thinking on, so its "non-reasoning"
+# (False) may not take effect — flagged, not worked around (this is opt-in/exploratory).
+SWEEP_MODELS: list[tuple[str | None, bool | None]] = [
+    ("einfra/qwen3.5", None),
+    ("einfra/kimi-k2.7", None),
+    ("einfra/glm-5.2", False),
+    ("einfra/deepseek-v4-pro-thinking", None),
+]
 
-    from react_agent.constants import AvailableModel
-    from react_agent.context import Context
-    from react_agent.graph import graph
+
+# ------------------------------------------------------------------------------------------- target
+async def _make_target(
+    approach: str,
+    *,
+    pred_root: str,
+    dataset: str,
+    translation_model_override: str | None = None,
+    translation_reasoning_override: bool | None = None,
+):
+    """Build an async ``aevaluate`` target that runs the graph ONCE per example and returns BOTH the
+    translated code (for the LLM judges) AND the deterministic metrics (for the non-LLM evaluators),
+    writing prediction artifacts for the post-hoc CodeBLEU pass. Reuses ``run_experiment.run_one`` so
+    the invoke / equivalence-scrape / metrics logic is shared (no second graph execution anywhere)."""
+    from extract_predictions import _write_artifacts, slug
+    from run_experiment import run_one
 
     single_pass = approach == "baseline"
-    model = AvailableModel(model_name) if model_name else None
+    gen_model_tag = translation_model_override or "default"
 
     async def target(inputs: dict[str, Any]) -> dict[str, Any]:
         prompt = _source_prompt(inputs)
-        # output_schema=OutputState narrows ainvoke's return; a checkpointer lets us read the FULL
-        # final State (validation results, equivalence, loop count) via aget_state.
-        g = graph.builder.compile(checkpointer=MemorySaver(), name="UOM LangSmith Eval")
-        run_id = str(uuid.uuid4())
-        config = {
-            "configurable": {"thread_id": run_id},
-            "recursion_limit": 80,
-            "run_id": run_id,
-            "metadata": {"approach": approach, "single_pass": single_pass},
-        }
-        ctx = Context(model=model) if model else Context()
-        try:
-            await g.ainvoke(
-                {"messages": [HumanMessage(content=prompt)], "single_pass": single_pass},
-                config=config,
-                context=ctx,
+        # eval_mode=True turns on the per-run cache-bust header; the sweep model (if any) is forced on
+        # generate_translation_node via Context. run_one returns the full metric bundle + raw code.
+        r = await run_one(
+            prompt, single_pass, None, approach, "langsmith",
+            eval_mode=True,
+            translation_model_override=translation_model_override,
+            translation_reasoning_override=translation_reasoning_override,
+        )
+        predictions: list = []
+        if r.get("accepted"):
+            base = (
+                Path(pred_root) / dataset / r["pair_slug"] / slug(gen_model_tag)
+                / f"{approach}-{r['run_id'][:8]}"
             )
-        except Exception as e:  # surface the failure as output rather than aborting the experiment
-            return {"error": f"{type(e).__name__}: {e}", "accepted": False}
-        st = (await g.aget_state(config)).values
-        src = st.get("source_target")
-        dst = st.get("destination_target")
-        schema_code = st.get("translated_schema_code")
-        query_code = st.get("translated_query_code")
+            predictions = _write_artifacts(base, r.get("_schema_code"), r.get("_query_code"), r["ext"])
         return {
-            "translated_schema_code": schema_code,
-            "translated_query_code": query_code,
-            "explanation_message": st.get("explanation_message"),
-            "accepted": bool(schema_code or query_code),
-            "translation_loops": int(st.get("translation_loop_count", 0) or 0),
-            "pair": (
-                f"{getattr(src, 'value', src)} -> {getattr(dst, 'value', dst)}"
-                if src and dst
-                else "unknown"
-            ),
+            "translated_schema_code": r.get("_schema_code"),
+            "translated_query_code": r.get("_query_code"),
+            "explanation_message": None,
+            "accepted": bool(r.get("accepted")),
+            "compile_pass": bool(r.get("compile_pass")),
+            "pass_at_1": r.get("pass_at_1"),
+            "translation_loops": r.get("translation_loops"),
+            "wall_clock_s": r.get("wall_clock_s"),
+            "queries_total": r.get("queries_total"),
+            "queries_equivalent": r.get("queries_equivalent"),
+            "pair": r.get("pair"),
+            "generate_model": gen_model_tag,
+            "predictions": predictions,
+            "error": r.get("error"),
         }
 
     return target
@@ -344,71 +360,203 @@ def _build_evaluators(judge, *, timeout_s: float = 90.0):
     ]
 
 
+# ----------------------------------------------------------------------- deterministic evaluators
+def _build_deterministic_evaluators() -> list:
+    """Cheap NON-LLM evaluators that surface the target's precomputed deterministic metrics as
+    LangSmith feedback scores. They make ZERO model calls — they just read fields the single graph
+    run already produced (``outputs``), so the funnel/latency/pass@1 metrics ride the SAME run as the
+    LLM judges (the 'don't run the pipeline twice' unification). Booleans map to 1.0/0.0; ``None``
+    (metric unavailable, e.g. an errored run) is surfaced as a ``None`` score, not a fake 0."""
+    keys = [
+        "accepted", "compile_pass", "pass_at_1",
+        "translation_loops", "wall_clock_s", "queries_equivalent", "queries_total",
+    ]
+
+    def _make(key: str):
+        def _ev(inputs: dict, outputs: dict) -> dict:
+            v = outputs.get(key)
+            if isinstance(v, bool):
+                v = 1.0 if v else 0.0
+            return {"key": key, "score": v}
+        _ev.__name__ = f"det_{key}"
+        return _ev
+
+    return [_make(k) for k in keys]
+
+
+# --------------------------------------------------------------------------------------- preflight
+def _preflight() -> list[str]:
+    """TCP-liveness check of the live local stack BEFORE submitting any experiment, so a 1am misfire
+    fails fast instead of yielding a whole night of errored runs. Dependency-free (stdlib socket): we
+    only confirm each host:port accepts a connection (model endpoint, Daytona, MSSQL, MongoDB, Neo4j),
+    parsed from the same env the graph uses. Returns a list of human-readable failures (empty == OK)."""
+    import socket
+    from urllib.parse import urlparse
+
+    checks: list[tuple[str, str | None, int | None]] = []
+
+    def _http(name: str, url: str, default_port: int) -> None:
+        p = urlparse(url)
+        port = p.port or (443 if p.scheme == "https" else default_port)
+        checks.append((name, p.hostname, port))
+
+    _http("model-endpoint", os.environ.get("OPENAI_API_URL", "https://llm.ai.e-infra.cz/v1"), 80)
+    _http("daytona", os.environ.get("DAYTONA_API_URL", "http://localhost:3000/api"), 80)
+
+    # MSSQL: "Server=host,port;Database=...". Default port 1433 if not specified.
+    conn = os.environ.get("MSSQL_CONNECTION_STRING", "Server=localhost,1333;")
+    server = next((seg.split("=", 1)[1] for seg in conn.split(";") if seg.lower().startswith("server=")), "")
+    if server:
+        host, _, port = server.partition(",")
+        checks.append(("mssql", host.strip(), int(port) if port.strip().isdigit() else 1433))
+
+    p = urlparse(os.environ.get("MONGODB_URI", "mongodb://localhost:27027"))
+    checks.append(("mongodb", p.hostname, p.port or 27017))
+    p = urlparse(os.environ.get("NEO4J_URI", "neo4j://localhost:7697"))
+    checks.append(("neo4j", p.hostname, p.port or 7687))
+
+    failures = []
+    for name, host, port in checks:
+        if not host or not port:
+            failures.append(f"{name}: could not parse host/port")
+            continue
+        try:
+            socket.create_connection((host, port), timeout=5).close()
+            print(f"  preflight OK   {name} {host}:{port}")
+        except Exception as e:  # noqa: BLE001
+            failures.append(f"{name} {host}:{port} -> {type(e).__name__}: {e}")
+    return failures
+
+
+def _pair_short(pair: str) -> str:
+    """Compact slug for experiment names, e.g. dotnet_efcore->java_spring_data_mongodb -> efcore-mongo."""
+    src, _, dst = pair.partition("->")
+    abbr = {
+        "dotnet_efcore": "efcore", "dotnet_dapper": "dapper", "dotnet_nhibernate": "nhib",
+        "java_spring_data_mongodb": "mongo", "java_spring_data_neo4j": "neo4j",
+    }
+    return f"{abbr.get(src, src)}-{abbr.get(dst, dst)}"
+
+
+def _model_short(model: str | None) -> str:
+    return (model or "default").rsplit("/", 1)[-1].replace(".", "")
+
+
 # --------------------------------------------------------------------------------------------- main
 async def main_async(args: argparse.Namespace) -> None:
     try:
         from dotenv import load_dotenv
-
         load_dotenv(args.env)
     except Exception:
         pass
 
-    from langsmith import aevaluate
+    from langsmith import Client, aevaluate
 
-    if args.dry_run:
-        target = _echo_target
-        evaluators: list = []
-        if not args.no_judges:
-            judge = await _build_judge_model(args.judge_model)
-            evaluators = _build_evaluators(judge)
-        prefix = args.experiment_prefix or "uom-dryrun"
-    else:
-        target = await _make_target(args.approach, args.model)
+    # Build the judges (shared across all experiments) + the cheap deterministic evaluators.
+    evaluators: list = []
+    if not args.no_judges:
         judge = await _build_judge_model(args.judge_model)
         evaluators = _build_evaluators(judge)
-        prefix = args.experiment_prefix or f"uom-{args.approach}"
+    det_evaluators = _build_deterministic_evaluators()
 
-    print(f"=== aevaluate over dataset {DATASET_NAME!r} ({DATASET_ID}) ===")
-    print(f"  target={'echo (dry-run)' if args.dry_run else args.approach}  "
-          f"judge_model={args.judge_model}  judges={len(evaluators)}  "
-          f"max_concurrency={args.max_concurrency}  repetitions={args.repetitions}")
+    # ---- dry-run: echo target over the whole dataset, judges only (no graph / Daytona / preflight).
+    if args.dry_run:
+        prefix = args.experiment_prefix or "uom-dryrun"
+        print(f"=== DRY-RUN aevaluate over {DATASET_NAME!r} ({DATASET_ID}) — judges={len(evaluators)} ===")
+        await aevaluate(
+            _echo_target, data=DATASET_ID, evaluators=evaluators,
+            experiment_prefix=prefix, max_concurrency=args.max_concurrency,
+            num_repetitions=args.repetitions,
+            metadata={"approach": args.approach, "judge_model": args.judge_model, "dry_run": True},
+        )
+        print(f"\nDry-run experiment: {prefix} — inspect judge scores in LangSmith.")
+        return
 
-    results = await aevaluate(
-        target,
-        data=DATASET_ID,
-        evaluators=evaluators,
-        experiment_prefix=prefix,
-        max_concurrency=args.max_concurrency,
-        num_repetitions=args.repetitions,
-        metadata={"approach": args.approach, "judge_model": args.judge_model,
-                  "dry_run": args.dry_run},
-    )
-    # Surface the experiment URL/name for the user.
-    name = getattr(results, "experiment_name", None)
-    print(f"\nExperiment: {name or prefix}")
-    print("Open LangSmith → Datasets → 'UOM Final Experiments' → Experiments to inspect scores.")
+    # ---- preflight (fail fast before burning the overnight window on a dead dependency).
+    if not args.no_preflight:
+        print("=== preflight: checking live stack (model endpoint / Daytona / DBs) ===")
+        fails = _preflight()
+        if fails:
+            print("\nPREFLIGHT FAILED — not submitting experiments:")
+            for f in fails:
+                print(f"  ✘ {f}")
+            raise SystemExit(2)
+        print("  all dependencies reachable.")
+
+    client = Client()
+    all_examples = list(client.list_examples(dataset_id=DATASET_ID))
+
+    def _meta(e):
+        return getattr(e, "metadata", None) or {}
+
+    pairs = args.pairs or sorted({_meta(e).get("pair") for e in all_examples if _meta(e).get("pair")})
+    # small variant first (the fast gate), then full.
+    variants = sorted(set(args.variants), key=lambda v: 0 if v == "small" else 1)
+    models = SWEEP_MODELS if args.sweep else [(None, None)]
+
+    plan = [(v, p, m) for v in variants for p in pairs for m in models]
+    print(f"=== {len(plan)} experiment(s): {len(pairs)} pair x {len(variants)} variant "
+          f"x {len(models)} model | approach={args.approach} reps={args.repetitions} "
+          f"concurrency={args.max_concurrency} judges={len(evaluators)} ===")
+
+    for variant, pair, (gen_model, gen_reasoning) in plan:
+        examples = [
+            e for e in all_examples
+            if _meta(e).get("pair") == pair and _meta(e).get("variant") == variant
+        ]
+        if not examples:
+            print(f"  (skip) no examples for {pair} [{variant}]")
+            continue
+        target = await _make_target(
+            args.approach, pred_root=args.pred_root, dataset=args.dataset,
+            translation_model_override=gen_model, translation_reasoning_override=gen_reasoning,
+        )
+        prefix = (args.experiment_prefix or "uom") + \
+            f"-{args.approach}-{_pair_short(pair)}-{variant}-{_model_short(gen_model)}"
+        print(f"\n--- {prefix}  ({len(examples)} example(s) x {args.repetitions} reps) ---")
+        await aevaluate(
+            target, data=examples, evaluators=[*evaluators, *det_evaluators],
+            experiment_prefix=prefix, max_concurrency=args.max_concurrency,
+            num_repetitions=args.repetitions,
+            metadata={
+                "approach": args.approach, "pair": pair, "variant": variant,
+                "generate_model": gen_model or "default", "judge_model": args.judge_model,
+            },
+        )
+    print("\nDone. Open LangSmith → Datasets → 'UOM Final Experiments' → Experiments to compare.")
+    print("→ CodeBLEU is a post-hoc pass: extract_predictions.py --reference + score_predictions.py "
+          f"over the predictions tree at {args.pred_root}.")
 
 
 def main() -> None:
+    """CLI entry point."""
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--approach", default="our_approach", choices=["our_approach", "baseline"],
                     help="full agentic loop vs single_pass baseline")
-    ap.add_argument("--model", default=None,
-                    help="AvailableModel value for the TARGET graph (default: Context default)")
+    ap.add_argument("--variants", nargs="+", default=["full"], choices=["small", "full"],
+                    help="which bundled query variants to run (small gate runs before full)")
+    ap.add_argument("--pairs", nargs="*", default=None,
+                    help="restrict to these metadata.pair slugs (default: all in the dataset)")
+    ap.add_argument("--sweep", action="store_true",
+                    help="run the 4-model generate_translation_node sweep (opt-in; otherwise the "
+                         "production default model only)")
     ap.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL,
                     help="einfra/* model the LLM judges run on (reasoning forced off)")
     ap.add_argument("--experiment-prefix", default=None,
-                    help="LangSmith experiment name prefix (default: uom-<approach>)")
+                    help="LangSmith experiment name prefix (default: 'uom')")
     ap.add_argument("--max-concurrency", type=int, default=2,
-                    help="parallel examples (keep low — each runs the full live pipeline)")
-    ap.add_argument("--repetitions", type=int, default=1,
-                    help="runs per example (variance / pass@k style)")
+                    help="parallel examples per experiment (keep low — each runs the full pipeline)")
+    ap.add_argument("--repetitions", type=int, default=15,
+                    help="runs per example ('15 iterations' per pair)")
+    ap.add_argument("--pred-root", default="../predictions",
+                    help="where finalize artifacts are written for the post-hoc CodeBLEU pass")
+    ap.add_argument("--dataset", default="wwi", help="predictions-tree dataset folder name")
     ap.add_argument("--dry-run", action="store_true",
                     help="echo target (no graph/Daytona) to validate dataset+judge plumbing")
-    ap.add_argument("--no-judges", action="store_true",
-                    help="with --dry-run: also skip judges (pure dataset/target wiring check)")
+    ap.add_argument("--no-judges", action="store_true", help="skip LLM judges (deterministic only)")
+    ap.add_argument("--no-preflight", action="store_true", help="skip the live-stack TCP preflight")
     ap.add_argument("--env", default="../.env", help="path to .env with LANGSMITH_*/OPENAI_* keys")
     args = ap.parse_args()
     asyncio.run(main_async(args))
