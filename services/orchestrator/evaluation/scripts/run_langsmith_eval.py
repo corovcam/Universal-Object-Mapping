@@ -72,7 +72,9 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE.parents[1] / "src"))  # services/orchestrator/src
 
-from aimock_recorder import DEFAULT_UPSTREAM  # noqa: E402 — sibling script (LLM-traffic recorder)
+from aimock_recorder import (
+    DEFAULT_UPSTREAM,  # noqa: E402 — sibling script (LLM-traffic recorder)
+)
 
 DATASET_ID = "56708f08-2697-4af2-b3b7-9172c0e68b4b"  # "UOM Final Experiments"
 DATASET_NAME = "UOM Final Experiments"
@@ -130,9 +132,8 @@ def _translation_text(outputs: dict[str, Any]) -> str:
 # the sweep). NOTE: glm-5.2's model_profiles extra_body forces thinking on, so its "non-reasoning"
 # (False) may not take effect — flagged, not worked around (this is opt-in/exploratory).
 SWEEP_MODELS: list[tuple[str | None, bool | None]] = [
-    ("einfra/qwen3.5", None),
+    ("einfra/glm-5.2", None),
     ("einfra/kimi-k2.7", None),
-    ("einfra/glm-5.2", False),
     ("einfra/deepseek-v4-pro-thinking", None),
 ]
 
@@ -634,7 +635,7 @@ def main() -> None:
     ap.add_argument("--pairs", nargs="*", default=None,
                     help="restrict to these metadata.pair slugs (default: all in the dataset)")
     ap.add_argument("--sweep", action="store_true",
-                    help="run the 4-model generate_translation_node sweep (opt-in; otherwise the "
+                    help="run the 3-model generate_translation_node sweep (opt-in; otherwise the "
                          "production default model only)")
     ap.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL,
                     help="einfra/* model the LLM judges run on (reasoning forced off)")

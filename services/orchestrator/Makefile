@@ -87,7 +87,7 @@ REPS        ?= 15
 CONCURRENCY ?= 2
 EVAL_ENV    ?= .env.dev
 # Record LLM traffic per run into its own dir under AIMOCK_ROOT (mirrors the predictions tree). On by
-# default for the eval runs (the user wants fixtures saved for every experiment); set RECORD= to disable.
+# default for the eval runs; set RECORD= to disable.
 RECORD      ?= 1
 AIMOCK_ROOT ?= evaluation/aimock
 RECORD_FLAG := $(if $(RECORD),--record-fixtures --aimock-root $(AIMOCK_ROOT),)

@@ -192,8 +192,7 @@ make eval_sweep
   (set per-invoke, never a global, so concurrent runs don't race). NB: `glm-5.2`'s `model_profiles`
   extra_body forces thinking on, so its "non-reasoning" sweep arm may still think (flagged, not fixed).
 - **Preflight** (on by default; `--no-preflight` to skip): a stdlib-socket TCP liveness check of the
-  model endpoint, Daytona, MSSQL, MongoDB, Neo4j BEFORE submitting, so a misfire fails fast instead of
-  producing a night of errored runs.
+  model endpoint, Daytona, MSSQL, MongoDB, Neo4j BEFORE submitting, so a misfire fails fast.
 - **Fixture recording** (`--record-fixtures`, **on by default for the `make eval_*` targets** via
   `RECORD=1`; set `RECORD=` to disable): every run spawns its OWN throwaway aimock (`aimock_recorder.py`,
   auto-picked free port → concurrency-safe) that proxies to e-INFRA and SAVES the run's LLM traffic to
