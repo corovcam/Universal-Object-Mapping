@@ -85,7 +85,7 @@ DATASET_NAME = "UOM Final Experiments"
 # multimodal, fast, and has a full 32k output budget — hence the default. The judge call is still made
 # robust (structured → JSON-fallback → graceful None, per-judge timeout) and the model is a CLI knob,
 # so it can be A/B'd against a non-thinking fallback (e.g. einfra/mistral-medium-3.5) on the live stack.
-DEFAULT_JUDGE_MODEL = "einfra/gemma4"
+DEFAULT_JUDGE_MODEL = "einfra/kimi-k2.7"  # einfra/gemma4 is also good, but deepseek-v4-pro-thinking has more recent knowledge (April 2026)
 
 
 # --------------------------------------------------------------------------- inputs/outputs helpers
@@ -268,7 +268,7 @@ async def _build_judge_model(model_name: str):
         raise SystemExit(f"--judge-model must be an einfra/* model; got {model_name!r}")
     return await load_chat_model(
         model_name,
-        {"openai_api_url": url, "openai_api_key": key, "temperature": 0, "reasoning": False},
+        {"openai_api_url": url, "openai_api_key": key, "temperature": 0},
     )
 
 
@@ -638,13 +638,13 @@ def main() -> None:
                     help="run the 3-model generate_translation_node sweep (opt-in; otherwise the "
                          "production default model only)")
     ap.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL,
-                    help="einfra/* model the LLM judges run on (reasoning forced off)")
+                    help="einfra/* model the LLM judges run on")
     ap.add_argument("--experiment-prefix", default=None,
                     help="LangSmith experiment name prefix (default: 'uom')")
-    ap.add_argument("--max-concurrency", type=int, default=2,
+    ap.add_argument("--max-concurrency", type=int, default=1,
                     help="parallel examples per experiment (keep low — each runs the full pipeline)")
-    ap.add_argument("--repetitions", type=int, default=15,
-                    help="runs per example ('15 iterations' per pair)")
+    ap.add_argument("--repetitions", type=int, default=1,
+                    help="runs per example ('10 iterations' per pair)")
     ap.add_argument("--pred-root", default="../predictions",
                     help="where finalize artifacts are written for the post-hoc CodeBLEU pass")
     ap.add_argument("--dataset", default="wwi", help="predictions-tree dataset folder name")

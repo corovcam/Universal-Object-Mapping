@@ -24,7 +24,6 @@ public class Order
 {
     public virtual int OrderID { get; set; }
     public virtual int CustomerID { get; set; }
-    public virtual Customer Customer { get; set; } = null!;
     public virtual IList<OrderLine> OrderLines { get; set; } = [];
 }
 public class OrderLine
@@ -65,7 +64,6 @@ public class OrderMap : ClassMapping<Order> {
         Table("Orders"); Schema("Sales");
         Id(x => x.OrderID, m => m.Generator(Generators.Identity));
         Property(x => x.CustomerID, m => { m.Insert(false); m.Update(false); });
-        ManyToOne(x => x.Customer, m => m.Column("CustomerID"));
         Bag(x => x.OrderLines, map => { map.Key(k => k.Column("OrderID")); map.Inverse(true); }, rel => rel.OneToMany());
     }
 }

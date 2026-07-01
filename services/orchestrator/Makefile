@@ -64,7 +64,7 @@ extended_tests:
 # request as a fixture under ./tests/aimock/recorded/.
 RECORD_FIXTURES_DIR ?= ./tests/aimock
 record_requests:
-	npx -p @copilotkit/aimock llmock --port 4020 --record --latency 5 --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f $(RECORD_FIXTURES_DIR)
+	npx -p @copilotkit/aimock llmock --port 4020 --record --upstream-timeout-ms 300000  --body-timeout-ms 300000 --log-level debug --provider-openai https://llm.ai.e-infra.cz -f $(RECORD_FIXTURES_DIR)
 
 # Integrated recorder: drive the pipeline on a WWI fixture and spawn a FRESH aimock per run, so
 # each thread's traffic is saved into its OWN folder under evaluation/aimock/. Needs the live stack
@@ -82,8 +82,8 @@ record_experiment:
 # (funnel/latency/pass@1). Each source->target PAIR is a separate LangSmith Experiment. 
 # Needs the LIVE local stack (e-INFRA tunnel, Daytona, WWI DBs) + the eval
 # extra (`uv sync --extra eval`). Knobs: JUDGE_MODEL / REPS / CONCURRENCY / VARIANTS / PAIRS.
-JUDGE_MODEL ?= einfra/gemma4
-REPS        ?= 15
+JUDGE_MODEL ?= einfra/kimi-k2.7
+REPS        ?= 10
 CONCURRENCY ?= 2
 EVAL_ENV    ?= .env.dev
 # Record LLM traffic per run into its own dir under AIMOCK_ROOT (mirrors the predictions tree). On by
@@ -128,7 +128,7 @@ eval_full_experiment:
 	@mkdir -p evaluation/out
 	@ts=$$(date +%Y%m%d-%H%M%S); log=evaluation/out/full-experiment-$$ts.log; \
 		echo "full experiment eval -> $$log"; \
-		EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants small full \
+		EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants full small \
 			--judge-model $(JUDGE_MODEL) --repetitions $(REPS) --max-concurrency $(CONCURRENCY) \
 			--pred-root evaluation/predictions $(RECORD_FLAG) --env $(EVAL_ENV) 2>&1 | tee $$log
 

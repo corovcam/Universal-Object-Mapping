@@ -75,6 +75,7 @@ from react_agent.custom_tools.query_validator import (
     check_query_equivalence,
 )
 from react_agent.custom_tools.sandbox_tools import ValidationSandbox
+from react_agent.custom_tools.skill_reference import build_skill_reference_tool
 from react_agent.prompts import (
     SYSTEM_PROMPT_EXTRACTION,
     SYSTEM_PROMPT_FINALIZE,
@@ -1154,20 +1155,14 @@ async def generate_translation_node(
     source_entry = (await get_snippet_content(source_fw, is_schema=is_schema))["entry_type_name"]
     target_entry = (await get_snippet_content(target_fw, is_schema=is_schema))["entry_type_name"]
 
-    # Production default is EINFRA_QWEN3_5 with reasoning on; the evaluation harness can swap the
-    # generation model (model sweep) and/or force reasoning via Context (set per-invoke, never a
-    # global — see Context.translation_model_override). Both this agent's model and the forced-save
-    # fallback below honour the same override so an experiment stays internally consistent.
     _override = runtime.context.translation_model_override
     translation_model = (
-        AvailableModel(_override) if _override else AvailableModel.EINFRA_QWEN3_5
+        AvailableModel(_override) if _override else AvailableModel.EINFRA_KIMI_K2_7
     )
-    _reasoning_override = runtime.context.translation_reasoning_override
     model = await get_model(
         config,
         runtime,
         model_name_override=translation_model,
-        reasoning=(_reasoning_override if _reasoning_override is not None else True),
     )
 
     system_prompt = eval_cache_bust_header(runtime, config) + await build_system_prompt(state)
@@ -1175,6 +1170,10 @@ async def generate_translation_node(
     message = build_translation_user_message(state)
 
     save_tool = build_save_translation_tool(translation_type, source_entry, target_entry)
+    # On-demand access to the target framework's skill references (imports/APIs) — the single
+    # highest-leverage defense against hallucinated packages/method overloads that fail the compile.
+    # None when the target has no skill (only the Java/Spring targets do); filtered out below.
+    skill_tool = build_skill_reference_tool(target_fw)
 
     # Research-only tool surface: documentation (MCP) + web search, plus the single state-writing
     # save tool. Database inspection MCP is deliberately excluded here — the DB schema was already
@@ -1202,6 +1201,8 @@ async def generate_translation_node(
             load_docs_mcp_tools() as docs_tools,
         ):
             research_tools = [search, *docs_tools, save_tool]
+            if skill_tool is not None:
+                research_tools.append(skill_tool)
             agent = create_agent(
                 model,
                 tools=research_tools,
@@ -1266,11 +1267,6 @@ async def generate_translation_node(
                 runtime,
                 model_name_override=translation_model,
                 temperature=0,
-                reasoning=(
-                    _reasoning_override
-                    if _reasoning_override is not None
-                    else state.single_pass
-                ),
             )
             forced = forced_model.bind_tools([save_tool], tool_choice="any")
             forced_resp = await forced.ainvoke(
@@ -1787,7 +1783,7 @@ async def evaluation_node(
     Returns:
         dict[str, Any]: State updates containing the evaluation decision and explanation.
     """
-    model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_7)
+    model = await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING)
 
     last_msgs = [str(msg) for msg in state.translation_messages[-4:]]
 
@@ -1806,7 +1802,7 @@ Is the translation logically equivalent and syntactically valid? Provide your re
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
-                await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING),
+                await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_7),
                 await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B),
                 await get_model(config, runtime)
             ),
@@ -1964,13 +1960,12 @@ async def finalize_translation_node(
     # full multi-line code reliably (verified: complete clean schema+query in ~14s). The socket
     # timeout is raised above the hardcoded 120s default because finalizing a full schema+queries can
     # legitimately stream for longer.
-    finalize_model_name = AvailableModel.EINFRA_QWEN3_5
+    finalize_model_name = AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING
     model = await get_model(
         config,
         runtime,
         model_name_override=finalize_model_name,
         temperature=0,
-        reasoning=False,
     )
     try:
         model.request_timeout = 300  # type: ignore[attr-defined]

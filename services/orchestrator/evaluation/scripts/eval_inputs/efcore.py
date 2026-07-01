@@ -37,9 +37,7 @@ public class Order
 {
   [Key]
   public int OrderID { get; set; }
-  [ForeignKey(nameof(Customer))]
   public int CustomerID { get; set; }
-  public Customer Customer { get; set; } = null!;
   public List<OrderLine> OrderLines { get; set; } = [];
 }
 

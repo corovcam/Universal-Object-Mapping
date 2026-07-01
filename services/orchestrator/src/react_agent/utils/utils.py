@@ -666,8 +666,8 @@ async def get_extra_body_for_model(model_name: AvailableModel) -> dict[str, Any]
         }
         extra_body["chat_template_kwargs"] = {
             "cache_salt": base64.b64encode(b"universal-object-mapping-cache-salt").decode(),
-            # "enable_thinking": True,
-            # "thinking": True,
+            "enable_thinking": False,
+            "thinking": False,
             # "preserve_thinking": True,
             # "reasoning_effort": "high",
         }

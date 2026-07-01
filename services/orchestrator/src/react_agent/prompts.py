@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from react_agent.constants import TranslationType
+from react_agent.custom_tools.skill_reference import get_skill_overview
 from react_agent.state import State
 from react_agent.utils.utils import get_framework_config_content, get_snippet_content
 
@@ -786,6 +787,23 @@ async def build_system_prompt(state: State) -> str:
     is_schema = state.translation_type == TranslationType.SCHEMA
     source_entry = (await get_snippet_content(state.source_target, is_schema=is_schema))["entry_type_name"]
     target_entry = (await get_snippet_content(state.destination_target, is_schema=is_schema))["entry_type_name"]
+    # Hybrid skill delivery: the concise SKILL.md orientation for the TARGET framework is injected
+    # always-on (below); the detailed per-topic reference files are fetched on demand by the agent via
+    # the `read_skill_reference` tool. Empty string when the target has no skill (keeps prompt clean).
+    skill_overview = await get_skill_overview(state.destination_target)
+    skill_section = (
+        f"""--- TARGET FRAMEWORK SKILL: {state.destination_target.value} ---
+Authoritative, version-correct guidance for the TARGET framework you are translating INTO. Follow its
+import and API rules exactly — they are the number-one defense against a hallucinated package or
+method that fails the whole compile. For deeper per-topic detail (full import lists, query/mapping
+recipes), call `read_skill_reference`.
+
+{skill_overview}
+
+"""
+        if skill_overview
+        else ""
+    )
     base_prompt = f"""You are a Universal Object Mapping architect. Your goal is to aid in translating database schema structures and query logic between diverse languages and frameworks.
 
 Source Framework: {state.source_target.value}
@@ -817,6 +835,7 @@ Framework rules:
 Additional rules:
 1. You do NOT run validators or compile code. After you call `save_translation`, the translated code is assembled with the canonical prelude and validated automatically by a downstream pipeline (compile + run on both sides, then equivalence). If it fails, you will be re-invoked with concrete feedback to fix and re-save. Focus on producing correct, complete bodies.
 2. You have research tools — use them to get the exact API right before saving:
+    - Use `read_skill_reference` FIRST for any target-side import/API you are not 100% sure of. It returns the curated, version-correct reference for {state.destination_target.value} (imports, entity mapping, query API). This is faster and more reliable than web/doc search and is the single best defense against a hallucinated package or method overload that fails the whole compile. Consult it before you write target imports and before any non-trivial query.
     - Use `search_spring_docs` to query the Spring documentation: `query` (search string), `top_k` (number of results to return, max 10), `module` (spring-data), `submodule` ("mongodb" or "neo4j"), and `version_major` (major version from the pom.xml, e.g. 5 for Spring Data MongoDB 5.x, 8 for Spring Data Neo4j 8.x).
     - Use `microsoft_docs_search`, `microsoft_code_sample_search`, and `microsoft_docs_fetch` for Microsoft documentation and code samples.
     - Use `search` to query the web for specific API usage or examples if you cannot find it in the above sources.
@@ -827,241 +846,24 @@ Source ({state.source_target.value})
 Target ({state.destination_target.value})
 {await get_framework_config_content(state.destination_target)}
 
---- TARGET-LANGUAGE MAPPING REFERENCE ---
-The <input>/<output> pairs below illustrate ONLY how source types/annotations map to the target language (e.g. C# `decimal?` -> Java `BigDecimal`, `[Table]`/`[Key]` -> `@Document`/`@Id`, naming conventions). They are NOT separate output fields — you output only the two `*_validation_body` fields. Reuse these mapping patterns when you author the entity and query classes INSIDE those bodies, but use exclusively the user's own entities, fields, and queries.
+{skill_section}--- TARGET-LANGUAGE MAPPING REFERENCE ---
+Quick source->target mapping reference. For AUTHORITATIVE, version-correct imports and API surface, rely on the TARGET FRAMEWORK SKILL above and the `read_skill_reference` tool — never on memory for imports. Apply these patterns to the user's OWN entities/fields/queries only; never introduce names from this reference.
 
-<example translation_type="schema" source_target=".NET Entity Framework Core" destination_target="Java Spring Data MongoDB">
-<input>
-source_schema_code:
-[Table("Customers", Schema = "Sales")]
-public class Customer
-{{
-    [Key]
-    public int CustomerID {{ get; set; }}
-    public required string CustomerName {{ get; set; }}
-}}
-</input>
-<output>
-translated_schema_code:
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.mapping.Field;
+Type mapping (.NET -> Java):
+- `int`/`int?` -> `Integer`;  `long`/`long?` -> `Long`;  `bool` -> `Boolean`
+- `decimal`/`decimal?` -> `BigDecimal` (NEVER `double` for money)
+- `DateTime`/`DateTime?` -> `LocalDateTime` (date-only intent -> `LocalDate`)
+- `string` -> `String`;  `Guid` -> `String` (or `UUID`)
+- `IList<T>`/`List<T>` navigation -> embedded `List<T>` (document store) or a relationship (graph store)
 
-@Document(collection = "customers")
-class Customer {{
-    @Id
-    private String id;
+Annotation / entity mapping (relational -> target ORM):
+- Spring Data MongoDB: `[Table]`/`ClassMapping<T>` -> `@Document(collection="...")`; `[Key]`/`Id(...)` -> `@Id private String id;` (Mongo `_id` is a String — keep the source integer key as its OWN `@Field`); other columns -> `@Field("camelCaseName")`. Value objects embedded in a parent document have NO `@Document`.
+- Spring Data Neo4j: `[Table]`/`ClassMapping<T>` -> `@Node("Label")`; `[Key]`/`Id(...)` -> `@Id @GeneratedValue private Long id;` (keep the source integer key as its own `@Property`); other columns -> `@Property("camelCaseName")`; navigations -> `@Relationship(type="...", direction=...)`.
+- Names in `@Field`/`@Property`/`Criteria.where(...)`/Cypher are the TARGET store's field names (usually camelCase), NOT the SQL column and NOT the Java property.
 
-    @Field("customerId")
-    private Integer customerId;
-
-    @Field("customerName")
-    private String customerName;
-}}
-
-translated_query_code: null
-</output>
-</example>
-
-<example translation_type="schema" source_target=".NET Entity Framework Core" destination_target="Java Spring Data Neo4j">
-<input>
-source_schema_code:
-[Table("People", Schema = "Application")]
-public class Person
-{{
-    [Key]
-    public int PersonID {{ get; set; }}
-    public required string FullName {{ get; set; }}
-}}
-</input>
-<output>
-translated_schema_code:
-import org.springframework.data.neo4j.core.schema.Id;
-import org.springframework.data.neo4j.core.schema.Node;
-import org.springframework.data.neo4j.core.schema.Property;
-
-@Node("Person")
-class Person {{
-    @Id @GeneratedValue
-    private Long id;
-
-    @Property("personId")
-    private Integer personId;
-
-    @Property("fullName")
-    private String fullName;
-}}
-</output>
-</example>
-
-<example translation_type="both" source_target=".NET Entity Framework Core" destination_target="Java Spring Data MongoDB">
-<input>
-source_schema_code:
-[Table("OrderLines", Schema = "Sales")]
-public class OrderLine
-{{
-    [Key]
-    public int OrderLineID {{ get; set; }}
-    public int OrderID {{ get; set; }}
-    public int StockItemID {{ get; set; }}
-    public required string Description {{ get; set; }}
-    public int Quantity {{ get; set; }}
-    public decimal? UnitPrice {{ get; set; }}
-    public decimal TaxRate {{ get; set; }}
-    public DateTime? PickingCompletedWhen {{ get; set; }}
-    public int LastEditedBy {{ get; set; }}
-    public DateTime LastEditedWhen {{ get; set; }}
-}}
-
-public class WideWorldImportersContext : DbContext
-{{
-    public WideWorldImportersContext(DbContextOptions<WideWorldImportersContext> options) : base(options) {{ }}
-    public DbSet<OrderLine> OrderLines => Set<OrderLine>();
-}}
-
-source_query_code:
-public List<OrderLine> Query1()
-{{
-    using var context = contextFactory.CreateDbContext();
-    var from = new DateTime(2014, 12, 20);
-    var to = new DateTime(2014, 12, 31);
-    var orderLines = context.OrderLines
-        .Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to)
-        .ToList();
-    return orderLines;
-}}
-</input>
-<output>
-translated_schema_code:
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.mapping.Field;
-
-@Document(collection = "orderLines")
-class OrderLine {{
-    @Id
-    private String id;
-    @Field("orderLineId")
-    private Integer orderLineId;
-    @Field("orderId")
-    private Integer orderId;
-    @Field("stockItemId")
-    private Integer stockItemId;
-    @Field("description")
-    private String description;
-    @Field("quantity")
-    private Integer quantity;
-    @Field("unitPrice")
-    private BigDecimal unitPrice;
-    @Field("taxRate")
-    private BigDecimal taxRate;
-    @Field("pickingCompletedWhen")
-    private LocalDateTime pickingCompletedWhen;
-    @Field("lastEditedBy")
-    private Integer lastEditedBy;
-    @Field("lastEditedWhen")
-    private LocalDateTime lastEditedWhen;
-}}
-
-translated_query_code:
-import java.time.*;
-import java.util.*;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-
-class MongoQueryEntrypoint {{
-   private final MongoTemplate mongoTemplate;
-   MongoQueryEntrypoint(MongoTemplate mongoTemplate) {{ this.mongoTemplate = mongoTemplate; }}
-
-   List<OrderLine> query1() {{
-      LocalDate from = LocalDate.of(2014, 12, 20);
-      LocalDate to = LocalDate.of(2014, 12, 31);
-      Query query = Query.query(Criteria.where("pickingCompletedWhen").gte(from).lte(to));
-      return mongoTemplate.find(query, OrderLine.class);
-   }}
-}}
-</output>
-</example>
-
-<example translation_type="both" source_target=".NET Dapper" destination_target="Java Spring Data MongoDB">
-<output>
-source_schema_code:
-using System;
-
-namespace Sandbox;
-
-public class OrderLine
-{{
-    public int OrderLineID {{ get; set; }}
-    public DateTime? PickingCompletedWhen {{ get; set; }}
-    public string Description {{ get; set; }} = string.Empty;
-}}
-
-source_query_code:
-using System;
-
-namespace Sandbox;
-
-public static class DapperQueryEntrypoint
-{{
-    public static IEnumerable<OrderLine> Query(SqlConnection conn)
-    {{
-        var from = new DateTime(2014, 12, 20);
-        var to = new DateTime(2014, 12, 31);
-        string sql = @"SELECT * FROM Sales.OrderLines WHERE PickingCompletedWhen >= @From AND PickingCompletedWhen <= @To";
-        return conn.Query<OrderLine>(sql, new {{ From = from, To = to }});
-    }}
-}}
-</output>
-</example>
-
-<example translation_type="both" source_target=".NET NHibernate" destination_target="Java Spring Data MongoDB">
-<output>
-source_schema_code:
-using System;
-using NHibernate.Mapping.ByCode;
-using NHibernate.Mapping.ByCode.Conformist;
-
-namespace Sandbox;
-
-public class OrderLine
-{{
-    public virtual int OrderLineID {{ get; set; }}
-    public virtual DateTime? PickingCompletedWhen {{ get; set; }}
-    public virtual string Description {{ get; set; }} = string.Empty;
-}}
-
-public class OrderLineMap : ClassMapping<OrderLine>
-{{
-    public OrderLineMap()
-    {{
-        Table("OrderLines"); Schema("Sales");
-        Id(x => x.OrderLineID, m => m.Generator(Generators.Identity));
-        Property(x => x.PickingCompletedWhen);
-        Property(x => x.Description);
-    }}
-}}
-
-source_query_code:
-using System;
-using NHibernate;
-
-namespace Sandbox;
-
-public static class NHibernateQueryEntrypoint
-{{
-    public static IQueryable<OrderLine> Query1(NHibernate.ISession session)
-    {{
-        var from = new DateTime(2014, 12, 20);
-        var to = new DateTime(2014, 12, 31);
-        return session.Query<OrderLine>().Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);
-    }}
-}}
-</output>
-</example>
+Query API (translate the query BODY; keep each method 1:1 with the source query, same result shape, no extra params):
+- Spring Data MongoDB: `MongoTemplate` + `Query`/`Criteria` (`.where().gte().lte()`, `.in()`, `.regex()`), `Sort` for ordering, `Aggregation` for group/having/count. Details: `read_skill_reference("queries")`, `read_skill_reference("aggregation")`.
+- Spring Data Neo4j: `Neo4jTemplate` + Cypher-DSL `Statement` (typed builders), NOT string concatenation. Details: `read_skill_reference("queries")`, `read_skill_reference("traversals")`.
 """
 
     # Validation-body reference: show ONLY the region below the schema seam (the part the model must
