@@ -29,12 +29,17 @@ import glob
 import json
 import os
 import re
-from pathlib import Path
 
 # reuse the validated LangSmith ingestion + scrapers
 import sys
+from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from aggregate_traces import fetch_root_runs, iter_child_runs, _outputs_dict  # noqa: E402
+from aggregate_traces import (  # noqa: E402
+    _outputs_dict,
+    fetch_root_runs,
+    iter_child_runs,
+)
 
 
 # target framework string -> (codebleu lang, file extension)
@@ -70,7 +75,8 @@ def _write_artifacts(base: Path, schema: str | None, queries: str | None, ext: s
 def _live_roots(args: argparse.Namespace):
     """Yield (root_run, client). When --run-id is given, pin exactly that run so a frozen
     reference is reproducible (the user's manually-reviewed first-accepted baseline) rather than
-    whatever recency happens to return."""
+    whatever recency happens to return.
+    """
     if args.run_id:
         from langsmith import Client
         client = Client()
@@ -102,6 +108,50 @@ def from_live(args: argparse.Namespace, root_dir: Path) -> int:
         if w:
             n += 1
             print(f"[{lang}] {pair_slug(src, dst)} {slug(model)} {str(root.id)[:8]} -> {w}")
+    return n
+
+
+def from_predictions(args: argparse.Namespace, root_dir: Path) -> int:
+    """OFFLINE reference bootstrap: build the frozen per-pair reference from the predictions tree the
+    experiments already wrote (no LangSmith needed). For each pair (the path component containing
+    '__') it picks the FIRST run dir that has BOTH schema and queries artifacts and copies them to the
+    reference layout ``<root>/<dataset>/<pair>/{schema,queries}.<ext>``.
+
+    NOTE: the reference is meant to be a reviewed, known-good baseline. 'first accepted run' is a
+    reasonable automatic default so ``make eval_codebleu`` works out of the box; replace a pair's
+    reference files by hand if you want a specific baseline. Idempotent unless --overwrite: existing
+    references are kept.
+    """
+    src = Path(args.from_predictions) / args.dataset
+    if not src.exists():
+        raise SystemExit(f"no predictions under {src}")
+
+    def _pair_of(p: Path) -> str | None:
+        return next((part for part in p.parts if "__" in part), None)
+
+    run_dirs = sorted({p for p in src.rglob("*")
+                       if p.is_dir() and any(p.glob("schema.*")) and any(p.glob("queries.*"))})
+    seen: dict[str, Path] = {}
+    for rd in run_dirs:
+        pair = _pair_of(rd)
+        if pair and pair not in seen:
+            seen[pair] = rd
+    n = 0
+    for pair, rd in sorted(seen.items()):
+        dest = root_dir / args.dataset / pair
+        if dest.exists() and any(dest.glob("schema.*")) and not args.overwrite:
+            print(f"[keep] {pair} (reference exists; --overwrite to replace)")
+            continue
+        dest.mkdir(parents=True, exist_ok=True)
+        written = []
+        for artifact in ("schema", "queries"):
+            f = next(iter(rd.glob(f"{artifact}.*")), None)
+            if f:
+                (dest / f.name).write_text(f.read_text(encoding="utf-8"), encoding="utf-8")
+                written.append(f.name)
+        if written:
+            n += 1
+            print(f"[ref] {pair} <- {rd.name[:8]} -> {written}")
     return n
 
 
@@ -146,12 +196,20 @@ def main() -> None:
                          "--reference so the frozen ground truth is reproducible")
     ap.add_argument("--from-export", default=None,
                     help="glob of LangGraph run-*.json exports for OFFLINE extraction")
+    ap.add_argument("--from-predictions", default=None,
+                    help="OFFLINE reference bootstrap: build the frozen per-pair reference from an "
+                         "existing predictions tree (implies --reference). No LangSmith needed.")
+    ap.add_argument("--overwrite", action="store_true",
+                    help="with --from-predictions, replace existing per-pair reference files")
     ap.add_argument("--pair", default=None, help="pair label for offline export mode")
     ap.add_argument("--lang", default=None, choices=["java", "c_sharp"], help="lang for offline mode")
     args = ap.parse_args()
 
     root_dir = Path(args.root)
-    if args.from_export:
+    if args.from_predictions:
+        args.reference = True
+        n = from_predictions(args, root_dir)
+    elif args.from_export:
         n = from_export(args, root_dir)
     else:
         try:

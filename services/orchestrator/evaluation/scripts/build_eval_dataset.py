@@ -12,9 +12,13 @@ Design (confirmed with the user — "bundle per pair"):
   * They operate over the SAME self-contained 4-entity WideWorldImporters subset the existing
     `tests/fixtures/input-*.txt` use (Customer / CustomerTransaction / Order / OrderLine), so the full
     schema is sent ONCE per prompt — no per-query "minimal entity subset" assembly is needed.
-  * For each (source_framework, target_store) PAIR we build ONE bundled prompt = header + full schema +
-    every chosen query. A **full** variant (~15 queries) and a **small** variant (first 5) are emitted,
-    so a fast small-query gate can run before the full overnight matrix.
+  * For each (source_framework, target_store) PAIR we build bundled prompts = header + full schema +
+    the variant's queries. The DEFAULT variants are three 5-query batches (batch1 = Query1-5,
+    batch2 = Query6-10, batch3 = Query11-15 — original numbering kept) covering 15 queries total:
+    the 2026-07-02 traces showed accuracy degrading with the number of queries per prompt, and 5 at
+    a time is the size the pipeline handled reliably. `small` (alias of the first 5) and `full`
+    (all 15 in one prompt) remain available for comparison runs. Query16 (G2 intersect) is dropped —
+    G1 already covers set operations and dropping the LAST query keeps numbering stable.
   * Six pairs: {EFCore, NHibernate, Dapper} x {Spring Data MongoDB, Spring Data Neo4j}. Each example is
     tagged in `metadata` with {pair, variant, source_fw, target_fw} so the runner can filter per pair
     client-side (no splits API) and so "15 iterations" maps to `num_repetitions=15` per pair.
@@ -59,14 +63,25 @@ TARGETS = {
     "neo4j": {"label": "Spring Data Neo4j 8.0.0", "slug": "java_spring_data_neo4j"},
 }
 
-SMALL_N = 5  # the "small" gate variant keeps the first 5 queries
+# Variant -> [start, end) slice of the 15-query workload. The batches are the experiment default
+# (5 queries per prompt — the size the pipeline translates reliably); "small" is the legacy fast
+# gate (same content as batch1); "full" bundles all 15 into one prompt for comparison. Query16
+# (G2 intersect) is deliberately excluded everywhere — see the module docstring.
+VARIANT_SLICES: dict[str, tuple[int, int]] = {
+    "small": (0, 5),
+    "batch1": (0, 5),
+    "batch2": (5, 10),
+    "batch3": (10, 15),
+    "full": (0, 15),
+}
+BATCH_VARIANTS = ["batch1", "batch2", "batch3"]
 
 
 def build_prompt(source: str, target: str, variant: str) -> str:
-    """Assemble one bundled translate-prompt (header + full schema + chosen queries)."""
-    n = SMALL_N if variant == "small" else len(QUERIES[source])
+    """Assemble one bundled translate-prompt (header + full schema + the variant's queries)."""
+    start, end = VARIANT_SLICES[variant]
     header = f"Translate {SOURCES[source]['label']} to {TARGETS[target]['label']}:"
-    queries = "\n\n".join(QUERIES[source][:n])
+    queries = "\n\n".join(QUERIES[source][start:end])
     return f"{header}\n\n{SCHEMAS[source]}\n\n{queries}\n"
 
 
@@ -75,13 +90,16 @@ def iter_examples(sources: list[str], targets: list[str], variants: list[str]):
     for source in sources:
         for target in targets:
             for variant in variants:
+                start, end = VARIANT_SLICES[variant]
                 pair = f"{SOURCES[source]['slug']}->{TARGETS[target]['slug']}"
                 meta = {
                     "pair": pair,
                     "variant": variant,
                     "source_fw": SOURCES[source]["slug"],
                     "target_fw": TARGETS[target]["slug"],
-                    "n_queries": SMALL_N if variant == "small" else len(QUERIES[source]),
+                    "n_queries": end - start,
+                    # Original benchmark numbering (Query6 stays "Query6" inside batch2).
+                    "query_ids": list(range(start + 1, end + 1)),
                 }
                 yield meta, build_prompt(source, target, variant)
 
@@ -96,7 +114,8 @@ def main() -> None:
     )
     ap.add_argument("--frameworks", nargs="+", default=list(SOURCES), choices=list(SOURCES))
     ap.add_argument("--targets", nargs="+", default=list(TARGETS), choices=list(TARGETS))
-    ap.add_argument("--variants", nargs="+", default=["small", "full"], choices=["small", "full"])
+    ap.add_argument("--variants", nargs="+", default=BATCH_VARIANTS,
+                    choices=list(VARIANT_SLICES))
     ap.add_argument("--dry-run", action="store_true",
                     help="print prompts + sizes; do NOT touch LangSmith")
     ap.add_argument("--env", default="../.env", help="path to .env with LANGSMITH_* keys")

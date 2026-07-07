@@ -202,18 +202,26 @@ make eval_sweep
   saved fixtures (no secret on disk). Override the base dir with `AIMOCK_ROOT=…` (make) or
   `--aimock-root` (script). eval_mode's per-run cache-bust header keeps every prompt distinct, so
   aimock's in-memory replay cache never short-circuits a recording.
-- **Reference-free judges (graded against the SOURCE):** `code_correctness`, `conciseness`,
-  `hallucination` (source as `context`), and custom `translation_equivalence`. No gold reference exists;
-  for reference-based CodeBLEU use the frozen pair reference (`extract_predictions.py --reference` +
-  `score_predictions.py`). No first-accepted-as-reference judge — incoherent across *different* queries.
-- **Judge model:** e-INFRA (no proprietary keys). Default **`einfra/gemma4`** (non-thinking, 32k out).
-  The old `llama-4-scout` default is actually `redhatai-scout` capped at `max_tokens: 50` → it
-  TRUNCATED every verdict; thinking models (deepseek-v4-pro-thinking / gpt-oss / qwen-coder) HANG the
-  structured-output path on long grading prompts — avoid both as judges. openevals' own scorer also
-  hangs, so we keep openevals' **prompts** but call ourselves (`with_structured_output` →
-  JSON-fallback → graceful `None`, per-judge timeout) with `score` declared before `reasoning`.
-  **Spot-check a couple of judge comments on the first real run** to confirm discrimination on real
-  (long) translations — `--dry-run` only proves the call path against a stub.
+- **Reference-free, SCAFFOLD-AWARE, GRADED judges (against the SOURCE):** `code_correctness`,
+  `conciseness`, `faithfulness` (replaces the old inverted-polarity `hallucination`), and
+  `translation_equivalence`. Each returns a **fraction in [0,1]** = the proportion of the translation
+  satisfying the criterion — NOT a boolean. Why: the target the judge grades is instrumented (each
+  query wrapped in a `count`/`firstSample`/`lastSample` probe harness + boilerplate) and bundles up to
+  15 queries; the old boolean prompts read the probe wrapper as "invented" AND failed the whole bundle
+  on any single flaw, so they rejected 100% of runs (verified). The graded, look-through-the-harness
+  prompts TRACK the deterministic per-query accuracy (a 13/15 run scores ~0.8, not 0). Verified live
+  against execution-equivalence: not-always-reject ✓, discriminates good/bad ✓. Also optional
+  CodeBLEU-in-run (`codebleu_schema`/`_queries`/`codebleu`) rides the same run when a reference exists.
+- **CodeBLEU** stays available as the post-hoc structural signal too (`extract_predictions.py
+  --reference` / `--from-predictions` + `score_predictions.py`). No first-accepted-as-reference judge.
+- **Judge model:** e-INFRA (no proprietary keys). Verified tradeoff (both live-tested on the 35KB
+  harness prompts): **`einfra/gemma4`** (non-thinking) is perfectly reliable (0 `None`) and separates a
+  real translation from an empty one, but is coarser (missed a subtle single-query corruption);
+  **`einfra/kimi-k2.7`** (thinking) discriminates finer (catches the corruption) but its
+  structured-output path is slow → some `None` under concurrency (graceful; aggregate skips None). Pick
+  via `--judge-model`. The call is ours (`with_structured_output` → JSON-fallback → graceful `None`,
+  per-judge timeout, `score` before `reasoning`); `--dry-run` proves only the call path, so trust the
+  live judge-vs-equivalence agreement in `aggregate_results.py` over a stub spot-check.
 
 ### Run full experiment
 `make eval_full_experiment` runs the preflight-gated **small gate then full matrix**, exports
@@ -226,6 +234,39 @@ systemd timer, e.g.:
 echo 'cd /…/services/orchestrator && make eval_full_experiment' | at 01:00
 # or a systemd-timer / cron entry calling the same `make eval_full_experiment`.
 ```
+
+## 6b. `aggregate_results.py` + `plot_results.py` — cross-batch results, pass@k, charts
+
+LangSmith's UI shows ONE experiment at a time; when the 15-query workload runs as three 5-query
+batches (`eval_full`), each pair is 3 separate experiments and the UI never shows the pair's
+aggregate. Export the experiment CSVs (one dir, per-pair subdirs OR flat) and stitch them:
+
+```bash
+# per-pair + overall table, pass@1/2/3 (Chen et al. unbiased), judge-vs-equivalence agreement:
+uv run --project evaluation python evaluation/scripts/aggregate_results.py \
+    --root evaluation/traces/<date> --out evaluation/out/agg-<date>
+# matplotlib figures (pass@k, funnel, per-query acc/prec/recall, judge-vs-truth, latency, overview):
+uv run --project evaluation python evaluation/scripts/plot_results.py \
+    --root evaluation/traces/<date> --out evaluation/out/charts-<date>
+```
+
+Everything is built on the corrected **`passed`** metric (compiled/ran AND every demanded query
+execution-equivalent), NOT the pipeline's inflated `accepted` flag. `pass@k` is reported at the run
+level and, when `query_verdicts` is present, per query. The judge table shows each graded judge's
+mean score on passed vs failed runs + its correlation with `query_accuracy` — the diagnostic that
+exposes an always-reject (no pass/fail separation) or inverted-polarity (negative corr) judge.
+
+## CodeBLEU end-to-end (`make eval_codebleu`)
+
+```bash
+make eval_codebleu   # step 1 bootstraps a frozen per-pair reference OFFLINE from the predictions tree
+                     # (extract_predictions.py --from-predictions; keeps any hand-pinned reference),
+                     # step 2 scores every prediction against it -> evaluation/out/codebleu.csv
+```
+
+`score_predictions.py` is layout-robust (reads the pair off the `__` path component, so the
+`<dataset>/<run_tag>/<pair>/…` tree works). CodeBLEU is a SECONDARY structural signal (schema ≈0.9,
+queries ≈0.4 due to probe-form variance); execution-equivalence pass@k is the headline.
 
 ## 7. `build_eval_dataset.py` — benchmark→dataset harvester (generalization queries)
 

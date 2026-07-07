@@ -38,7 +38,12 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE.parents[1] / "src"))  # services/orchestrator/src
 from aimock_recorder import DEFAULT_UPSTREAM, record_fixtures  # noqa: E402
-from extract_predictions import pair_slug, slug, target_lang, _write_artifacts  # noqa: E402
+from extract_predictions import (  # noqa: E402
+    _write_artifacts,
+    pair_slug,
+    slug,
+    target_lang,
+)
 
 # Fixture name -> path under tests/fixtures. All WideWorldImporters.
 FIXTURE_DIR = _HERE.parents[1] / "tests" / "fixtures"
@@ -65,7 +70,8 @@ def _load_fixture(name_or_path: str) -> str:
 
 def _scrape_equivalence(messages: list) -> dict[str, bool]:
     """Per-query equivalence from the [Query Equivalence Results] message (last one wins) — the same
-    authoritative signal aggregate_traces.py reads from the trace, here read from final state."""
+    authoritative signal aggregate_traces.py reads from the trace, here read from final state.
+    """
     out: dict[str, bool] = {}
     for m in messages:
         content = getattr(m, "content", "") or ""
@@ -168,6 +174,37 @@ async def run_one(
     per_query = _scrape_equivalence(list(st.get("translation_messages", [])) + list(st.get("messages", [])))
     lang, ext = target_lang(dst_s)
 
+    # ---- Per-query metrics (state-first; the scraped equivalence block is only a fallback).
+    # queries_expected comes from the SOURCE input, so a run that never reached the harness
+    # still has the right denominator (it used to collapse to 0/0 and vanish from accuracy).
+    from react_agent.translation_draft import (
+        expected_query_ids_from_source,  # local: optional dep
+    )
+
+    expected_ids = expected_query_ids_from_source(st.get("source_query_code"))
+    diffs = st.get("query_equivalence_deep_diffs") or {}
+    det_equivalent = sum(
+        1 for v in diffs.values() if isinstance(v, dict) and dict(v).get("status") == "Equivalent"
+    ) or sum(1 for v in per_query.values() if v)
+    accepted_ids = list(st.get("accepted_query_ids") or [])
+    fragments = st.get("translation_query_fragments") or {}
+    queries_expected = len(expected_ids)
+    queries_claimed = len(fragments) if fragments else (len(per_query) or None)
+    queries_accepted = len(accepted_ids)
+    compile_pass = (
+        st.get("source_query_validation_results") is not None
+        and st.get("target_query_validation_results") is not None
+    )
+    # ``accepted`` (bool(schema_code or query_code)) only means the pipeline FINALIZED some clean
+    # code — it goes True even when 0 queries were validated (a schema-only degenerate finalize), so
+    # it silently inflates success (the 5-07 efcore-mongo runs: accepted=1 with queries_total=0,
+    # compile_pass=0). ``passed`` is the canonical FUNCTIONAL success used by every downstream metric
+    # (pass@k, charts, table): the harness compiled/ran AND every query the task demanded was
+    # validated equivalent. Strict and defensible; never True on an empty/uncompiled run.
+    passed = bool(
+        compile_pass and queries_expected > 0 and queries_accepted >= queries_expected
+    )
+
     return {
         "approach": approach,
         "single_pass": single_pass,
@@ -181,18 +218,37 @@ async def run_one(
         "wall_clock_s": wall,
         "translation_loops": int(st.get("translation_loop_count", 0) or 0),
         "accepted": bool(schema_code or query_code),
-        "compile_pass": st.get("source_query_validation_results") is not None
-        and st.get("target_query_validation_results") is not None,
+        # Canonical functional success (see above): the headline pass metric for pass@k/charts/table.
+        "passed": passed,
+        "compile_pass": compile_pass,
+        "schema_validated": compile_pass and bool(st.get("target_validation_harness_code") or st.get("target_validation_schema_code")),
         "queries_total": len(per_query),
-        "queries_equivalent": sum(1 for v in per_query.values() if v),
+        "queries_equivalent": det_equivalent,
         "pass_at_1": round(sum(per_query.values()) / len(per_query), 4) if per_query else None,
+        # HEADLINE: per-query translation accuracy over the queries the task DEMANDED.
+        "queries_expected": queries_expected,
+        "queries_claimed": queries_claimed,
+        "queries_accepted": queries_accepted,
+        "query_accuracy": round(queries_accepted / queries_expected, 4) if queries_expected else None,
+        # Precision (of what the system saved, how much passed) / recall (of what was asked).
+        "query_precision": round(queries_accepted / queries_claimed, 4) if queries_claimed else None,
+        "query_recall": round(queries_accepted / queries_expected, 4) if queries_expected else None,
+        "query_verdicts": st.get("query_verdicts") or None,
         "error": error,
         "_schema_code": schema_code,
         "_query_code": query_code,
+        "_target_harness_code": st.get("target_validation_harness_code"),
     }
 
 
 async def main_async(args: argparse.Namespace) -> None:
+    # Force blocking stdout/stderr: the neo4j runs emit very large tool outputs, and an inherited
+    # non-blocking stdio raises BlockingIOError [Errno 11] mid-run on a big print (see run_langsmith_eval).
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            os.set_blocking(_stream.fileno(), True)
+        except (OSError, ValueError, AttributeError):
+            pass
     try:
         from dotenv import load_dotenv
         load_dotenv(args.env)

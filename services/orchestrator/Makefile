@@ -82,9 +82,11 @@ record_experiment:
 # (funnel/latency/pass@1). Each source->target PAIR is a separate LangSmith Experiment. 
 # Needs the LIVE local stack (e-INFRA tunnel, Daytona, WWI DBs) + the eval
 # extra (`uv sync --extra eval`). Knobs: JUDGE_MODEL / REPS / CONCURRENCY / VARIANTS / PAIRS.
-JUDGE_MODEL ?= einfra/kimi-k2.7
+# gemma4 (non-thinking) is the reliable judge default (0 None under concurrency, verified); override
+# with JUDGE_MODEL=einfra/kimi-k2.7 for finer per-query sensitivity at the cost of some None verdicts.
+JUDGE_MODEL ?= einfra/gemma4
 REPS        ?= 10
-CONCURRENCY ?= 2
+CONCURRENCY ?= 4
 EVAL_ENV    ?= .env.dev
 # Record LLM traffic per run into its own dir under AIMOCK_ROOT (mirrors the predictions tree). On by
 # default for the eval runs; set RECORD= to disable.
@@ -93,11 +95,13 @@ AIMOCK_ROOT ?= evaluation/aimock
 RECORD_FLAG := $(if $(RECORD),--record-fixtures --aimock-root $(AIMOCK_ROOT),)
 
 # Build/refresh the bundled per-pair examples in the "UOM Final Experiments" dataset (idempotent).
+# All variants are upserted so every eval_* target has examples: the three 5-query batches
+# (experiment default) plus the small gate and the bundled 15-query stress arm.
 eval_dataset:
-	uv run python evaluation/scripts/build_eval_dataset.py --env $(EVAL_ENV)
+	uv run python evaluation/scripts/build_eval_dataset.py --variants small batch1 batch2 batch3 full --env $(EVAL_ENV)
 
 eval_dataset_dryrun:
-	uv run python evaluation/scripts/build_eval_dataset.py --dry-run
+	uv run python evaluation/scripts/build_eval_dataset.py --variants small batch1 batch2 batch3 full --dry-run
 
 # A/B the judge model on the dataset WITHOUT running the graph (echo target) — verify judge
 # discrimination + parsing before spending pipeline tokens. Override JUDGE_MODEL to compare.
@@ -110,32 +114,49 @@ eval_small:
 		--judge-model $(JUDGE_MODEL) --repetitions $(REPS) --max-concurrency $(CONCURRENCY) \
 		--pred-root evaluation/predictions $(RECORD_FLAG) --env $(EVAL_ENV)
 
-# Full ~15-query matrix across all pairs, default generate-model.
+# The 15-query workload split into three 5-query batches per pair (the experiment default —
+# 5 queries per prompt is the size the pipeline translates reliably).
 eval_full:
+	EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants batch1 batch2 batch3 \
+		--judge-model $(JUDGE_MODEL) --repetitions $(REPS) --max-concurrency $(CONCURRENCY) \
+		--pred-root evaluation/predictions $(RECORD_FLAG) --env $(EVAL_ENV)
+
+# All 15 queries bundled into ONE prompt per pair (the query-count stress arm, for comparison).
+eval_full_bundled:
 	EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants full \
 		--judge-model $(JUDGE_MODEL) --repetitions $(REPS) --max-concurrency $(CONCURRENCY) \
 		--pred-root evaluation/predictions $(RECORD_FLAG) --env $(EVAL_ENV)
 
 # Opt-in 4-model generate_translation_node sweep (qwen3.5 / kimi-k2.7 / glm-5.2 / deepseek-v4-pro-thinking).
 eval_sweep:
-	EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants full --sweep \
+	EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants batch1 batch2 batch3 --sweep \
 		--judge-model $(JUDGE_MODEL) --repetitions $(REPS) --max-concurrency $(CONCURRENCY) \
 		--pred-root evaluation/predictions $(RECORD_FLAG) --env $(EVAL_ENV)
 
-# Staged: preflight-gated small variant FIRST, then the full matrix; both default generate-model.
-# Logs to evaluation/out/full-experiment-<ts>.log. The runner aborts fast if the live stack is unreachable.
+# Staged: preflight-gated small variant FIRST, then the three 5-query batches; both default
+# generate-model. Logs to evaluation/out/full-experiment-<ts>.log. The runner aborts fast if the
+# live stack is unreachable.
 eval_full_experiment:
 	@mkdir -p evaluation/out
 	@ts=$$(date +%Y%m%d-%H%M%S); log=evaluation/out/full-experiment-$$ts.log; \
 		echo "full experiment eval -> $$log"; \
-		EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants full small \
+		EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants full \
 			--judge-model $(JUDGE_MODEL) --repetitions $(REPS) --max-concurrency $(CONCURRENCY) \
 			--pred-root evaluation/predictions $(RECORD_FLAG) --env $(EVAL_ENV) 2>&1 | tee $$log
 
-# Post-hoc CodeBLEU over the predictions the runs wrote (separate eval venv with codebleu pinned).
+# Post-hoc CodeBLEU (structural similarity — SECONDARY to execution-equivalence pass@k) over the
+# predictions the runs wrote, in the eval venv (codebleu + tree-sitter pinned). Step 1 bootstraps a
+# frozen per-pair reference OFFLINE from the predictions tree (no LangSmith; it keeps any reference
+# that already exists, so hand-pin a pair by dropping files under evaluation/reference/<dataset>/
+# <pair>/). Step 2 scores every prediction against that reference -> evaluation/out/codebleu.csv.
 eval_codebleu:
-	uv run --project evaluation python evaluation/scripts/extract_predictions.py --reference --pred-root evaluation/predictions
-	uv run --project evaluation python evaluation/scripts/score_predictions.py --pred-root evaluation/predictions
+	uv run --project evaluation python evaluation/scripts/extract_predictions.py \
+		--from-predictions evaluation/predictions --root evaluation/reference --dataset $(CODEBLEU_DATASET)
+	uv run --project evaluation python evaluation/scripts/score_predictions.py \
+		--pred-root evaluation/predictions --ref-root evaluation/reference \
+		--dataset $(CODEBLEU_DATASET) --out evaluation/out
+
+CODEBLEU_DATASET ?= wwi
 
 init_daytona_snaphosts:
 	./scripts/init_daytona_snapshots.sh
@@ -197,7 +218,8 @@ help:
 	@echo 'eval_dataset                 - build/refresh bundled per-pair examples in the LangSmith dataset'
 	@echo 'eval_judge_check             - A/B the judge model (dry-run echo target, no graph)'
 	@echo 'eval_small                   - fast gate: small (<=5 query) variant, all pairs'
-	@echo 'eval_full                    - full ~15-query matrix, all pairs, default model'
+	@echo 'eval_full                    - 15 queries as three 5-query batches, all pairs, default model'
+	@echo 'eval_full_bundled            - all 15 queries in ONE prompt per pair (stress arm)'
 	@echo 'eval_sweep                   - full matrix + 4-model generate_translation_node sweep'
 	@echo 'eval_overnight               - unattended staged run (small then full), logs to evaluation/out/'
 	@echo 'eval_codebleu                - post-hoc CodeBLEU over the predictions tree'

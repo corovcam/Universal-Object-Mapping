@@ -11,14 +11,17 @@ dataset, with per-example LLM-as-judge feedback scores visible in the LangSmith 
     dev-time artifact and is ignored).
   * Target: compiles and invokes the graph on each example (our_approach or the single_pass
     baseline) and returns the translated code + acceptance/equivalence signals.
-  * Judges (LLM-as-judge, all REFERENCE-FREE, graded against the SOURCE in the input):
-      - code_correctness  : openevals CODE_CORRECTNESS_PROMPT (is the translated code correct?)
-      - conciseness       : openevals CONCISENESS_PROMPT
-      - hallucination     : openevals HALLUCINATION_PROMPT, grounded with the source as ``context``
-                            (did it invent entities/fields not present in the source?)
-      - translation_equivalence : a custom prompt — does the target faithfully preserve the source
-                            schema/query semantics, translating ONLY what appears in the source?
-    We deliberately do NOT use a "first-accepted-as-reference" judge here: that idea is only coherent
+  * Judges (LLM-as-judge, all REFERENCE-FREE, graded against the SOURCE in the input, all
+    SCAFFOLD-AWARE and true=good so charts are uniformly higher-is-better):
+      - code_correctness        : does the underlying translated code correctly implement the
+                                  source's data operations in idiomatic target APIs?
+      - conciseness             : is the underlying logic direct/idiomatic (no gratuitous complexity)?
+      - faithfulness            : no invented/dropped DOMAIN entities/fields/queries (replaces the old
+                                  detection-phrased, inverted-polarity ``hallucination`` judge).
+      - translation_equivalence : does the target preserve the source schema/query semantics?
+    Every prompt tells the judge to look THROUGH the execution-probe harness + boilerplate (the old
+    prompts read that instrumentation as "invented behavior" and rejected 100% of runs — verified in
+    the recorded fixtures). We deliberately do NOT use a "first-accepted-as-reference" judge: coherent
     across runs of the SAME input, whereas these examples are DIFFERENT queries (one query's
     translation is no reference for another's). For reference-based CodeBLEU scoring keep using the
     frozen pair-level reference from ``extract_predictions.py --reference`` / ``score_predictions.py``.
@@ -85,7 +88,12 @@ DATASET_NAME = "UOM Final Experiments"
 # multimodal, fast, and has a full 32k output budget — hence the default. The judge call is still made
 # robust (structured → JSON-fallback → graceful None, per-judge timeout) and the model is a CLI knob,
 # so it can be A/B'd against a non-thinking fallback (e.g. einfra/mistral-medium-3.5) on the live stack.
-DEFAULT_JUDGE_MODEL = "einfra/kimi-k2.7"  # einfra/gemma4 is also good, but deepseek-v4-pro-thinking has more recent knowledge (April 2026)
+# Default judge = gemma4 (non-thinking): live-verified 0 None on the 35KB harness prompts and it cleanly
+# separates a real translation from an empty one. kimi-k2.7 (thinking) discriminates finer (catches a
+# subtle single-query corruption) but its structured-output path is slow → some None under judge
+# concurrency — pass --judge-model einfra/kimi-k2.7 when you want that finer sensitivity. See _judge_call.
+DEFAULT_JUDGE_MODEL = "einfra/gemma4"
+DEFAULT_TRANSLATION_MODEL = "einfra/kimi-k2.7"  # default graph model (non-reasoning, fast, multimodal)
 
 
 # --------------------------------------------------------------------------- inputs/outputs helpers
@@ -113,14 +121,26 @@ def _source_prompt(inputs: dict[str, Any]) -> str:
 
 
 def _translation_text(outputs: dict[str, Any]) -> str:
-    """The target's translated code, combined into one string for the judges to grade."""
+    """The target's translated code, combined into one string for the judges to grade.
+
+    Grading priority: clean finalized code → the VALIDATED target harness (exists whenever the
+    agent saved a draft, even on rejection) → the explanation message. Grading the harness on
+    non-accepted runs is what makes the judge metrics measure translation quality instead of
+    pipeline completion — previously they graded the literal '[Structured Output Error] …' string
+    and returned 0/1 constants.
+    """
     blocks = []
     if outputs.get("translated_schema_code"):
         blocks.append("// --- translated schema ---\n" + outputs["translated_schema_code"])
     if outputs.get("translated_query_code"):
         blocks.append("// --- translated query ---\n" + outputs["translated_query_code"])
+    if not blocks and outputs.get("target_validation_harness_code"):
+        blocks.append(
+            "// --- validated target harness (translation not finalized/accepted) ---\n"
+            + str(outputs["target_validation_harness_code"])
+        )
     if not blocks and outputs.get("explanation_message"):
-        # Nothing accepted; let the judges grade whatever the agent produced/explained.
+        # Nothing produced at all; let the judges grade whatever the agent produced/explained.
         return str(outputs["explanation_message"])
     return "\n\n".join(blocks)
 
@@ -175,14 +195,16 @@ async def _make_target(
     ``<aimock_root>/<dataset>/<run_tag>/<pair>/<gen_model>/<approach>-<uuid8>/recorded/`` — mirroring
     the predictions layout so a run's fixtures and predictions sit in parallel trees and never mingle
     with another run's. eval_mode's per-run cache-bust header keeps every prompt distinct, so aimock's
-    in-memory replay cache never short-circuits a recording."""
+    in-memory replay cache never short-circuits a recording.
+    """
     import uuid as _uuid
 
     from extract_predictions import _write_artifacts, slug
     from run_experiment import run_one
 
     single_pass = approach == "baseline"
-    gen_model_tag = translation_model_override or "default"
+    
+    gen_model_tag = translation_model_override or DEFAULT_TRANSLATION_MODEL  # default graph model (non-reasoning, fast, multimodal)
     pair_tag = _pair_short(pair) if pair else "unknown"
 
     async def target(inputs: dict[str, Any]) -> dict[str, Any]:
@@ -222,14 +244,26 @@ async def _make_target(
             return {
                 "translated_schema_code": r.get("_schema_code"),
                 "translated_query_code": r.get("_query_code"),
+                # Judges grade the validated harness when the run was not accepted (see
+                # _translation_text) — measuring translation quality, not pipeline completion.
+                "target_validation_harness_code": r.get("_target_harness_code"),
                 "explanation_message": None,
                 "accepted": bool(r.get("accepted")),
+                "passed": bool(r.get("passed")),
                 "compile_pass": bool(r.get("compile_pass")),
+                "schema_validated": bool(r.get("schema_validated")),
                 "pass_at_1": r.get("pass_at_1"),
                 "translation_loops": r.get("translation_loops"),
                 "wall_clock_s": r.get("wall_clock_s"),
                 "queries_total": r.get("queries_total"),
                 "queries_equivalent": r.get("queries_equivalent"),
+                "queries_expected": r.get("queries_expected"),
+                "queries_claimed": r.get("queries_claimed"),
+                "queries_accepted": r.get("queries_accepted"),
+                "query_accuracy": r.get("query_accuracy"),
+                "query_precision": r.get("query_precision"),
+                "query_recall": r.get("query_recall"),
+                "query_verdicts": r.get("query_verdicts"),
                 "pair": r.get("pair"),
                 "generate_model": gen_model_tag,
                 "predictions": predictions,
@@ -272,11 +306,30 @@ async def _build_judge_model(model_name: str):
     )
 
 
-# A custom equivalence judge prompt (reference-free, graded against the source). Mirrors the
-# pipeline's own "Translate ONLY what appears in the source" contract.
+# --- Scaffold-aware judges (rewritten 2026-07-06) -------------------------------------------------
+# WHY the previous judges scored ~0 on EVERYTHING (even runs the deterministic execution-equivalence
+# checker passed): the translated output the judge sees is INSTRUMENTED for automated testing — each
+# query is wrapped in a small harness method that returns a Map/dict of execution probes (``count``,
+# ``firstSample``, ``lastSample`` …) and the file carries boilerplate (imports, an entrypoint class,
+# DB/session setup, JSON config). The old prompts' absolutist "NOTHING is invented / no clause absent
+# from the source" rule made the judge read that harness+boilerplate as "invented behavior" and
+# reject uniformly (verified in the recorded fixtures: the judge reasoning literally flagged the
+# count/firstSample/lastSample Map as "invented behavior … significant semantic deviation"). The fix
+# is criteria, not the library: tell every judge the probe wrapper + boilerplate are the EXPECTED test
+# harness to look THROUGH, and grade only the underlying schema/query semantics against the source.
+_SCAFFOLD_NOTE = """The TRANSLATED output is INSTRUMENTED for automated execution-equivalence \
+testing. Treat all of the following as an EXPECTED test harness and IGNORE it when grading — it is \
+NOT part of the translation and is NOT an invention or deviation:
+- each query wrapped in a helper/harness method that returns a Map/dict of probe values such as \
+`count`, `firstSample`, `lastSample`, `rows`, or similar (an execution fingerprint, not a source feature);
+- boilerplate: package/imports/using directives, an entrypoint or `main` class, DB/session/template \
+setup, logging, JSON/serialization configuration, and result-printing.
+Grade ONLY the UNDERLYING data mapping and query logic (entities, fields, types, relationships, and \
+each query's filter / projection / join / ordering / grouping / limit) against the source request."""
+
 TRANSLATION_EQUIVALENCE_PROMPT = """You are an expert grader of database object-mapping/ORM code \
-translations. You are given the SOURCE translation request (containing the source ORM schema and/or \
-query) and the model's TRANSLATED output.
+translations. You are given the SOURCE translation request (source ORM schema and/or queries) and \
+the model's TRANSLATED output (in the target framework).
 
 <source_request>
 {inputs}
@@ -286,31 +339,120 @@ query) and the model's TRANSLATED output.
 {outputs}
 </translated_output>
 
-Grade whether the translated output is SEMANTICALLY EQUIVALENT to the source. Specifically:
-- Every entity, field, type, relationship, and query operation in the SOURCE is faithfully \
-represented in the target's idioms.
-- The query's filter/projection/ordering/grouping/limit semantics are preserved.
-- NOTHING is invented: no entity, field, or query clause that is absent from the source.
-- Target-framework idioms are used correctly (e.g. embedding vs references for the target store).
+""" + _SCAFFOLD_NOTE + """
 
-Return true only if the translation is a faithful, complete, semantically-equivalent rendering of \
-the source with no invented or dropped elements."""
+Score the FRACTION [0,1] of the source's queries (plus the schema mapping) that are rendered in the \
+target with FULL semantic equivalence:
+- every entity/field/type/relationship represented with the correct target idiom (e.g. embedding vs \
+references for the target store);
+- each query's filter, projection, join/traversal, ordering, grouping, and limit semantics preserved \
+(values, comparison operators, and result shape match once the probe wrapper is ignored).
+1.0 = the schema and every query are equivalent. Lower the score IN PROPORTION to how many queries \
+(or the schema) have a genuine semantic difference — a wrong/missing filter, a dropped or invented \
+field, wrong ordering/grouping, wrong relationship direction. Do NOT score 0 because a minority of \
+queries are wrong (e.g. 13 of 15 equivalent ≈ 0.87). Minor idiomatic differences and the test \
+harness itself do not lower the score."""
+
+CODE_CORRECTNESS_PROMPT = """You are an expert grader of database object-mapping/ORM code \
+translations. Given the SOURCE request and the model's TRANSLATED output in the target framework, \
+judge whether the underlying translated code is CORRECT.
+
+<source_request>
+{inputs}
+</source_request>
+
+<translated_output>
+{outputs}
+</translated_output>
+
+""" + _SCAFFOLD_NOTE + """
+
+Score the FRACTION [0,1] of the underlying translated code (schema mapping + each query) that is \
+CORRECT: would compile and execute against the target store and correctly implement the source's \
+data operations using idiomatic target-framework APIs (correct types, correct query builder / \
+criteria / traversal usage, correct field references). 1.0 = the schema and every query are correct; \
+lower the score in proportion to how many have a real defect (wrong API usage that would not \
+compile/run, a query that computes the wrong result). Do NOT score 0 for a minority of bad queries, \
+and do NOT penalise the presence of the test harness."""
+
+FAITHFULNESS_PROMPT = """You are an expert grader checking a database object-mapping/ORM code \
+translation for FAITHFULNESS (no hallucinated or dropped domain content).
+
+<source_request>
+{inputs}
+</source_request>
+
+<translated_output>
+{outputs}
+</translated_output>
+
+""" + _SCAFFOLD_NOTE + """
+
+Score the FRACTION [0,1] of the translation that is FAITHFUL: every entity, field, and query in the \
+source appears in the target, and the target does NOT invent domain entities, fields, filters, or \
+query clauses absent from the source. 1.0 = fully faithful; lower in proportion to how much real \
+DOMAIN content was invented or dropped. The probe wrapper and boilerplate above are NOT inventions — \
+ignore them. Do NOT score 0 for a minor omission/invention (higher score = more faithful)."""
+
+CONCISENESS_PROMPT = """You are grading whether a database object-mapping/ORM code translation is \
+CONCISE in its underlying logic (no gratuitous complexity).
+
+<source_request>
+{inputs}
+</source_request>
+
+<translated_output>
+{outputs}
+</translated_output>
+
+""" + _SCAFFOLD_NOTE + """
+
+Score the FRACTION [0,1] of the underlying schema mapping and queries that are expressed directly \
+and idiomatically, without redundant round-trips, dead code, or needlessly convoluted query \
+construction. 1.0 = uniformly concise; lower in proportion to how much of the UNDERLYING logic is \
+gratuitously complex. The test harness and boilerplate do NOT count against conciseness — ignore \
+them. Do NOT score 0 for one clumsy query (higher score = more concise)."""
 
 
 class JudgeResult(BaseModel):
-    """The structured verdict every judge returns.
+    """The structured verdict every judge returns — a GRADED (continuous) score, not a boolean.
 
-    ``score`` is declared FIRST on purpose: tool-calling/structured output fills fields in schema
-    order, and the e-INFRA judge models tend to write a long ``reasoning`` that gets truncated before
-    a trailing field would be emitted. Score-first means the verdict survives even if reasoning is cut
-    off; ``reasoning`` is optional for the same reason.
+    Why graded, not boolean: these prompts grade a BUNDLE of up to 15 queries + the schema at once. A
+    boolean "is the whole thing perfect?" collapses to false on ANY single imperfect query, so with 15
+    queries it is ~always false even for a strong translation — the exact 'judge always rejects' bug
+    (verified: on a run the deterministic checker passed 13/15, the boolean judge said false, correctly
+    citing 2 bad queries, but threw away the 13 good ones). A fraction in [0,1] = the proportion of the
+    translation that satisfies the criterion instead TRACKS the deterministic per-query accuracy (that
+    run scores ~0.87, not 0) and still discriminates good from bad.
+
+    ``score`` is declared FIRST on purpose: structured output fills fields in schema order and the
+    e-INFRA judge models write a long ``reasoning`` that can truncate before a trailing field; score-
+    first means the verdict survives truncation, and ``reasoning`` is optional for the same reason.
     """
 
-    score: bool = Field(description="true if the judged criterion is satisfied, false otherwise")
+    score: float = Field(
+        description="fraction in [0.0, 1.0] = the proportion of the translation (its queries and "
+        "schema) that satisfies this criterion. 1.0 = fully satisfied; 0.0 = not at all. Do NOT "
+        "return 0 just because a minority of queries have issues — score the proportion that ARE "
+        "correct (e.g. 13 of 15 queries good ≈ 0.87)."
+    )
     reasoning: str = Field(default="", description="brief (<=40 words) justification for the score")
 
 
 _JSON_OBJ_RE = re.compile(r"\{.*\}", re.S)
+
+
+def _clamp01(v: Any) -> float | None:
+    """Coerce a judge score to a float in [0,1]. Accepts a bool (a model that ignored the fraction
+    instruction and answered true/false → 1.0/0.0) or a numeric string; returns None if unparseable
+    so a malformed verdict surfaces as 'no score', never a fake 0.
+    """
+    if isinstance(v, bool):
+        return 1.0 if v else 0.0
+    try:
+        return max(0.0, min(1.0, float(v)))
+    except (TypeError, ValueError):
+        return None
 
 
 def _coalesce_text(content: Any) -> str:
@@ -332,28 +474,41 @@ async def _judge_call(judge, structured, prompt: str, key: str, timeout_s: float
     """Grade one (prompt) with the judge, robustly, and return a LangSmith feedback dict.
 
     Why not openevals' own scorer: ``create_async_llm_as_judge`` drives the judge through a
-    structured-output method that HANGS against the e-INFRA models here (verified). We keep openevals'
-    *prompts* but make the call ourselves: try ``with_structured_output`` first (clean), and on any
-    failure/timeout fall back to a plain invoke + lenient JSON parse. On total failure we return a
-    ``None`` score with the error in the comment, so one flaky judge never stalls the whole experiment
-    (the per-judge ``timeout_s`` guards against the thinking-model long-prompt hang).
-    """
+    structured-output method that HANGS against the e-INFRA thinking models here (verified). We keep
+    our prompts but make the call ourselves: try ``with_structured_output`` first (clean), and on any
+    failure/timeout/unparseable-score fall back to a plain invoke + lenient JSON parse. On total
+    failure we return a ``None`` score (never a fake 0) so one flaky judge never stalls the experiment,
+    and the aggregate simply skips None.
+
+    JUDGE-MODEL NOTE (both verified live on the 35KB harness prompts, tradeoff is real):
+      * kimi-k2.7 (THINKING): more DISCRIMINATING — scores a genuine 13/15 run ~0.81, catches a single
+        corrupted query filter (~0.75), an empty output 0.0 — but its structured-output path is slow
+        and under judge concurrency some calls time out → ``None`` (graceful; the aggregate skips it).
+      * gemma4 (NON-thinking): perfectly RELIABLE (0 None) and cleanly separates a real translation
+        (~0.73) from an empty one (0.0), but COARSER — it missed the single-filter corruption (scored
+        it the same 0.73). Fast, no structured hang. ``--judge-model einfra/gemma4``.
+    Pick by need: gemma4 for clean aggregate correlation with query_accuracy (no None), kimi-k2.7 for
+    finer per-query sensitivity. The per-judge ``timeout_s`` bounds either way."""
     try:
         res = await asyncio.wait_for(structured.ainvoke(prompt), timeout=timeout_s)
-        return {"key": key, "score": bool(res.score), "comment": res.reasoning}
+        if _clamp01(res.score) is not None:
+            return {"key": key, "score": _clamp01(res.score), "comment": res.reasoning}
+        raise ValueError("structured verdict had no parseable score")
     except Exception as primary:
         # Fallback: ask for raw JSON and parse it ourselves (handles models whose structured-output
         # path is unreliable but which answer plain prompts fine).
         try:
             suffix = (
-                '\n\nRespond with ONLY a JSON object, no other text, no markdown, score FIRST: '
-                '{"score": true or false, "reasoning": "<brief, <=40 words>"}'
+                '\n\nRespond with ONLY a JSON object, no other text, no markdown, score FIRST — score '
+                'is a FRACTION in [0,1] = the proportion of the translation satisfying the criterion '
+                '(1.0=fully, 0.0=not at all; do not return 0 for a minority of bad queries): '
+                '{"score": 0.0-1.0, "reasoning": "<brief, <=40 words>"}'
             )
             msg = await asyncio.wait_for(judge.ainvoke(prompt + suffix), timeout=timeout_s)
             m = _JSON_OBJ_RE.search(_coalesce_text(msg.content))
             if m:
                 data = json.loads(m.group(0))
-                return {"key": key, "score": bool(data.get("score")),
+                return {"key": key, "score": _clamp01(data.get("score")),
                         "comment": str(data.get("reasoning", ""))}
             raise ValueError("no JSON object in judge response")
         except Exception as fallback:
@@ -363,53 +518,32 @@ async def _judge_call(judge, structured, prompt: str, key: str, timeout_s: float
 
 
 def _build_evaluators(judge, *, timeout_s: float = 90.0):
-    """Return ASYNC ``aevaluate`` evaluators that grade with openevals' prompts via our own robust
-    call (see :func:`_judge_call`). Per-judge kwargs differ, so each prompt is formatted individually
-    (conciseness/code_correctness/equivalence: inputs+outputs; hallucination also gets
-    context+reference_outputs, grounded on the source)."""
-    from openevals.prompts import (
-        CODE_CORRECTNESS_PROMPT,
-        CONCISENESS_PROMPT,
-        HALLUCINATION_PROMPT,
-    )
-
+    """Return ASYNC ``aevaluate`` evaluators that grade with our SCAFFOLD-AWARE prompts via the robust
+    call (see :func:`_judge_call`). All four are reference-free, graded against the SOURCE, and score
+    true=good (uniform polarity, so charts are 'higher is better' without a special-cased judge). We
+    dropped openevals' generic prompts + the detection-phrased hallucination judge: the generic
+    prompts read the execution-probe harness as 'invented behavior' and rejected everything, and the
+    hallucination judge's polarity was inverted/vacuous on empty outputs. ``faithfulness`` replaces it
+    (true = faithful, no invented/dropped DOMAIN content, ignoring the harness).
+    """
     structured = judge.with_structured_output(JudgeResult)
 
     def _grade(inputs: dict, outputs: dict) -> tuple[str, str]:
         return _source_prompt(inputs), _translation_text(outputs)
 
-    async def code_correctness_evaluator(inputs: dict, outputs: dict) -> dict:
-        src, tgt = _grade(inputs, outputs)
-        return await _judge_call(judge, structured,
-                                 CODE_CORRECTNESS_PROMPT.format(inputs=src, outputs=tgt),
-                                 "code_correctness", timeout_s)
-
-    async def conciseness_evaluator(inputs: dict, outputs: dict) -> dict:
-        src, tgt = _grade(inputs, outputs)
-        return await _judge_call(judge, structured,
-                                 CONCISENESS_PROMPT.format(inputs=src, outputs=tgt),
-                                 "conciseness", timeout_s)
-
-    async def hallucination_evaluator(inputs: dict, outputs: dict) -> dict:
-        # Ground hallucination detection on the SOURCE: anything in the target not derivable from the
-        # source request is an invention. No gold reference exists, so reference_outputs is empty.
-        src, tgt = _grade(inputs, outputs)
-        return await _judge_call(
-            judge, structured,
-            HALLUCINATION_PROMPT.format(inputs=src, outputs=tgt, context=src, reference_outputs=""),
-            "hallucination", timeout_s)
-
-    async def translation_equivalence_evaluator(inputs: dict, outputs: dict) -> dict:
-        src, tgt = _grade(inputs, outputs)
-        return await _judge_call(judge, structured,
-                                 TRANSLATION_EQUIVALENCE_PROMPT.format(inputs=src, outputs=tgt),
-                                 "translation_equivalence", timeout_s)
+    def _make(key: str, prompt: str):
+        async def _ev(inputs: dict, outputs: dict) -> dict:
+            src, tgt = _grade(inputs, outputs)
+            return await _judge_call(judge, structured, prompt.format(inputs=src, outputs=tgt),
+                                     key, timeout_s)
+        _ev.__name__ = f"{key}_evaluator"
+        return _ev
 
     return [
-        code_correctness_evaluator,
-        conciseness_evaluator,
-        hallucination_evaluator,
-        translation_equivalence_evaluator,
+        _make("code_correctness", CODE_CORRECTNESS_PROMPT),
+        _make("conciseness", CONCISENESS_PROMPT),
+        _make("faithfulness", FAITHFULNESS_PROMPT),
+        _make("translation_equivalence", TRANSLATION_EQUIVALENCE_PROMPT),
     ]
 
 
@@ -419,10 +553,15 @@ def _build_deterministic_evaluators() -> list:
     LangSmith feedback scores. They make ZERO model calls — they just read fields the single graph
     run already produced (``outputs``), so the funnel/latency/pass@1 metrics ride the SAME run as the
     LLM judges (the 'don't run the pipeline twice' unification). Booleans map to 1.0/0.0; ``None``
-    (metric unavailable, e.g. an errored run) is surfaced as a ``None`` score, not a fake 0."""
+    (metric unavailable, e.g. an errored run) is surfaced as a ``None`` score, not a fake 0.
+    """
     keys = [
-        "accepted", "compile_pass", "pass_at_1",
+        "accepted", "passed", "compile_pass", "schema_validated", "pass_at_1",
         "translation_loops", "wall_clock_s", "queries_equivalent", "queries_total",
+        # Per-query headline metrics: accuracy over the queries the task DEMANDED, plus
+        # precision (over what the system saved) and recall (over what was asked).
+        "queries_expected", "queries_claimed", "queries_accepted",
+        "query_accuracy", "query_precision", "query_recall",
     ]
 
     def _make(key: str):
@@ -437,12 +576,74 @@ def _build_deterministic_evaluators() -> list:
     return [_make(k) for k in keys]
 
 
+def _build_codebleu_evaluator(dataset: str, ref_root: str) -> list:
+    """Optional NON-LLM CodeBLEU evaluator that rides the SAME run (no extra pipeline execution),
+    scoring the run's finalized code against the frozen per-pair reference under ``ref_root`` and
+    surfacing ``codebleu_schema`` / ``codebleu_queries`` / ``codebleu`` as LangSmith feedback — so
+    CodeBLEU sits next to the other deterministic metrics instead of only in the post-hoc pass.
+
+    Graceful & self-disabling: returns ``[]`` when codebleu isn't importable in this venv (it lives in
+    the eval extra) OR when the reference tree is missing, so the default orchestrator-venv run never
+    breaks. When on but a given pair has no reference yet (first run, pre-bootstrap), it scores
+    ``None`` for that run. CodeBLEU is SECONDARY — structural similarity, not correctness (it penalises
+    equivalent-but-restructured code); the headline remains execution-equivalence pass@k.
+    """
+    try:
+        from codebleu import (
+            calc_codebleu,  # type: ignore[import-not-found]  # noqa: F401
+        )
+    except ImportError:
+        return []
+    if not Path(ref_root).exists():
+        return []
+
+    from extract_predictions import pair_slug, target_lang
+    from score_predictions import _codebleu
+
+    def _ref_texts(outputs: dict) -> tuple[str | None, str | None, str] | None:
+        pair = outputs.get("pair") or ""
+        src, _, dst = pair.partition(" -> ")
+        if not src or not dst:
+            return None
+        lang, ext = target_lang(dst)
+        base = Path(ref_root) / dataset / pair_slug(src, dst)
+        sref = base / f"schema.{ext}"
+        qref = base / f"queries.{ext}"
+        return (sref.read_text(encoding="utf-8") if sref.exists() else None,
+                qref.read_text(encoding="utf-8") if qref.exists() else None, lang)
+
+    def _score(outputs: dict, artifact: str) -> float | None:
+        refs = _ref_texts(outputs)
+        if not refs:
+            return None
+        sref, qref, lang = refs
+        ref = sref if artifact == "schema" else qref
+        hyp = outputs.get("translated_schema_code" if artifact == "schema" else "translated_query_code")
+        if not ref or not hyp:
+            return None
+        cb = _codebleu(ref, str(hyp), lang)
+        return cb["codebleu"] if cb else None
+
+    def codebleu_schema(inputs: dict, outputs: dict) -> dict:
+        return {"key": "codebleu_schema", "score": _score(outputs, "schema")}
+
+    def codebleu_queries(inputs: dict, outputs: dict) -> dict:
+        return {"key": "codebleu_queries", "score": _score(outputs, "queries")}
+
+    def codebleu_mean(inputs: dict, outputs: dict) -> dict:
+        parts = [p for p in (_score(outputs, "schema"), _score(outputs, "queries")) if p is not None]
+        return {"key": "codebleu", "score": round(sum(parts) / len(parts), 4) if parts else None}
+
+    return [codebleu_schema, codebleu_queries, codebleu_mean]
+
+
 # --------------------------------------------------------------------------------------- preflight
 def _preflight() -> list[str]:
     """TCP-liveness check of the live local stack BEFORE submitting any experiment, so a 1am misfire
     fails fast instead of yielding a whole night of errored runs. Dependency-free (stdlib socket): we
     only confirm each host:port accepts a connection (model endpoint, Daytona, MSSQL, MongoDB, Neo4j),
-    parsed from the same env the graph uses. Returns a list of human-readable failures (empty == OK)."""
+    parsed from the same env the graph uses. Returns a list of human-readable failures (empty == OK).
+    """
     import socket
     from urllib.parse import urlparse
 
@@ -492,11 +693,28 @@ def _pair_short(pair: str) -> str:
 
 
 def _model_short(model: str | None) -> str:
-    return (model or "default").rsplit("/", 1)[-1].replace(".", "")
+    return (model or DEFAULT_TRANSLATION_MODEL).rsplit("/", 1)[-1].replace("-", "_").replace(".", "")
 
 
 # --------------------------------------------------------------------------------------------- main
+def _force_blocking_stdio() -> None:
+    """Guard against ``BlockingIOError: [Errno 11] write could not complete without blocking`` killing
+    an experiment mid-run. If this process inherited a NON-blocking stdout/stderr (seen when the eval
+    is launched from certain shells / CI / long-output pipes), a single large ``print`` raises on the
+    write — and because it happens INSIDE ``aevaluate`` it aborts that whole pair's experiment. This is
+    exactly how efcore-neo4j died on the 5-07 run (BlockingIOError in the summary) while the other
+    pairs finished: the neo4j runs emit very large tool outputs (200KB+ sample dumps), so they hit the
+    full pipe buffer first. Forcing the fds back to blocking makes every write complete.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            os.set_blocking(stream.fileno(), True)
+        except (OSError, ValueError, AttributeError):
+            pass  # not a real fd (redirected to a StringIO etc.) — nothing to force
+
+
 async def main_async(args: argparse.Namespace) -> None:
+    _force_blocking_stdio()
     try:
         from dotenv import load_dotenv
         load_dotenv(args.env)
@@ -511,6 +729,11 @@ async def main_async(args: argparse.Namespace) -> None:
         judge = await _build_judge_model(args.judge_model)
         evaluators = _build_evaluators(judge)
     det_evaluators = _build_deterministic_evaluators()
+    if not args.no_codebleu:
+        cb = _build_codebleu_evaluator(args.dataset, args.ref_root)
+        if cb:
+            det_evaluators += cb
+            print(f"  CodeBLEU evaluator ON (reference tree {args.ref_root})")
 
     # ---- dry-run: echo target over the whole dataset, judges only (no graph / Daytona / preflight).
     if args.dry_run:
@@ -543,8 +766,9 @@ async def main_async(args: argparse.Namespace) -> None:
         return getattr(e, "metadata", None) or {}
 
     pairs = args.pairs or sorted({_meta(e).get("pair") for e in all_examples if _meta(e).get("pair")})
-    # small variant first (the fast gate), then full.
-    variants = sorted(set(args.variants), key=lambda v: 0 if v == "small" else 1)
+    # small variant first (the fast gate), then the 5-query batches, then full.
+    _variant_order = {"small": 0, "batch1": 1, "batch2": 2, "batch3": 3, "full": 4}
+    variants = sorted(set(args.variants), key=lambda v: _variant_order.get(v, 9))
     models = SWEEP_MODELS if args.sweep else [(None, None)]
 
     # Per-INVOCATION tag (timestamp): groups this batch's predictions/summary and guarantees a re-run
@@ -574,7 +798,7 @@ async def main_async(args: argparse.Namespace) -> None:
         if not examples:
             print(f"  ({i}/{len(plan)} skip) no examples for {pair} [{variant}]")
             summary.append({"experiment": prefix, "pair": pair, "variant": variant,
-                            "generate_model": gen_model or "default", "status": "skipped-no-examples"})
+                            "generate_model": gen_model or DEFAULT_TRANSLATION_MODEL, "status": "skipped-no-examples"})
             continue
         target = await _make_target(
             args.approach, pred_root=args.pred_root, dataset=args.dataset, run_tag=run_tag,
@@ -585,7 +809,7 @@ async def main_async(args: argparse.Namespace) -> None:
         )
         print(f"\n--- ({i}/{len(plan)}) {prefix}  ({len(examples)} example(s) x {args.repetitions} reps) ---")
         rec = {"experiment": prefix, "pair": pair, "variant": variant,
-               "generate_model": gen_model or "default", "examples": len(examples)}
+               "generate_model": gen_model or DEFAULT_TRANSLATION_MODEL, "examples": len(examples)}
         try:
             await aevaluate(
                 target, data=examples, evaluators=[*evaluators, *det_evaluators],
@@ -593,7 +817,7 @@ async def main_async(args: argparse.Namespace) -> None:
                 num_repetitions=args.repetitions,
                 metadata={
                     "approach": args.approach, "pair": pair, "variant": variant, "run_tag": run_tag,
-                    "generate_model": gen_model or "default", "judge_model": args.judge_model,
+                    "generate_model": gen_model or DEFAULT_TRANSLATION_MODEL, "judge_model": args.judge_model,
                 },
             )
             rec["status"] = "ok"
@@ -630,8 +854,10 @@ def main() -> None:
     )
     ap.add_argument("--approach", default="our_approach", choices=["our_approach", "baseline"],
                     help="full agentic loop vs single_pass baseline")
-    ap.add_argument("--variants", nargs="+", default=["full"], choices=["small", "full"],
-                    help="which bundled query variants to run (small gate runs before full)")
+    ap.add_argument("--variants", nargs="+", default=["batch1", "batch2", "batch3"],
+                    choices=["small", "batch1", "batch2", "batch3", "full"],
+                    help="which bundled query variants to run (default: the three 5-query "
+                         "batches covering all 15 queries; small gate runs first if included)")
     ap.add_argument("--pairs", nargs="*", default=None,
                     help="restrict to these metadata.pair slugs (default: all in the dataset)")
     ap.add_argument("--sweep", action="store_true",
@@ -664,6 +890,11 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true",
                     help="echo target (no graph/Daytona) to validate dataset+judge plumbing")
     ap.add_argument("--no-judges", action="store_true", help="skip LLM judges (deterministic only)")
+    ap.add_argument("--no-codebleu", action="store_true",
+                    help="skip the optional CodeBLEU deterministic evaluator (it self-disables anyway "
+                         "when codebleu isn't installed or the reference tree is missing)")
+    ap.add_argument("--ref-root", default="../reference",
+                    help="frozen per-pair CodeBLEU reference tree for the in-run CodeBLEU evaluator")
     ap.add_argument("--no-preflight", action="store_true", help="skip the live-stack TCP preflight")
     ap.add_argument("--env", default="../.env", help="path to .env with LANGSMITH_*/OPENAI_* keys")
     args = ap.parse_args()

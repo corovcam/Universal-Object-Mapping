@@ -55,7 +55,8 @@ def _codebleu(ref: str, hyp: str, lang: str) -> dict[str, float] | None:
     """Full CodeBLEU breakdown. Returns the aggregate + its 4 components so the data-flow/ngram
     degeneracy is visible: on some inputs CodeBLEU scores even an IDENTICAL file well below 1.0
     (data-flow match degenerates to 0), which is precisely why it is reported as a secondary,
-    structural-similarity signal and never as a correctness measure."""
+    structural-similarity signal and never as a correctness measure.
+    """
     try:
         from codebleu import calc_codebleu  # type: ignore[import-not-found]
     except ImportError:
@@ -88,35 +89,47 @@ def main() -> None:
     if not base.exists():
         raise SystemExit(f"no predictions under {base}")
 
-    for pair_dir in sorted(p for p in base.iterdir() if p.is_dir()):
-        pair = pair_dir.name
+    # Layout-robust discovery: the predictions tree has evolved (older <dataset>/<pair>/<model>/<run>/
+    # and newer <dataset>/<run_tag>/<pair>/<model>/<leaf>/), so we don't assume a fixed depth. Find
+    # EVERY leaf dir that holds a schema/queries artifact and read the PAIR off the path component that
+    # carries the pair slug (the one containing '__', e.g. net-dapper__java-spring-data-mongodb) —
+    # correct regardless of whether a run_tag level is present.
+    def _pair_of(run_dir: Path) -> str | None:
+        for part in run_dir.parts:
+            if "__" in part:
+                return part
+        return None
+
+    run_dirs = sorted({p for p in base.rglob("*")
+                       if p.is_dir() and (any(p.glob("*.java")) or any(p.glob("*.cs")))})
+    for run_dir in run_dirs:
+        pair = _pair_of(run_dir)
+        if not pair:
+            continue
         lang = lang_for_pair(pair)
-        run_dirs = [p for p in pair_dir.rglob("*")
-                    if p.is_dir() and (any(p.glob("*.java")) or any(p.glob("*.cs")))]
-        for run_dir in sorted(run_dirs):
-            for artifact in ARTIFACTS:
-                pred = next(iter(run_dir.glob(f"{artifact}.*")), None)
-                if not pred:
-                    continue
-                ref = find_reference(ref_root, args.dataset, pair, artifact)
-                if not ref:
-                    rows.append({"pair": pair, "model": run_dir.parent.name, "run": run_dir.name,
-                                 "artifact": artifact, "lang": lang, "codebleu": None, "ngram": None,
-                                 "syntax": None, "dataflow": None, "exact": None,
-                                 "token_overlap": None, "note": "no reference"})
-                    continue
-                rt, ht = ref.read_text(encoding="utf-8"), pred.read_text(encoding="utf-8")
-                cb = _codebleu(rt, ht, lang)
-                if cb is None:
-                    codebleu_available = False
+        for artifact in ARTIFACTS:
+            pred = next(iter(run_dir.glob(f"{artifact}.*")), None)
+            if not pred:
+                continue
+            ref = find_reference(ref_root, args.dataset, pair, artifact)
+            if not ref:
                 rows.append({"pair": pair, "model": run_dir.parent.name, "run": run_dir.name,
-                             "artifact": artifact, "lang": lang,
-                             "codebleu": cb["codebleu"] if cb else None,
-                             "ngram": cb["ngram_match_score"] if cb else None,
-                             "syntax": cb["syntax_match_score"] if cb else None,
-                             "dataflow": cb["dataflow_match_score"] if cb else None,
-                             "exact": normalized_exact_match(rt, ht),
-                             "token_overlap": round(token_overlap(rt, ht), 4), "note": ""})
+                             "artifact": artifact, "lang": lang, "codebleu": None, "ngram": None,
+                             "syntax": None, "dataflow": None, "exact": None,
+                             "token_overlap": None, "note": "no reference"})
+                continue
+            rt, ht = ref.read_text(encoding="utf-8"), pred.read_text(encoding="utf-8")
+            cb = _codebleu(rt, ht, lang)
+            if cb is None:
+                codebleu_available = False
+            rows.append({"pair": pair, "model": run_dir.parent.name, "run": run_dir.name,
+                         "artifact": artifact, "lang": lang,
+                         "codebleu": cb["codebleu"] if cb else None,
+                         "ngram": cb["ngram_match_score"] if cb else None,
+                         "syntax": cb["syntax_match_score"] if cb else None,
+                         "dataflow": cb["dataflow_match_score"] if cb else None,
+                         "exact": normalized_exact_match(rt, ht),
+                         "token_overlap": round(token_overlap(rt, ht), 4), "note": ""})
 
     if not rows:
         print("no prediction/reference pairs found")
