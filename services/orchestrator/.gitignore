@@ -170,3 +170,4 @@ misc/
 bin/
 obj/
 tests/**/recorded*/
+evaluation/traces/
