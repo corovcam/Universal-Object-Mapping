@@ -13,6 +13,7 @@ dependencies = [
     "langsmith>=0.8,<0.9",
     "python-dotenv>=1.0",
     "pandas>=2.0",
+    "matplotlib>=3.7",
 ]
 
 [tool.uv.sources]
