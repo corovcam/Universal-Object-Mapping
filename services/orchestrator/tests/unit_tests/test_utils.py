@@ -207,3 +207,45 @@ async def test_get_neo4j_standalone_mapping() -> None:
     people_relationships = mapping["relationships"].get("PEOPLE")
     assert isinstance(people_relationships, list)
     assert any(item.get("sourceTable") == "Orders" for item in people_relationships)
+
+
+def test_bind_tools_with_empty_list_omits_tools_field():
+    """Regression (2026-07-04 traces): `create_agent` with a ProviderStrategy response format
+    calls `model.bind_tools(final_tools, strict=True, **kwargs)` even when the agent has no tools
+    (the LLM-judge evaluate node). The stock classes then put a literal `tools: []` in the
+    payload, which vLLM/e-INFRA rejects with 400 "`tools` must not be an empty array" — every
+    deepseek-v4 judge call failed onto weaker fallbacks. The Safe* subclasses must bind the
+    remaining kwargs and omit `tools` (plus the tools-only kwargs) entirely; non-empty tool
+    lists must bind exactly as before."""
+    from react_agent.utils.utils import SafeChatLiteLLM, SafeChatOpenAI
+
+    def dummy_tool(x: int) -> str:
+        """Do nothing."""
+        return str(x)
+
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "Out",
+            "schema": {
+                "type": "object",
+                "properties": {"decision": {"type": "string"}},
+                "required": ["decision"],
+                "title": "Out",
+            },
+        },
+    }
+
+    openai_model = SafeChatOpenAI(model="m", api_key="x", base_url="http://localhost:1")
+    litellm_model = SafeChatLiteLLM(
+        model="openai/m", api_key="x", openai_api_key="x", api_base="http://localhost:1"
+    )
+    for model in (openai_model, litellm_model):
+        empty = model.bind_tools([], strict=True, response_format=response_format)
+        assert "tools" not in empty.kwargs
+        assert "strict" not in empty.kwargs
+        assert "tool_choice" not in empty.kwargs
+        assert empty.kwargs.get("response_format") is not None
+
+        full = model.bind_tools([dummy_tool], response_format=response_format)
+        assert full.kwargs.get("tools"), "non-empty tools must still be bound"
