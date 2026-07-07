@@ -83,6 +83,32 @@ async def get_skill_overview(framework: FrameworkEnum) -> str:
     return content.strip()
 
 
+async def get_skill_references(framework: FrameworkEnum) -> str:
+    """Return ALL detailed reference files for the framework's skill, concatenated, or "".
+
+    Injected always-on into the translation system prompt alongside the SKILL.md overview.
+    Originally these were behind an on-demand ``read_skill_reference`` tool, but the reference
+    content is not actually optional — every translation needs the exact import/API surface, and
+    the 2026-07-02 traces showed the model compiling against hallucinated APIs without ever
+    pulling the references. ~40-55k chars per target; well within the models' context budget.
+    """
+    skill_dir = _skill_dir(framework)
+    if not skill_dir:
+        return ""
+    refs_dir = os.path.join(skill_dir, "references")
+    sections: list[str] = []
+    for name in _available_references(framework):
+        path = os.path.join(refs_dir, f"{name}.md")
+        try:
+            async with aiofiles.open(path) as f:
+                content = (await f.read()).strip()
+        except OSError as e:
+            logger.warning(f"Could not read skill reference {path}: {e}")
+            continue
+        sections.append(f"### Reference: {name}\n\n{content}")
+    return "\n\n".join(sections)
+
+
 def build_skill_reference_tool(target_framework: FrameworkEnum) -> BaseTool | None:
     """Build the ``read_skill_reference`` tool scoped to the target framework's skill.
 
@@ -134,4 +160,5 @@ __all__ = [
     "FRAMEWORK_TO_SKILL",
     "build_skill_reference_tool",
     "get_skill_overview",
+    "get_skill_references",
 ]

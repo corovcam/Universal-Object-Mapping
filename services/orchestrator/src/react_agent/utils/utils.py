@@ -34,6 +34,39 @@ from react_agent.utils.types import FrameworkType
 logger = logging.getLogger(__name__)
 
 
+class _EmptyToolsBindMixin:
+    """Never send `tools: []` to the provider.
+
+    ``create_agent`` with a ``ProviderStrategy`` response format calls
+    ``model.bind_tools(final_tools, strict=True, **kwargs)`` UNCONDITIONALLY — even when the
+    agent has no tools (the LLM-judge evaluate node). ``BaseChatModel.bind_tools`` then puts a
+    literal ``tools: []`` in the request payload, which vLLM/e-INFRA rejects with 400
+    "`tools` must not be an empty array" (2026-07-04 eval run: every deepseek-v4 judge call
+    failed and fell through to weaker fallback models). With no tools there is nothing for
+    ``tool_choice``/``strict``/``parallel_tool_calls`` to apply to, so bind the remaining
+    kwargs (e.g. ``response_format``) and omit the tools field entirely.
+    """
+
+    def bind_tools(self, tools: Any, *args: Any, **kwargs: Any) -> Any:
+        if not tools:
+            for tools_only_kwarg in ("tool_choice", "strict", "parallel_tool_calls"):
+                kwargs.pop(tools_only_kwarg, None)
+            return self.bind(**kwargs)  # type: ignore[attr-defined]
+        return super().bind_tools(tools, *args, **kwargs)  # type: ignore[misc]
+
+
+class SafeChatLiteLLM(_EmptyToolsBindMixin, ChatLiteLLM):
+    """ChatLiteLLM that omits the `tools` field when the tools list is empty."""
+
+
+class SafeChatOpenAI(_EmptyToolsBindMixin, ChatOpenAI):
+    """ChatOpenAI that omits the `tools` field when the tools list is empty."""
+
+
+class SafeChatOllama(_EmptyToolsBindMixin, ChatOllama):
+    """ChatOllama that omits the `tools` field when the tools list is empty."""
+
+
 def get_context_dir() -> str:
     """Retrieve the absolute path to the local context directory.
 
@@ -233,7 +266,7 @@ async def load_chat_model(
             extra_body_kwargs.update({k: v for k, v in extra_body.items() if k != "chat_template_kwargs"})
         
         litellm_api_base = config.get("openai_api_url", "").rstrip("/v1")
-        model_client = ChatLiteLLM(
+        model_client = SafeChatLiteLLM(
             model=f"openai/{model}",
             api_base=litellm_api_base,
             api_key=config.get("openai_api_key"),
@@ -279,7 +312,7 @@ async def load_chat_model(
         if extra_body is not None:
             extra_body_kwargs.get("chat_template_kwargs", {}).update(extra_body)
 
-        model_client = ChatOpenAI(
+        model_client = SafeChatOpenAI(
             model=model,  # type: ignore
             base_url=config.get("openai_api_url"),  # type: ignore
             api_key=config.get("openai_api_key"),  # type: ignore
@@ -314,7 +347,7 @@ async def load_chat_model(
         #             # "transport": async_log_http_transport
         #         },
         #     }
-        model_client = ChatOllama(
+        model_client = SafeChatOllama(
             model=model,
             base_url=config.get("ollama_api_url", "http://localhost:11434"),
             **(
@@ -657,12 +690,18 @@ async def get_extra_body_for_model(model_name: AvailableModel) -> dict[str, Any]
         except Exception:
             pass
     
-    extra_body = {}
+    # Cap the COMPLETION budget well below the context size. Passing max_input_tokens here
+    # (262k/1M) effectively unbounded the thinking channel: kimi-k2.7 was observed spending a
+    # single 211k-char reasoning turn (23 min) and finishing with no tool call at all. 64k is
+    # comfortably above the largest observed useful output (full dual harness save ≈ 12-15k
+    # tokens) while making runaway rumination terminate.
+    _COMPLETION_TOKEN_CAP = 65536
+
+    extra_body: dict[str, Any] = {}
     if model_name == AvailableModel.EINFRA_GLM_5_2:
-        max_tokens = MODEL_PROFILE_CACHE[model_name.value]["max_input_tokens"] if model_name.value in MODEL_PROFILE_CACHE else 1048576
         extra_body = {
-            "max_tokens": max_tokens,
-            "max_completion_tokens": max_tokens,
+            "max_tokens": _COMPLETION_TOKEN_CAP,
+            "max_completion_tokens": _COMPLETION_TOKEN_CAP,
         }
         extra_body["chat_template_kwargs"] = {
             "cache_salt": base64.b64encode(b"universal-object-mapping-cache-salt").decode(),
@@ -672,10 +711,9 @@ async def get_extra_body_for_model(model_name: AvailableModel) -> dict[str, Any]
             # "reasoning_effort": "high",
         }
     elif model_name == AvailableModel.EINFRA_KIMI_K2_7:
-        max_tokens = MODEL_PROFILE_CACHE[model_name.value]["max_input_tokens"] if model_name.value in MODEL_PROFILE_CACHE else 262144
         extra_body = {
-            "max_tokens": max_tokens,
-            "max_completion_tokens": max_tokens,
+            "max_tokens": _COMPLETION_TOKEN_CAP,
+            "max_completion_tokens": _COMPLETION_TOKEN_CAP,
         }
     return extra_body
 

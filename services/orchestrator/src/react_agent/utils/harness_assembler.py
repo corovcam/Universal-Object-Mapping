@@ -206,4 +206,398 @@ async def assemble_validation_code(
     return assembled, entry_type_name
 
 
-__all__ = ["assemble_validation_code", "SCHEMA_MARKER"]
+# ---------------------------------------------------------------- per-query fragment assembly
+#
+# The fragment contract: the model authors (a) one schema fragment per side and (b) one fragment
+# per query per side, each exposing a fixed harness entry:
+#   C# (all .NET frameworks):  public static class Query{N} { public static object Harness(<ctx>) }
+#   Java Spring Data MongoDB:  final class Query{N} { static Map<String, Object> harness(MongoTemplate template) }
+#   Java Spring Data Neo4j:    final class Query{N} { static Map<String, Object> harness(Neo4jTemplate template, Neo4jClient client) }
+# Everything else — bootstrap, the per-query try/catch protocol, the results JSON write — is
+# generated HERE, deterministically, so the results protocol can never drift with the model.
+
+# C# helper injected alongside the generated entrypoint. `RunQuery` keeps count/first/last
+# server-side for IQueryable providers (EF Core / NHibernate LINQ); `RunRows` materializes for
+# row-sequence providers (Dapper).
+_CS_HARNESS_SUPPORT = """\
+public static class HarnessSupport
+{
+    public static object RunQuery<T>(Func<IQueryable<T>> q, Func<T, object>? orderBySelector = null)
+    {
+        var query = q();
+        var count = query.Count();
+        return new
+        {
+            count,
+            firstSample = count > 0 ? (orderBySelector != null ? q().OrderBy(orderBySelector).FirstOrDefault() : query.FirstOrDefault()) : default,
+            lastSample = count > 1 ? (orderBySelector != null ? q().OrderByDescending(orderBySelector).FirstOrDefault() : query.LastOrDefault()) : default
+        };
+    }
+
+    public static object RunRows<T>(Func<IEnumerable<T>> q, Func<T, object>? orderBySelector = null)
+    {
+        var rows = q().ToList();
+        var count = rows.Count;
+        var ordered = orderBySelector != null ? rows.OrderBy(orderBySelector).ToList() : rows;
+        return new
+        {
+            count,
+            firstSample = count > 0 ? ordered[0] : (object?)null,
+            lastSample = count > 1 ? ordered[count - 1] : (object?)null
+        };
+    }
+}
+"""
+
+_CS_MAIN_TEMPLATE = """\
+public static class {entry_name}
+{{
+{bootstrap}
+        var results = new Dictionary<string, object?>();
+        var harnesses = new (int Id, Func<object> Run)[]
+        {{
+{harness_entries}
+        }};
+
+        foreach (var (qid, run) in harnesses)
+        {{
+            Console.WriteLine($"Running Query {{qid}}...");
+            try
+            {{
+                results[$"query{{qid}}"] = run();
+                Console.WriteLine($"Successfully ran Query {{qid}}");
+            }}
+            catch (Exception ex)
+            {{
+                results[$"query{{qid}}"] = new {{ error = ex.Message }};
+                Console.Error.WriteLine($"Error occurred while running Query{{qid}}: {{ex}}");
+            }}
+        }}
+        System.IO.File.WriteAllText($"{{System.Environment.GetEnvironmentVariable("{results_env}")}}/{results_prefix}_{{DateTime.Now:yyyyMMdd_HHmmss}}.json", CustomJsonSerializer.Serialize(results));
+    }}
+}}
+"""
+
+_CS_BOOTSTRAPS: dict[FrameworkEnum, tuple[str, str]] = {
+    # (bootstrap code opening Main and creating the context variable, context variable name)
+    FrameworkEnum.DOTNET_EFCORE: (
+        """\
+    public static void Main(string[] args)
+    {
+        using var context = new SandboxDbContext(
+            new DbContextOptionsBuilder<SandboxDbContext>()
+                .UseSqlServer(
+                    args.ElementAtOrDefault(0) ?? System.Environment.GetEnvironmentVariable("CONNECTION_STRING")
+                        ?? "Server=localhost,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True"
+                )
+                .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
+                .EnableSensitiveDataLogging()
+                .LogTo(Console.WriteLine, [DbLoggerCategory.Database.Command.Name], minimumLevel: LogLevel.Information, options: DbContextLoggerOptions.SingleLine).Options
+        );
+""",
+        "context",
+    ),
+    FrameworkEnum.DOTNET_DAPPER: (
+        """\
+    public static void Main(string[] args)
+    {
+        string connectionString = args.ElementAtOrDefault(0)
+            ?? System.Environment.GetEnvironmentVariable("CONNECTION_STRING")
+            ?? "Server=localhost,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True";
+        using var conn = new SqlConnection(connectionString);
+        conn.Open();
+""",
+        "conn",
+    ),
+    FrameworkEnum.DOTNET_NHIBERNATE: (
+        """\
+    public static void Main(string[] args)
+    {
+        string connectionString = args.ElementAtOrDefault(0)
+            ?? System.Environment.GetEnvironmentVariable("CONNECTION_STRING")
+            ?? "Server=localhost,1333;Database=WideWorldImporters;User Id=sa;Password=Testingorms123;TrustServerCertificate=True";
+
+        var configuration = new Configuration()
+            .DataBaseIntegration(db =>
+            {
+                db.ConnectionString = connectionString;
+                db.Dialect<MsSql2012Dialect>();
+                db.Driver<MicrosoftDataSqlClientDriver>();
+                db.LogSqlInConsole = true;
+            });
+
+        var mapper = new ModelMapper();
+        var mappingTypes = typeof(HarnessSupport).Assembly.GetExportedTypes()
+            .Where(t => !t.IsAbstract && !t.IsInterface && t.Name.EndsWith("Map"))
+            .ToList();
+        mapper.AddMappings(mappingTypes);
+        configuration.AddMapping(mapper.CompileMappingForAllExplicitlyAddedEntities());
+
+        using var sessionFactory = configuration.BuildSessionFactory();
+        using var session = sessionFactory.OpenSession();
+""",
+        "session",
+    ),
+}
+
+_CS_RESULTS: dict[FrameworkEnum, tuple[str, str]] = {
+    FrameworkEnum.DOTNET_EFCORE: ("EFCORE_RESULTS_PATH", "efcore_results"),
+    FrameworkEnum.DOTNET_DAPPER: ("DAPPER_RESULTS_PATH", "dapper_results"),
+    FrameworkEnum.DOTNET_NHIBERNATE: ("NHIBERNATE_RESULTS_PATH", "nhibernate_results"),
+}
+
+_JAVA_MAIN_TEMPLATE = """\
+public class {entry_name} {{
+
+    // java.util.function.Supplier is fully qualified: the model-authored schema fragment may
+    // declare an entity named `Supplier` in this same file, which would otherwise shadow it
+    // ("type uom.services.Supplier does not take parameters" + every lambda failing).
+    record HarnessCase(int id, java.util.function.Supplier<Map<String, Object>> run) {{}}
+
+    public static void main(String[] args) throws Exception {{
+{bootstrap}
+        var results = new LinkedHashMap<String, Object>();
+        List<HarnessCase> harnesses = List.of(
+{harness_entries}
+        );
+
+        for (var h : harnesses) {{
+            System.out.println("Executing query" + h.id() + "...");
+            try {{
+                // h.run() is the record ACCESSOR (returns the Supplier); .get() executes it.
+                // Storing h.run() serialized the lambda as {{}} and every query "returned" null.
+                results.put("query" + h.id(), h.run().get());
+                System.out.println("Successfully executed query" + h.id());
+            }} catch (Exception e) {{
+                System.err.println("Error occurred while executing query" + h.id());
+                e.printStackTrace();
+                results.put("query" + h.id(), Map.of("error", e.toString()));
+            }}
+        }}
+        QueryRuntimeSupport.createJsonMapper().writeValue(new java.io.File(System.getenv("{results_env}") + "/{results_prefix}_" + System.currentTimeMillis() + ".json"), results);
+{closing}
+    }}
+}}
+"""
+
+_JAVA_CONFIG: dict[FrameworkEnum, dict[str, str]] = {
+    FrameworkEnum.JAVA_SPRING_DATA_MONGODB: {
+        "bootstrap": """\
+        var mongoUri = args.length > 0 ? args[0] : QueryRuntimeSupport.defaultMongoUri();
+        var mongoDatabase = args.length > 1 ? args[1] : QueryRuntimeSupport.defaultMongoDatabase();
+        QueryRuntimeSupport.configureLogger();
+        var template = MongoTemplateFactory.create(mongoUri, mongoDatabase);
+""",
+        "harness_call": "() -> Query{qid}.harness(template)",
+        "results_env": "MONGO_RESULTS_PATH",
+        "results_prefix": "mongo_results",
+        "closing": "",
+    },
+    FrameworkEnum.JAVA_SPRING_DATA_NEO4J: {
+        "bootstrap": """\
+        String uri = args.length > 0 ? args[0] : QueryRuntimeSupport.getNeo4jUri();
+        String user = args.length > 1 ? args[1] : QueryRuntimeSupport.getNeo4jUsername();
+        String pass = args.length > 2 ? args[2] : QueryRuntimeSupport.getNeo4jPassword();
+        QueryRuntimeSupport.configureLogger();
+        Driver driver = GraphDatabase.driver(uri, AuthTokens.basic(user, pass));
+        Neo4jTemplate template = Neo4jTemplateFactory.create(driver);
+        Neo4jClient client = Neo4jClient.create(driver);
+""",
+        "harness_call": "() -> Query{qid}.harness(template, client)",
+        "results_env": "NEO4J_RESULTS_PATH",
+        "results_prefix": "neo4j_results",
+        "closing": "        driver.close();",
+    },
+}
+
+# The exact per-side fragment shapes, exposed for tool descriptions / prompts.
+# The 2026-07-04 traces' dominant .NET failure was a naming trap inside the fragment class:
+# a helper method named `Query{N}` collides with the enclosing class (CS0542), and calling
+# `Query{N}(conn)` invokes the CLASS name (CS1955), which then cascades into CS0411 inference
+# failures on RunQuery/RunRows — repeated identically across whole retry loops. Spell the rule
+# out in the signature the model is shown.
+_DOTNET_NAMING_RULE = (
+    " IMPORTANT: inside Query{N}, never name a helper member `Query{N}` and never call "
+    "`Query{N}(...)` — that identifier is the enclosing CLASS (CS0542/CS1955); name helpers "
+    "differently (e.g. `Rows`) and call those. Emit any extra `using` directives your fragment "
+    "needs (they are hoisted into the file header)."
+)
+
+FRAGMENT_SIGNATURES: dict[FrameworkEnum, str] = {
+    FrameworkEnum.DOTNET_EFCORE: (
+        "public static class Query{N} { public static object Harness(SandboxDbContext ctx) "
+        "{ return HarnessSupport.RunQuery(() => /* IQueryable */, x => x.UniqueKey); } } "
+        "(HarnessSupport.RunQuery/RunRows are provided; pass a UNIQUE sort selector when the "
+        "query itself has no deterministic order, or null when it does)" + _DOTNET_NAMING_RULE
+    ),
+    FrameworkEnum.DOTNET_DAPPER: (
+        "public static class Query{N} { public static object Harness(SqlConnection conn) "
+        "{ return HarnessSupport.RunRows(() => /* IEnumerable rows */, x => x.UniqueKey); } } "
+        "(HarnessSupport.RunRows is provided; pass a UNIQUE sort selector when the query itself "
+        "has no deterministic order, or null when it does)" + _DOTNET_NAMING_RULE
+    ),
+    FrameworkEnum.DOTNET_NHIBERNATE: (
+        "public static class Query{N} { public static object Harness(NHibernate.ISession session) "
+        "{ return HarnessSupport.RunQuery(() => /* IQueryable */, x => x.UniqueKey); } } "
+        "(HarnessSupport.RunQuery/RunRows are provided; pass a UNIQUE sort selector when the "
+        "query itself has no deterministic order, or null when it does)" + _DOTNET_NAMING_RULE
+    ),
+    FrameworkEnum.JAVA_SPRING_DATA_MONGODB: (
+        "final class Query{N} { static Map<String, Object> harness(MongoTemplate template) "
+        '{ ... return Map with "count", "firstSample", "lastSample" (+ optional query metadata); } }'
+    ),
+    FrameworkEnum.JAVA_SPRING_DATA_NEO4J: (
+        "final class Query{N} { static Map<String, Object> harness(Neo4jTemplate template, "
+        'Neo4jClient client) { ... return Map with "count", "firstSample", "lastSample" '
+        "(+ optional query metadata); } }"
+    ),
+}
+
+# Schema-fragment guidance per framework (what bootstrap types the schema body must include).
+SCHEMA_FRAGMENT_HINTS: dict[FrameworkEnum, str] = {
+    FrameworkEnum.DOTNET_EFCORE: (
+        "MUST include the `SandboxDbContext` class (DbSet properties for every entity) — the "
+        "generated entrypoint instantiates `new SandboxDbContext(...)`."
+    ),
+    FrameworkEnum.DOTNET_DAPPER: "Plain POCO classes (+ any projection records the queries need).",
+    FrameworkEnum.DOTNET_NHIBERNATE: (
+        "MUST include the `ClassMapping<T>` mapping classes named `<Entity>Map` — the generated "
+        "entrypoint discovers them by the `Map` name suffix via reflection."
+    ),
+    FrameworkEnum.JAVA_SPRING_DATA_MONGODB: (
+        "Entity classes with Spring Data MongoDB annotations (@Document/@Id/@Field) plus any "
+        "projection records the queries need."
+    ),
+    FrameworkEnum.JAVA_SPRING_DATA_NEO4J: (
+        "Entity classes with Spring Data Neo4j annotations (@Node/@Id/@Relationship) plus any "
+        "projection records the queries need."
+    ),
+}
+
+
+def generate_entrypoint_tail(
+    framework: FrameworkEnum, entry_type_name: str, query_ids: tuple[int, ...]
+) -> str:
+    """Generate the deterministic harness-support + entrypoint code for the fragment contract."""
+    if framework in _CS_BOOTSTRAPS:
+        bootstrap, ctx_var = _CS_BOOTSTRAPS[framework]
+        results_env, results_prefix = _CS_RESULTS[framework]
+        entries = "\n".join(
+            f"            ({qid}, () => Query{qid}.Harness({ctx_var}))," for qid in query_ids
+        ).rstrip(",")
+        main = _CS_MAIN_TEMPLATE.format(
+            entry_name=entry_type_name,
+            bootstrap=bootstrap.rstrip("\n"),
+            harness_entries=entries,
+            results_env=results_env,
+            results_prefix=results_prefix,
+        )
+        return _CS_HARNESS_SUPPORT + "\n" + main
+    if framework in _JAVA_CONFIG:
+        cfg = _JAVA_CONFIG[framework]
+        entries = ",\n".join(
+            f"            new HarnessCase({qid}, {cfg['harness_call'].format(qid=qid)})"
+            for qid in query_ids
+        )
+        return _JAVA_MAIN_TEMPLATE.format(
+            entry_name=entry_type_name,
+            bootstrap=cfg["bootstrap"].rstrip("\n"),
+            harness_entries=entries,
+            results_env=cfg["results_env"],
+            results_prefix=cfg["results_prefix"],
+            closing=cfg["closing"],
+        )
+    raise ValueError(f"No entrypoint template for framework {framework.value}")
+
+
+def strip_entrypoint_class(content: str, entry_type_name: str) -> str:
+    """Remove the entrypoint class block from a snippet body (for fragment-mode prompt examples).
+
+    In the fragment contract the entrypoint `main` is GENERATED, so the structure reference shown
+    to the model must not include it — otherwise the model imitates it and redeclares the class.
+    """
+    block = _extract_named_block(content, entry_type_name)
+    return content.replace(block, "").strip() if block else content.strip()
+
+
+def _drop_reserved_classes(body: str, entry_type_name: str) -> str:
+    """Remove model-authored redeclarations of generated classes (entrypoint / HarnessSupport)."""
+    for name in (entry_type_name, "HarnessSupport"):
+        while True:
+            block = _extract_named_block(body, name)
+            if not block:
+                break
+            body = body.replace(block, "")
+    return body
+
+
+async def assemble_query_harness(
+    framework: FrameworkEnum,
+    schema_body: str,
+    query_fragments: dict[int, str],
+) -> tuple[str, str]:
+    """Stitch a runnable query-validation file from per-query fragments (fragment contract).
+
+    Layout: canonical prelude → seam → schema fragment → Query{N} fragments (ascending) →
+    generated HarnessSupport + entrypoint ``main``. Model-authored imports are hoisted into the
+    prelude; redeclared invariant/generated classes are dropped.
+
+    Args:
+        framework: The framework whose canonical snippet supplies the invariant prelude.
+        schema_body: The model-authored schema fragment (entities + mapping/bootstrap types).
+        query_fragments: ``{query_id: fragment}`` per-query harness fragments.
+
+    Returns:
+        tuple[str, str]: ``(assembled_code, entry_type_name)``.
+    """
+    snippet = await get_snippet_content(framework, is_schema=False)
+    content = snippet["content"]
+    entry_type_name = snippet["entry_type_name"]
+    query_ids = tuple(sorted(query_fragments))
+
+    prelude = _build_prelude(content, framework) if content else ""
+    hoisted_all: list[str] = []
+
+    cleaned_schema, hoisted = _strip_model_body(
+        _drop_reserved_classes(schema_body, entry_type_name), framework
+    )
+    hoisted_all.extend(hoisted)
+
+    cleaned_fragments: list[str] = []
+    for qid in query_ids:
+        cleaned, hoisted = _strip_model_body(
+            _drop_reserved_classes(query_fragments[qid], entry_type_name), framework
+        )
+        hoisted_all.extend(hoisted)
+        cleaned_fragments.append(cleaned)
+
+    prelude = _hoist_imports(prelude, framework, hoisted_all)
+    tail = generate_entrypoint_tail(framework, entry_type_name, query_ids)
+
+    parts = [
+        prelude.rstrip(),
+        "",
+        SCHEMA_MARKER,
+        "",
+        cleaned_schema,
+        "",
+        "// --- Query Harness Fragments ---",
+        "",
+        "\n\n".join(cleaned_fragments),
+        "",
+        "// --- Generated Entrypoint (do not edit) ---",
+        "",
+        tail.rstrip(),
+        "",
+    ]
+    return "\n".join(parts), entry_type_name
+
+
+__all__ = [
+    "assemble_validation_code",
+    "assemble_query_harness",
+    "generate_entrypoint_tail",
+    "FRAGMENT_SIGNATURES",
+    "SCHEMA_FRAGMENT_HINTS",
+    "SCHEMA_MARKER",
+]

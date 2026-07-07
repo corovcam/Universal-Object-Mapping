@@ -8,7 +8,7 @@ import json
 import logging
 import re
 from datetime import UTC, datetime
-from typing import Any, Awaitable, Callable, Literal, Union, cast
+from typing import Any, Awaitable, Callable, Literal, Sequence, Union, cast
 
 import logfire
 import orjson
@@ -38,6 +38,7 @@ from langchain_core.messages import (
 from langchain_core.runnables import RunnableConfig
 from langchain_daytona import DaytonaSandbox
 from langgraph.cache.memory import InMemoryCache
+from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolCallRequest
@@ -69,13 +70,13 @@ from react_agent.constants import (
 from react_agent.context import Context
 from react_agent.custom_tools.docs_search import load_docs_mcp_tools
 from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
+from react_agent.custom_tools.draft_validator import build_validate_draft_tool
 from react_agent.custom_tools.java_validator import validate_java_code
 from react_agent.custom_tools.mcp_database import load_mongodb_tools, load_toolbox_tools
 from react_agent.custom_tools.query_validator import (
     check_query_equivalence,
 )
 from react_agent.custom_tools.sandbox_tools import ValidationSandbox
-from react_agent.custom_tools.skill_reference import build_skill_reference_tool
 from react_agent.prompts import (
     SYSTEM_PROMPT_EXTRACTION,
     SYSTEM_PROMPT_FINALIZE,
@@ -91,8 +92,13 @@ from react_agent.state import (
 )
 from react_agent.tools import TOOLS, search
 from react_agent.translation_draft import (
+    TranslationConvergenceMiddleware,
     TranslationDraftMiddleware,
+    build_save_query_tool,
+    build_save_schema_tool,
     build_save_translation_tool,
+    expected_query_ids_from_source,
+    missing_fragment_pieces,
     required_draft_fields,
 )
 from react_agent.utils import (
@@ -105,8 +111,17 @@ from react_agent.utils import (
 from react_agent.utils.deterministic_checks import (
     _latest_validation_outcome,
 )
-from react_agent.utils.harness_assembler import assemble_validation_code
-from react_agent.utils.utils import get_snippet_content, override_pydantic_model_schema
+from react_agent.utils.harness_assembler import (
+    FRAGMENT_SIGNATURES,
+    SCHEMA_FRAGMENT_HINTS,
+    assemble_query_harness,
+    assemble_validation_code,
+)
+from react_agent.utils.utils import (
+    get_message_text,
+    get_snippet_content,
+    override_pydantic_model_schema,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -373,6 +388,10 @@ class ReasoningContentSanitizerMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
         """Flatten list-form reasoning content in the request, then delegate to the handler."""
+        if request.tools is None or len(request.tools) == 0:
+            return await handler(
+                request.override(messages=_sanitize_request_messages(request.messages), tools=None) # type: ignore
+            )
         return await handler(
             request.override(messages=_sanitize_request_messages(request.messages))
         )
@@ -383,6 +402,10 @@ class ReasoningContentSanitizerMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelResponse:
         """Sync counterpart of :meth:`awrap_model_call`."""
+        if request.tools is None or len(request.tools) == 0:
+            return handler(
+                request.override(messages=_sanitize_request_messages(request.messages), tools=None) # type: ignore
+            )
         return handler(
             request.override(messages=_sanitize_request_messages(request.messages))
         )
@@ -650,6 +673,33 @@ def is_input_extracted(state: State | ExtractionOutput) -> bool:
     )
 
 
+# Deterministic keyword → framework inference over the raw user text. Cross-checks (and, on
+# contradiction, overrides) the LLM extraction: qwen3.5 was observed decode-collapsing and then
+# returning null code with HALLUCINATED frameworks ("EFCore→MongoDB" for a Dapper→Neo4j input),
+# which the old flow merged into state and looped on until the recursion limit.
+_FRAMEWORK_KEYWORDS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bdapper\b", re.IGNORECASE), FrameworkEnum.DOTNET_DAPPER.value),
+    (re.compile(r"\b(?:ef ?core|entity\s*framework)\b", re.IGNORECASE), FrameworkEnum.DOTNET_EFCORE.value),
+    (re.compile(r"\bnhibernate\b", re.IGNORECASE), FrameworkEnum.DOTNET_NHIBERNATE.value),
+    (re.compile(r"\bmongo(?:db)?\b", re.IGNORECASE), FrameworkEnum.JAVA_SPRING_DATA_MONGODB.value),
+    (re.compile(r"\bneo4j\b", re.IGNORECASE), FrameworkEnum.JAVA_SPRING_DATA_NEO4J.value),
+]
+
+
+def _infer_frameworks_from_text(text: str) -> tuple[str | None, str | None]:
+    """Infer (source, destination) framework values from the user text, by first mention order."""
+    hits: list[tuple[int, str]] = []
+    for pattern, framework in _FRAMEWORK_KEYWORDS:
+        m = pattern.search(text)
+        if m:
+            hits.append((m.start(), framework))
+    hits.sort()
+    ordered = [fw for _, fw in hits]
+    source = next((fw for fw in ordered if fw in {f.value for f in SourceFramework}), None)
+    destination = next((fw for fw in ordered if fw in {f.value for f in TargetFramework}), None)
+    return source, destination
+
+
 async def extract_input(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ):
@@ -753,7 +803,25 @@ Conversation:
             },
             goto=END,
         )
-    
+
+    # Sanity cross-check against the raw user text (F5): a decode-collapsed model can return a
+    # structurally valid response with hallucinated frameworks and null code. When the text
+    # names the frameworks explicitly, the deterministic inference wins over the LLM's claim.
+    user_text = str(state.messages[-1].content) if state.messages else ""
+    inferred_source, inferred_destination = _infer_frameworks_from_text(user_text)
+    if inferred_source and extraction.source_target.value != inferred_source:
+        logger.warning(
+            "extract_input: overriding hallucinated source_target %r with text-inferred %r",
+            extraction.source_target, inferred_source,
+        )
+        extraction.source_target = FrameworkEnum(inferred_source)
+    if inferred_destination and extraction.destination_target.value != inferred_destination:
+        logger.warning(
+            "extract_input: overriding hallucinated destination_target %r with text-inferred %r",
+            extraction.destination_target, inferred_destination,
+        )
+        extraction.destination_target = FrameworkEnum(inferred_destination)
+
     # Verification gate: ensure the extracted output contains the absolute minimum requirements
     # (framework targets and source code) to actually perform a translation.
     if is_input_extracted(extraction):
@@ -780,12 +848,22 @@ Conversation:
             )
         msg = [*response["messages"], AIMessage(content="Extraction agent could not extract inputs.")]
     
+    # Merge only NON-NULL extracted fields: a garbage pass (nulled code) must not clobber
+    # previously extracted values, and null merges were what kept the retry loop spinning on
+    # identical inputs.
+    extracted_fields = {
+        k: v
+        for k, v in extraction.model_dump(
+            warnings="error", exclude_unset=True, exclude={"error"}
+        ).items()
+        if v is not None
+    }
     updates = {
         "messages": [
             *msg
         ],
         "extraction_loop_count": state.extraction_loop_count + 1,
-        **extraction.model_dump(warnings="error", exclude_unset=True, exclude={"error"}),
+        **extracted_fields,
     }
     return updates
 
@@ -1082,10 +1160,26 @@ def _distill_translation_feedback(state: State) -> str:
     if state.translation_loop_count <= 0:
         return ""
 
+    diffs = state.query_equivalence_deep_diffs or {}
+    accepted = sorted(set(state.accepted_query_ids or []))
+    failing = sorted(set(diffs.keys()) - set(accepted))
+    fragments = state.translation_query_fragments or {}
+
     parts: list[str] = [
-        "Your previous translation attempt was rejected. Fix the issues below, then call "
-        "save_translation again with every required field filled."
+        "Your previous translation attempt was rejected. Fix the issues below, then save again."
     ]
+
+    # Selective-retry guidance (fragment contract): only the failing queries need new saves —
+    # the previous fragments are pre-loaded into your draft state.
+    if accepted and fragments:
+        parts.append(
+            f"\nALREADY ACCEPTED (kept from the previous attempt — do NOT re-save): {accepted}."
+        )
+    if failing and fragments:
+        parts.append(
+            f"\nQUERIES TO FIX (re-save each with save_query_translation): {failing}."
+        )
+
     if state.explanation_message:
         parts.append(
             f"\nEvaluation / failure detail:\n{_quarantine_control_tokens(state.explanation_message)}"
@@ -1105,14 +1199,116 @@ def _distill_translation_feedback(state: State) -> str:
             + _quarantine_control_tokens("\n---\n".join(reversed(recent_tool_texts)))
         )
 
-    if state.query_equivalence_deep_diffs:
+    # Focus the diffs (and the previous fragment code) on the failing queries only — replaying
+    # all 15 diffs every loop is what blew the retry context up before.
+    focus_diffs = {qid: diffs[qid] for qid in failing} if failing else diffs
+    if focus_diffs:
         parts.append(
             "\nQuery equivalence diffs (source vs target must match):\n"
-            + orjson.dumps(
-                state.query_equivalence_deep_diffs, option=orjson.OPT_INDENT_2
-            ).decode("utf-8")
+            + orjson.dumps(focus_diffs, option=orjson.OPT_INDENT_2).decode("utf-8")
         )
+    for qid in failing:
+        sides = fragments.get(qid.removeprefix("query")) or {}
+        target_frag = sides.get("target")
+        if target_frag:
+            parts.append(
+                f"\nYour previous TARGET fragment for {qid} (revise this):\n```\n"
+                + _truncate(target_frag, 1500)
+                + "\n```"
+            )
     return "\n".join(parts)
+
+
+def _expected_query_ids(state: State) -> tuple[int, ...]:
+    """Extract the query ids the translation must cover from the source query code."""
+    return expected_query_ids_from_source(state.source_query_code)
+
+
+_CSHARP_HINTS = ("{ get; set; }", "IQueryable<", "using var ", "void Main(", "namespace ", "SqlConnection")
+_JAVA_HINTS = ("MongoTemplate", "Neo4jTemplate", "Map<String, Object>", "void main(", "@Document", "@Node", "package ")
+
+
+def _classify_fence_language(code: str) -> str | None:
+    """Best-effort C#-vs-Java classification of a code fence (for content harvesting)."""
+    cs = sum(1 for h in _CSHARP_HINTS if h in code)
+    jv = sum(1 for h in _JAVA_HINTS if h in code)
+    if cs > jv and cs > 0:
+        return "csharp"
+    if jv > cs and jv > 0:
+        return "java"
+    return None
+
+
+def _harvest_bodies_from_messages(messages: Sequence[BaseMessage]) -> dict[str, str]:
+    """Recover monolithic draft bodies from the agent's own final prose (F2 recovery path).
+
+    Observed failure: after a rejection, the agent emits the full corrected harness as plain
+    fenced content instead of calling save_translation — previously the run died with the answer
+    sitting in the last message. Scan the trailing AI messages for code fences and classify the
+    largest C# fence as the source body and the largest Java fence as the target body.
+    """
+    best: dict[str, str] = {}
+    for msg in reversed(list(messages)[-6:]):
+        if not isinstance(msg, AIMessage):
+            continue
+        text = get_message_text(msg)
+        for fence in _extract_code_fences(text):
+            lang = _classify_fence_language(fence)
+            if lang == "csharp" and len(fence) > len(best.get("source_validation_body", "")):
+                best["source_validation_body"] = fence.strip()
+            elif lang == "java" and len(fence) > len(best.get("target_validation_body", "")):
+                best["target_validation_body"] = fence.strip()
+    # Only trust substantial fences — a 200-char snippet is not a harness body.
+    return {k: v for k, v in best.items() if len(v) > 800}
+
+
+async def _forced_tool_call(
+    model: Any, tool_: Any, messages: list[BaseMessage], tool_name: str
+) -> dict[str, Any] | None:
+    """Force one tool call, robust to the e-INFRA sglang `tool_choice` lottery.
+
+    The previous implementation used `tool_choice="any"`, which some sglang replicas reject with a
+    400 (`Input should be 'auto', 'required' or 'none'`) — the error was swallowed and the whole
+    run died. Try the OpenAI-standard "required" (twice: the failure is per-replica roulette),
+    then fall back to "auto" plus an explicit instruction.
+    """
+    for attempt, tool_choice in enumerate(("required", "required", "auto")):
+        try:
+            if tool_choice == "auto":
+                bound = model.bind_tools([tool_])
+                msgs = [
+                    *messages,
+                    HumanMessage(
+                        content=(
+                            f"You MUST call the `{tool_name}` tool now with the completed "
+                            "arguments. Do not answer in prose."
+                        )
+                    ),
+                ]
+            else:
+                bound = model.bind_tools([tool_], tool_choice=tool_choice)
+                msgs = messages
+            resp = await bound.ainvoke(msgs)
+            invalid = getattr(resp, "invalid_tool_calls", None) or []
+            if invalid:
+                logger.warning(
+                    "_forced_tool_call(%s): attempt %d returned %d invalid tool calls",
+                    tool_name, attempt + 1, len(invalid),
+                )
+            for call in getattr(resp, "tool_calls", None) or []:
+                if call.get("name") == tool_name and call.get("args"):
+                    return call["args"]
+            logger.warning(
+                "_forced_tool_call(%s): attempt %d (tool_choice=%s) returned no matching tool call",
+                tool_name, attempt + 1, tool_choice,
+            )
+        except Exception:
+            logger.warning(
+                "_forced_tool_call(%s): attempt %d (tool_choice=%s) raised",
+                tool_name, attempt + 1, tool_choice,
+                exc_info=True,
+            )
+    return None
 
 
 async def generate_translation_node(
@@ -1169,19 +1365,27 @@ async def generate_translation_node(
 
     message = build_translation_user_message(state)
 
-    save_tool = build_save_translation_tool(translation_type, source_entry, target_entry)
-    # On-demand access to the target framework's skill references (imports/APIs) — the single
-    # highest-leverage defense against hallucinated packages/method overloads that fail the compile.
-    # None when the target has no skill (only the Java/Spring targets do); filtered out below.
-    skill_tool = build_skill_reference_tool(target_fw)
+    # The fragment contract (per-query saves + generated entrypoint) applies to the agentic
+    # .NET→Java query flow. The single-pass baseline and SCHEMA-only translations keep the
+    # monolithic save_translation contract.
+    expected_ids = _expected_query_ids(state)
+    fragment_mode = (
+        not state.single_pass
+        and not is_schema
+        and source_fw.value in {f.value for f in DotnetFramework}
+        and target_fw.value in {f.value for f in JavaFramework}
+    )
 
-    # Research-only tool surface: documentation (MCP) + web search, plus the single state-writing
-    # save tool. Database inspection MCP is deliberately excluded here — the DB schema was already
-    # inspected by `schema_inspection` (carried in `state.schema_context`), and re-exposing those
-    # tools tempts the agent into long inspection loops that exhaust its step budget before it saves.
-    # The validators/sandbox tools are also excluded: validation runs in the proven outer state
-    # machine (parallel dotnet+java → gate → equivalence → eval), which avoids double-validation and
-    # keeps compiler/run output out of the generation context.
+    save_tool = build_save_translation_tool(translation_type, source_entry, target_entry)
+    # The target framework's skill references (imports/APIs) are injected IN FULL into the system
+    # prompt by `build_system_prompt` — they are not optional, and the on-demand
+    # `read_skill_reference` tool they used to sit behind was routinely skipped by the model.
+
+    # Research-only tool surface: documentation (MCP) + web search, plus the state-writing save
+    # tools and (fragment mode) the budgeted in-agent validate_draft preflight. Database
+    # inspection MCP is deliberately excluded here — the DB schema was already inspected by
+    # `schema_inspection` (carried in `state.schema_context`), and re-exposing those tools tempts
+    # the agent into long inspection loops that exhaust its step budget before it saves.
     # Fresh prompt every attempt; on retries append distilled text feedback rather than
     # replaying translation_messages (which carry orphaned tool_calls).
     input_messages: list[BaseMessage] = [HumanMessage(content=message)]
@@ -1200,18 +1404,48 @@ async def generate_translation_node(
         async with (
             load_docs_mcp_tools() as docs_tools,
         ):
-            research_tools = [search, *docs_tools, save_tool]
-            if skill_tool is not None:
-                research_tools.append(skill_tool)
+            if fragment_mode:
+                schema_save_tool = build_save_schema_tool(
+                    SCHEMA_FRAGMENT_HINTS[source_fw], SCHEMA_FRAGMENT_HINTS[target_fw]
+                )
+                query_save_tool = build_save_query_tool(
+                    expected_ids,
+                    FRAGMENT_SIGNATURES[source_fw],
+                    FRAGMENT_SIGNATURES[target_fw],
+                )
+                save_tools: list[Any] = [schema_save_tool, query_save_tool]
+                # The preflight compiles/runs in the real sandboxes, so it needs the OUTER
+                # graph's context/state/config — the inner agent's ToolRuntime has none of them.
+                draft_validate_tool = build_validate_draft_tool(
+                    source_fw,
+                    target_fw,
+                    expected_ids,
+                    graph_state=state,
+                    graph_context=runtime.context,
+                    graph_config=config,
+                    stream_writer=runtime.stream_writer,
+                )
+                if draft_validate_tool is not None:
+                    save_tools.append(draft_validate_tool)
+            else:
+                save_tools = [save_tool]
+            research_tools = [search, *docs_tools, *save_tools]
             agent = create_agent(
                 model,
                 tools=research_tools,
                 system_prompt=system_prompt,
                 store=runtime.store,
                 middleware=[
-                    # Declares TranslationDraftState so the save_translation tool's
+                    # Declares TranslationDraftState so the save tools'
                     # Command(update=...) writes are valid and survive into the agent's state.
                     TranslationDraftMiddleware(),
+                    # Convergence guard: nudges a no-tool-call stop back to the save tools and
+                    # shrinks the tool surface to save-only once the research budget is spent
+                    # (the 2026-07-01 doom-loop / rumination failure modes).
+                    TranslationConvergenceMiddleware(
+                        expected_query_ids=expected_ids,
+                        monolithic=not fragment_mode,
+                    ),
                     SummarizationMiddleware(model, trigger=("fraction", 0.9)),
                     ModelFallbackMiddleware(
                         await get_model(
@@ -1228,99 +1462,237 @@ async def generate_translation_node(
                 ],
             )
 
-            response = await agent.ainvoke(
-                {"messages": input_messages}, {"recursion_limit": 60}
-            )  # type: ignore
+            # Selective retry: pre-seed the agent state with the fragments from the previous
+            # loop so already-correct queries survive and the feedback can say "fix only these".
+            agent_input: dict[str, Any] = {"messages": input_messages}
+            if fragment_mode and state.translation_query_fragments:
+                agent_input["draft_queries"] = state.translation_query_fragments
+            if fragment_mode and state.translation_schema_bodies:
+                agent_input["draft_source_schema"] = state.translation_schema_bodies.get(
+                    "source", ""
+                )
+                agent_input["draft_target_schema"] = state.translation_schema_bodies.get(
+                    "target", ""
+                )
+
+            try:
+                response = await agent.ainvoke(
+                    agent_input, {"recursion_limit": 60}
+                )  # type: ignore
+            except GraphRecursionError:
+                # The inner ReAct loop ran out of steps (2026-07-03 traces: 14/18 runs died
+                # this way and produced NOTHING). Degrade to the forced-completion path below
+                # instead of failing the whole pipeline run: with an empty response every
+                # missing fragment is force-saved by one small direct call each.
+                logger.warning(
+                    "generate_translation_node: inner agent hit its recursion limit; "
+                    "falling back to forced fragment completion."
+                )
+                # Keep the pre-seeded draft channels (fragments accepted/saved in earlier
+                # loops) so the forced path only fills the genuinely missing pieces.
+                response = {k: v for k, v in agent_input.items() if k != "messages"}
 
     updates: dict[str, Any] = {
         "translation_loop_count": state.translation_loop_count + 1,
     }
 
-    # Harvest the draft the agent saved via the single save_translation tool.
-    required = required_draft_fields(translation_type)
-    draft = {f: response.get(f) for f in required if response.get(f)}
-    missing = [f for f in required if not draft.get(f)]
+    forced_model = await get_model(
+        config,
+        runtime,
+        model_name_override=translation_model,
+        temperature=0,
+    )
 
-    if missing:
-        # The research agent ended without a complete save_translation call. With tool_choice="auto"
-        # the model may answer in prose and stop instead of calling the finish tool — increasingly
-        # likely as the translation grows. Force the issue with one direct call that REQUIRES the
-        # save tool. (the model reliably emits a complete, untruncated draft this way; the
-        # failure is the agent's optional-tool finish, not the model's output capacity.)
-        if state.single_pass:
-            logger.info("generate_translation_node: single-pass baseline — one forced save_translation call")
-        else:
-            logger.warning(
-                "generate_translation_node: agent finished without %s; forcing save_translation",
+    if fragment_mode:
+        # ---- Fragment contract: harvest schema + per-query fragments from the agent state.
+        schema_bodies = {
+            "source": response.get("draft_source_schema") or "",
+            "target": response.get("draft_target_schema") or "",
+        }
+        fragments: dict[str, dict[str, str]] = dict(response.get("draft_queries") or {})
+
+        # Forced completion of missing pieces, one small call per piece (F2). Small outputs are
+        # exactly what makes the forced path reliable — the monolithic forced call was the thing
+        # that kept truncating/400-ing.
+        if not schema_bodies["source"] or not schema_bodies["target"]:
+            logger.warning("generate_translation_node: schema fragment missing; forcing save_schema_translation")
+            schema_save_tool = build_save_schema_tool(
+                SCHEMA_FRAGMENT_HINTS[source_fw], SCHEMA_FRAGMENT_HINTS[target_fw]
+            )
+            args = await _forced_tool_call(
+                forced_model, schema_save_tool, [SystemMessage(content=system_prompt), *input_messages],
+                "save_schema_translation",
+            )
+            if args:
+                schema_bodies["source"] = args.get("source_schema_body") or schema_bodies["source"]
+                schema_bodies["target"] = args.get("target_schema_body") or schema_bodies["target"]
+
+        absent_ids = [
+            qid
+            for qid in expected_ids
+            if not (fragments.get(str(qid)) or {}).get("source")
+            or not (fragments.get(str(qid)) or {}).get("target")
+        ]
+        # Cap forced per-query completions: a handful is a recovery, dozens means the agent run
+        # fundamentally failed and the outer retry loop should take over instead.
+        _MAX_FORCED_QUERY_CALLS = 5
+        if absent_ids and len(absent_ids) <= _MAX_FORCED_QUERY_CALLS:
+            query_save_tool = build_save_query_tool(
+                expected_ids, FRAGMENT_SIGNATURES[source_fw], FRAGMENT_SIGNATURES[target_fw]
+            )
+            for qid in absent_ids:
+                logger.warning(
+                    "generate_translation_node: query %d fragment missing; forcing save_query_translation",
+                    qid,
+                )
+                args = await _forced_tool_call(
+                    forced_model,
+                    query_save_tool,
+                    [
+                        SystemMessage(content=system_prompt),
+                        *input_messages,
+                        HumanMessage(
+                            content=(
+                                f"Provide ONLY the fragment for Query{qid} now via "
+                                "save_query_translation (both sides)."
+                            )
+                        ),
+                    ],
+                    "save_query_translation",
+                )
+                if args and args.get("source_query_body") and args.get("target_query_body"):
+                    fragments[str(qid)] = {
+                        "source": args["source_query_body"],
+                        "target": args["target_query_body"],
+                    }
+
+        missing = missing_fragment_pieces(
+            {
+                "draft_source_schema": schema_bodies["source"],
+                "draft_target_schema": schema_bodies["target"],
+                "draft_queries": fragments,
+            },
+            expected_ids,
+        )
+        if missing:
+            logger.error(
+                "generate_translation_node: fragment draft incomplete after forced completion: %s",
                 missing,
             )
-        try:
-            # Use a FRESH model instance (not the one handed to create_agent, which is bound to the
-            # research tools + fallback/summarization middleware) and require the save tool.
-            # This reliably returns a complete draft (~38s) on the real prompt.
-            # For the single-pass BASELINE this is the primary (and only) generation call, so match
-            # the full-loop agent's reasoning mode (line ~1064, reasoning=True) to hold the model
-            # config constant across arms — the ablation then isolates the tools+loop, not reasoning.
-            # In the full-loop FALLBACK case it stays reasoning=False (a fast forced completion).
-            forced_model = await get_model(
-                config,
-                runtime,
-                model_name_override=translation_model,
-                temperature=0,
+            detail = (
+                f"{StructuredOutputRetryMiddleware.ERROR_PREFIX} The translation agent finished "
+                f"without saving: {'; '.join(missing)}. Save the schema fragment and one fragment "
+                "per required query id before finishing."
             )
-            forced = forced_model.bind_tools([save_tool], tool_choice="any")
-            forced_resp = await forced.ainvoke(
-                [SystemMessage(content=system_prompt), *input_messages]
-            )
-            forced_calls = getattr(forced_resp, "tool_calls", None) or []
-            invalid = getattr(forced_resp, "invalid_tool_calls", None) or []
-            logger.warning(
-                "generate_translation_node: forced call returned %d tool_calls, %d invalid",
-                len(forced_calls),
-                len(invalid),
-            )
-            for tc in forced_calls:
-                if tc.get("name") == "save_translation":
-                    args = tc.get("args") or {}
-                    draft = {f: args.get(f) for f in required if args.get(f)}
-                    break
-        except Exception:
-            logger.exception("generate_translation_node: forced save_translation call failed")
+            failure_message = AIMessage(content=detail)
+            updates["messages"] = [failure_message]
+            updates["translation_messages"] = [failure_message]
+            updates["explanation_message"] = detail
+            # Persist whatever WAS saved so the next loop can pre-seed instead of starting over.
+            if any(schema_bodies.values()):
+                updates["translation_schema_bodies"] = schema_bodies
+            if fragments:
+                updates["translation_query_fragments"] = fragments
+            return updates
+
+        source_code, source_entry_name = await assemble_query_harness(
+            source_fw,
+            schema_bodies["source"],
+            {qid: fragments[str(qid)]["source"] for qid in expected_ids},
+        )
+        target_code, target_entry_name = await assemble_query_harness(
+            target_fw,
+            schema_bodies["target"],
+            {qid: fragments[str(qid)]["target"] for qid in expected_ids},
+        )
+        updates["translation_schema_bodies"] = schema_bodies
+        updates["translation_query_fragments"] = fragments
+        saved_summary: dict[str, Any] = {
+            "contract": "per-query fragments",
+            "queries_saved": sorted(int(k) for k in fragments),
+            "source_validation_entry_type_name": source_entry_name,
+            "target_validation_entry_type_name": target_entry_name,
+        }
+    else:
+        # ---- Monolithic contract (single-pass baseline / SCHEMA translations / non-.NET→Java).
+        required = required_draft_fields(translation_type)
+        draft = {f: response.get(f) for f in required if response.get(f)}
         missing = [f for f in required if not draft.get(f)]
 
-    if missing:
-        # The agent finished without persisting every required field. Surface the failure as a
-        # normal assistant message so it renders in chat and `route_post_translation` diverts to
-        # human intervention (it keys on the ERROR_PREFIX marker).
-        logger.error(
-            "generate_translation_node: missing required draft fields after run: %s",
-            missing,
-        )
-        detail = (
-            f"{StructuredOutputRetryMiddleware.ERROR_PREFIX} The translation agent finished without "
-            f"providing the required field(s): {', '.join(missing)}. Call save_translation once "
-            f"with every required field filled before finishing."
-        )
-        failure_message = AIMessage(content=detail)
-        updates["messages"] = [failure_message]
-        updates["translation_messages"] = [failure_message]
-        updates["explanation_message"] = detail
-        return updates
+        if missing and not state.single_pass:
+            # F2 recovery #1 (free): the agent may have emitted the full harness bodies as plain
+            # fenced content instead of calling save_translation — harvest them.
+            harvested = _harvest_bodies_from_messages(response.get("messages") or [])
+            recovered = {f: harvested[f] for f in missing if f in harvested}
+            if recovered:
+                logger.warning(
+                    "generate_translation_node: recovered %s from the agent's final message content",
+                    list(recovered),
+                )
+                draft.update(recovered)
+                missing = [f for f in required if not draft.get(f)]
 
-    # NOTE: generation no longer produces the clean, user-facing translated_schema_code /
-    # translated_query_code. Those are derived post-acceptance by `finalize_translation_node` from
-    # the VALIDATED harness, so the published answer is always a projection of code that compiled,
-    # ran, and passed equivalence (and is stable enough to serve as a CodeBleu baseline).
+        if missing:
+            # F2 recovery #2: one forced save_translation call. `_forced_tool_call` handles the
+            # e-INFRA tool_choice quirks ("any" 400s on some replicas) with fallbacks.
+            if state.single_pass:
+                logger.info("generate_translation_node: single-pass baseline — one forced save_translation call")
+            else:
+                logger.warning(
+                    "generate_translation_node: agent finished without %s; forcing save_translation",
+                    missing,
+                )
+            args = await _forced_tool_call(
+                forced_model,
+                save_tool,
+                [SystemMessage(content=system_prompt), *input_messages],
+                "save_translation",
+            )
+            if args:
+                draft.update({f: args.get(f) for f in required if args.get(f)})
+            missing = [f for f in required if not draft.get(f)]
 
-    # Deterministically assemble the runnable validation code: inject the canonical, byte-stable
-    # prelude (imports + serializer + runtime support + template factory) around the model-authored
-    # body. Entry-type names come from the snippet mapping, not the model.
-    source_code, source_entry_name = await assemble_validation_code(
-        source_fw, draft["source_validation_body"], is_schema=is_schema
-    )
-    target_code, target_entry_name = await assemble_validation_code(
-        target_fw, draft["target_validation_body"], is_schema=is_schema
-    )
+        if missing:
+            # The agent finished without persisting every required field. Surface the failure as a
+            # normal assistant message so it renders in chat and `route_post_translation` diverts to
+            # human intervention (it keys on the ERROR_PREFIX marker).
+            logger.error(
+                "generate_translation_node: missing required draft fields after run: %s",
+                missing,
+            )
+            detail = (
+                f"{StructuredOutputRetryMiddleware.ERROR_PREFIX} The translation agent finished without "
+                f"providing the required field(s): {', '.join(missing)}. Call save_translation once "
+                f"with every required field filled before finishing."
+            )
+            failure_message = AIMessage(content=detail)
+            updates["messages"] = [failure_message]
+            updates["translation_messages"] = [failure_message]
+            updates["explanation_message"] = detail
+            return updates
+
+        # NOTE: generation no longer produces the clean, user-facing translated_schema_code /
+        # translated_query_code. Those are derived post-acceptance by `finalize_translation_node` from
+        # the VALIDATED harness, so the published answer is always a projection of code that compiled,
+        # ran, and passed equivalence (and is stable enough to serve as a CodeBleu baseline).
+
+        # Deterministically assemble the runnable validation code: inject the canonical, byte-stable
+        # prelude (imports + serializer + runtime support + template factory) around the model-authored
+        # body. Entry-type names come from the snippet mapping, not the model.
+        source_code, source_entry_name = await assemble_validation_code(
+            source_fw, draft["source_validation_body"] or "", is_schema=is_schema
+        )
+        target_code, target_entry_name = await assemble_validation_code(
+            target_fw, draft["target_validation_body"] or "", is_schema=is_schema
+        )
+        saved_summary = {
+            "contract": "monolithic bodies",
+            "source_validation_entry_type_name": source_entry_name,
+            "target_validation_entry_type_name": target_entry_name,
+            "source_validation_body_chars": len(draft["source_validation_body"] or ""),
+            "target_validation_body_chars": len(draft["target_validation_body"] or ""),
+        }
+
     if is_schema:
         updates["source_validation_schema_code"] = source_code
         updates["target_validation_schema_code"] = target_code
@@ -1330,12 +1702,6 @@ async def generate_translation_node(
     updates["source_validation_entry_type_name"] = source_entry_name
     updates["target_validation_entry_type_name"] = target_entry_name
 
-    saved_summary = {
-        "source_validation_entry_type_name": source_entry_name,
-        "target_validation_entry_type_name": target_entry_name,
-        "source_validation_body_chars": len(draft["source_validation_body"]),
-        "target_validation_body_chars": len(draft["target_validation_body"]),
-    }
     summary_message = AIMessage(
         content=(
             "Translation generated successfully. Assembled runnable validation harnesses from the "
@@ -1751,18 +2117,43 @@ def route_post_query_validation(
     return "evaluation_node"
 
 
+class QueryVerdict(BaseModel):
+    """Per-query judge verdict for the undecided queries (non-Equivalent statuses).
+
+    Attributes:
+        query_id: The query key exactly as it appears in the equivalence results (e.g. "query7").
+        verdict: "pass" when the translation is semantically acceptable despite the reported
+            diff (e.g. an intended relational→document shape change); "fail" otherwise.
+        reason: One-sentence justification.
+    """
+
+    query_id: str = Field(description='Query key, e.g. "query7".')
+    verdict: Literal["pass", "fail"] = Field(
+        description="pass = acceptable translation despite the diff; fail = must be fixed."
+    )
+    reason: str = Field(description="One-sentence justification.", min_length=1)
+
+
 class EvaluationOutput(BaseModel):
     """Pydantic model representing the LLM evaluation outcome for translation acceptance.
 
     Attributes:
         decision: The logical decision, either ACCEPT to complete the process or REJECT to loop back for correction.
         explanation: Detailed textual reasoning explaining the decision, citing specific equivalence or compiler errors.
+        query_verdicts: Per-query pass/fail calls for every query listed as UNDECIDED in the
+            prompt (empty when there are none, e.g. schema-only translations or compile failures).
     """
 
     decision: Literal["ACCEPT", "REJECT"] = Field(
         description="Decision whether to accept or reject the translation."
     )
     explanation: str = Field(description="Explanation for the decision.", min_length=1)
+    query_verdicts: list[QueryVerdict] = Field(
+        description=(
+            "A verdict for EVERY query listed as UNDECIDED in the prompt. Empty list when no "
+            "queries were listed."
+        ),
+    )
 
 
 async def evaluation_node(
@@ -1787,18 +2178,48 @@ async def evaluation_node(
 
     last_msgs = [str(msg) for msg in state.translation_messages[-4:]]
 
+    # ---- Deterministic per-query pre-pass. The (now trustworthy) equivalence statuses decide
+    # most queries without burning judge tokens; the judge only rules on the undecided ones
+    # (Differences Found — is the shape change acceptable? — and Execution Errors).
+    diffs = state.query_equivalence_deep_diffs or {}
+    previously_accepted = set(state.accepted_query_ids or [])
+    det_pass = {
+        qid
+        for qid, entry in diffs.items()
+        if isinstance(entry, dict) and dict(entry).get("status") == "Equivalent"
+    }
+    undecided = sorted(set(diffs.keys()) - det_pass - previously_accepted)
+
+    undecided_section = ""
+    if undecided:
+        undecided_details = {qid: diffs[qid] for qid in undecided}
+        undecided_section = f"""
+Already accepted deterministically (do NOT re-judge, do NOT mention): {sorted(det_pass | previously_accepted)}.
+
+UNDECIDED queries — give a per-query verdict for EACH of {undecided} in `query_verdicts`:
+- "pass" if the reported difference is an acceptable consequence of the paradigm translation
+  (e.g. intended relational→document/graph shape change) and the target query is semantically
+  faithful to the source.
+- "fail" if the target must be fixed. A target-side execution error is always "fail".
+
+<undecided_query_diffs>
+{orjson.dumps(undecided_details, option=orjson.OPT_INDENT_2).decode("utf-8")}
+</undecided_query_diffs>
+"""
+
     prompt = eval_cache_bust_header(runtime, config) + f"""Evaluate the following validation results for a schema/query translation.
 Based on the validation output and DeepDiff equivalence results, decide if the translation is ACCEPTABLE or if it should be REJECTED and retried.
 
 <validation_results>
 {"\n".join(last_msgs)}
 </validation_results>
-
+{undecided_section}
 Is the translation logically equivalent and syntactically valid? Provide your reasoning and output ACCEPT or REJECT.
 """
     agent = create_agent(
         model,
         response_format=ProviderStrategy(EvaluationOutput, strict=True),
+        tools=None,
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
@@ -1806,7 +2227,6 @@ Is the translation logically equivalent and syntactically valid? Provide your re
                 await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B),
                 await get_model(config, runtime)
             ),
-            ToolRetryMiddleware(),
             # Innermost (last): flatten reasoning list-content so re-sent turns don't 400.
             ReasoningContentSanitizerMiddleware(),
         ],
@@ -1830,7 +2250,42 @@ Is the translation logically equivalent and syntactically valid? Provide your re
     assert state.translation_type is not None and state.destination_target is not None
     output: EvaluationOutput = response["structured_response"]
     messages = cast(list[BaseMessage], response.get("messages"))[:-1] if response and response.get("messages") else []
-    if (output.decision == "ACCEPT"):
+
+    # ---- Combine: deterministic passes + judge passes → accepted set; compute the decision
+    # from the per-query outcome when equivalence data exists (the judge's overall decision is
+    # advisory there); fall back to the judge's decision when it doesn't (compile failures,
+    # schema-only translations).
+    judge_pass = {
+        v.query_id for v in output.query_verdicts if v.verdict == "pass" and v.query_id in diffs
+    }
+    judge_fail_reasons = {
+        v.query_id: v.reason for v in output.query_verdicts if v.verdict == "fail"
+    }
+    accepted = sorted(previously_accepted | det_pass | judge_pass)
+    verdicts: dict[str, str] = {}
+    for qid in diffs.keys():
+        if qid in det_pass:
+            verdicts[qid] = "pass (deterministic: Equivalent)"
+        elif qid in previously_accepted:
+            verdicts[qid] = "pass (accepted in an earlier loop)"
+        elif qid in judge_pass:
+            verdicts[qid] = "pass (judge)"
+        else:
+            verdicts[qid] = f"fail: {judge_fail_reasons.get(qid, 'not passed by the judge')}"
+    failing = sorted(set(diffs.keys()) - set(accepted))
+
+    if diffs:
+        decision = "ACCEPT" if not failing else "REJECT"
+        summary = (
+            f"Per-query outcome: {len(accepted)}/{len(diffs)} accepted"
+            + (f"; failing: {failing}" if failing else "")
+            + f". {output.explanation}"
+        )
+    else:
+        decision = output.decision
+        summary = output.explanation
+
+    if decision == "ACCEPT":
         # The clean, user-facing translated code is produced next by `finalize_translation_node`
         # (derived from the now-validated harness). Here we only surface the judge's verdict; the
         # final code markdown is emitted downstream so it is always a projection of validated code.
@@ -1838,16 +2293,18 @@ Is the translation logically equivalent and syntactically valid? Provide your re
             AIMessage(content=f"""The translation was accepted by automated evaluation. Finalizing the translated code…
 
 Evaluation:
-{output.explanation}
+{summary}
 """)
         ]
     else:
         messages = messages + [
-            AIMessage(content=f"[{output.decision}] {output.explanation}"),
+            AIMessage(content=f"[{decision}] {summary}"),
         ]
-        
+
     return {
-        "explanation_message": output.explanation,
+        "explanation_message": summary,
+        "accepted_query_ids": accepted,
+        "query_verdicts": verdicts or None,
         "messages": messages,
         "translation_messages": messages,
     }
@@ -1911,6 +2368,41 @@ async def finalize_translation_node(
         source_validated = state.source_validation_harness_code or ""
 
     markdown_lang = FRAMEWORK_TO_LANGUAGE_TYPE[state.destination_target].value
+
+    # ---- Deterministic path (fragment contract): the accepted draft already IS the clean code.
+    # The target schema body and the per-query target fragments were validated verbatim inside the
+    # harness, so the final answer is a pure re-arrangement — no LLM, no opportunity to hallucinate
+    # imports/APIs, byte-stable for CodeBLEU. The LLM projection below remains only for the
+    # monolithic contract (baseline arm / schema-only), whose bodies embed protocol code.
+    fragments = state.translation_query_fragments or {}
+    schema_bodies = state.translation_schema_bodies or {}
+    if (
+        translation_type != TranslationType.SCHEMA
+        and fragments
+        and schema_bodies.get("target")
+    ):
+        schema_code = schema_bodies["target"].strip()
+        query_code = "\n\n".join(
+            fragments[k]["target"].strip()
+            for k in sorted(fragments, key=lambda s: int(s))
+            if fragments[k].get("target")
+        )
+        logger.info(
+            "finalize_translation_node: deterministic finalize from %d validated fragments",
+            len(fragments),
+        )
+        updates: dict[str, Any] = {}
+        sections = ["The translation is finalized. Here is the final translated code:\n"]
+        if translation_type == TranslationType.BOTH and schema_code:
+            updates["translated_schema_code"] = schema_code
+            sections.append(f"Translated schema:\n```{markdown_lang}\n{schema_code}\n```\n")
+        if query_code:
+            updates["translated_query_code"] = query_code
+            sections.append(f"Translated query:\n```{markdown_lang}\n{query_code}\n```\n")
+        final_message = AIMessage(content="\n".join(sections))
+        updates["messages"] = [final_message]
+        updates["translation_messages"] = [final_message]
+        return updates
 
     if translation_type == TranslationType.SCHEMA:
         type_specific = "Produce ONLY the clean target entity/model classes. There are no queries to finalize."

@@ -8,7 +8,7 @@ Provides tools for fetching framework documentation from:
 
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any, AsyncGenerator
 
 import httpx
@@ -44,46 +44,50 @@ async def load_docs_mcp_tools() -> AsyncGenerator[list[BaseTool], None]:
         }
 
     tools: list[BaseTool] = []
-    # The context manager MUST yield exactly once on every path — including total failure — or the
-    # caller's `async with` raises "generator didn't yield/stop" and crashes the node. This flag
-    # guarantees a single yield even when the Microsoft Learn session (or any server) is unreachable
-    # from the current environment (e.g. a host-run dev server that can't reach docker-internal MCP
-    # hostnames), in which case we degrade to whatever tools loaded — possibly an empty list.
-    yielded = False
+    # Sessions are entered on an AsyncExitStack so that (a) a failure to open one server degrades
+    # gracefully to whatever tools loaded — possibly an empty list — and (b) teardown failures are
+    # CONTAINED. The 2026-07-02 efcore→neo4j run crashed with
+    # BaseExceptionGroup(GeneratorExit) raised from the streamable-HTTP session's own task group
+    # during `__aexit__` (the remote side had long since idled out after a ~30-minute generation),
+    # taking down an otherwise-finished node. A doc-tools cleanup error must never kill the run.
+    stack = AsyncExitStack()
     try:
         client = MultiServerMCPClient(servers, tool_name_prefix=True)
-        async with client.session("microsoft_learn") as docs_mcp_session:
-            mcp_tools = await load_mcp_tools(docs_mcp_session)
-            tools.extend(mcp_tools)
-            logger.info(
-                "Loaded MCP documentation tools: %s", [tool.name for tool in mcp_tools]
-            )
-            # The Spring Docs MCP server relies on NPX to run a transient Node.js application process.
-            # If the user doesn't have NPX installed or the command fails, we want to catch it gracefully
-            # instead of aborting the agent's graph iteration.
-            try:
-                async with client.session("spring_docs") as spring_docs_session:
-                    spring_tools = await load_mcp_tools(spring_docs_session)
-                    tools.extend(spring_tools)
-                    logger.info(
-                        "Loaded Spring Docs MCP tools: %s",
-                        [tool.name for tool in spring_tools],
-                    )
-                    yield tools
-                    yielded = True
-            except Exception:
-                logger.warning(
-                    "Failed to load Spring Docs MCP tools.",
-                    exc_info=True,
-                )
-                if not yielded:
-                    yield tools
-                    yielded = True
+        docs_mcp_session = await stack.enter_async_context(
+            client.session("microsoft_learn")
+        )
+        mcp_tools = await load_mcp_tools(docs_mcp_session)
+        tools.extend(mcp_tools)
+        logger.info(
+            "Loaded MCP documentation tools: %s", [tool.name for tool in mcp_tools]
+        )
     except Exception:
         logger.warning(
             "Failed to load MCP documentation tools. "
             "Only fallback `search` tool with Tavily will be available.",
             exc_info=True,
         )
-        if not yielded:
-            yield tools
+    else:
+        # The Spring Docs MCP server relies on NPX to run a transient Node.js application process.
+        # If the user doesn't have NPX installed or the command fails, we want to catch it gracefully
+        # instead of aborting the agent's graph iteration.
+        try:
+            spring_docs_session = await stack.enter_async_context(
+                client.session("spring_docs")
+            )
+            spring_tools = await load_mcp_tools(spring_docs_session)
+            tools.extend(spring_tools)
+            logger.info(
+                "Loaded Spring Docs MCP tools: %s",
+                [tool.name for tool in spring_tools],
+            )
+        except Exception:
+            logger.warning("Failed to load Spring Docs MCP tools.", exc_info=True)
+
+    try:
+        yield tools
+    finally:
+        try:
+            await stack.aclose()
+        except BaseException as e:  # noqa: BLE001 — includes BaseExceptionGroup(GeneratorExit)
+            logger.warning("MCP documentation session teardown failed (ignored): %r", e)

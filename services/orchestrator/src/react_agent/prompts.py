@@ -10,9 +10,18 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from react_agent.constants import TranslationType
-from react_agent.custom_tools.skill_reference import get_skill_overview
+from react_agent.constants import SourceFramework, TargetFramework, TranslationType
+from react_agent.custom_tools.skill_reference import (
+    get_skill_overview,
+    get_skill_references,
+)
 from react_agent.state import State
+from react_agent.translation_draft import expected_query_ids_from_source
+from react_agent.utils.harness_assembler import (
+    FRAGMENT_SIGNATURES,
+    SCHEMA_FRAGMENT_HINTS,
+    strip_entrypoint_class,
+)
 from react_agent.utils.utils import get_framework_config_content, get_snippet_content
 
 # -----------------------------------------------------------------------------
@@ -787,18 +796,32 @@ async def build_system_prompt(state: State) -> str:
     is_schema = state.translation_type == TranslationType.SCHEMA
     source_entry = (await get_snippet_content(state.source_target, is_schema=is_schema))["entry_type_name"]
     target_entry = (await get_snippet_content(state.destination_target, is_schema=is_schema))["entry_type_name"]
-    # Hybrid skill delivery: the concise SKILL.md orientation for the TARGET framework is injected
-    # always-on (below); the detailed per-topic reference files are fetched on demand by the agent via
-    # the `read_skill_reference` tool. Empty string when the target has no skill (keeps prompt clean).
+    # Fragment contract (agentic .NET→Java query flow): per-query save tools + generated
+    # entrypoint. Must mirror the condition in `generate_translation_node`.
+    fragment_mode = (
+        not state.single_pass
+        and not is_schema
+        and state.source_target.value in {f.value for f in SourceFramework}
+        and state.destination_target.value in {f.value for f in TargetFramework}
+    )
+    expected_ids = expected_query_ids_from_source(state.source_query_code)
+    id_list = ", ".join(str(i) for i in expected_ids)
+    # The TARGET framework's skill is injected always-on IN FULL: the SKILL.md orientation plus
+    # every detailed reference file. This content is not optional — the exact import/API surface
+    # is needed for every translation, and when it sat behind an on-demand `read_skill_reference`
+    # tool the model routinely skipped it and compiled against hallucinated APIs.
     skill_overview = await get_skill_overview(state.destination_target)
+    skill_references = await get_skill_references(state.destination_target)
     skill_section = (
         f"""--- TARGET FRAMEWORK SKILL: {state.destination_target.value} ---
 Authoritative, version-correct guidance for the TARGET framework you are translating INTO. Follow its
 import and API rules exactly — they are the number-one defense against a hallucinated package or
-method that fails the whole compile. For deeper per-topic detail (full import lists, query/mapping
-recipes), call `read_skill_reference`.
+method that fails the whole compile. The detailed per-topic references (full import lists,
+query/mapping recipes) follow the overview; consult them BEFORE writing any target import or query.
 
 {skill_overview}
+
+{skill_references}
 
 """
         if skill_overview
@@ -816,7 +839,19 @@ Core translation contract:
 4. Keep translated query methods semantically equivalent to the source query method. Do not introduce synthetic validator parameters (for example sortByField/ascending) unless they already exist in source query code.
 5. Keep schema code and query code separated.
 6. CRITICAL — translate ONLY what the user provided. Translate exclusively the entities and fields present in the user's `<source_schema_code>` and the queries in `<source_query_code>`. NEVER introduce an entity, field, or query that is not in the user's input. The examples below demonstrate STRUCTURE ONLY — do not copy their domain content (e.g. WideWorldImporters' Customer/Order/OrderLine fields) unless the user actually supplied them.
-7. You finish by calling the single `save_translation` tool EXACTLY ONCE with every required field filled. There is no separate JSON output. The required fields are:
+{f'''7. You finish by SAVING every draft piece through the save tools — there is no separate JSON/prose output:
+   - `save_schema_translation(source_schema_body, target_schema_body)`: the entity/mapping classes for BOTH sides. Call once (re-call to overwrite).
+   - `save_query_translation(query_id, source_query_body, target_query_body)`: ONE query's harness fragment for both sides. Call once per required query id ({id_list}), in any order; re-call the same id to overwrite. Save each query as soon as it is ready — do NOT hold everything back for one giant final response. You can and SHOULD emit SEVERAL save_query_translation calls in a single turn (parallel tool calls) when several queries are ready.
+   You do NOT output the clean production schema/query separately — once these fragments pass validation, the user-facing translated code is derived from them automatically.
+8. Fragment shapes — the fixed boilerplate (`import`/`using`/`package`/`namespace` lines, the JSON serializer, runtime-support and DB template-factory classes) AND the entrypoint `main`/`Main` are injected/generated FOR YOU. Do NOT write imports, do NOT write any entrypoint class or `main`/`Main` method, and do NOT redeclare the provided helper classes.
+   - Source schema fragment: {SCHEMA_FRAGMENT_HINTS[state.source_target]}
+   - Target schema fragment: {SCHEMA_FRAGMENT_HINTS[state.destination_target]}
+   - Source query fragment (one per query): {FRAGMENT_SIGNATURES[state.source_target]}
+   - Target query fragment (one per query): {FRAGMENT_SIGNATURES[state.destination_target]}
+   Each harness must report the SAME flat result map on both sides: `count`, `firstSample`, `lastSample` (scalar/leaf values of the query's own result — never walk navigation properties that the query itself does not fetch).
+9. All code must be properly indented with real line breaks. DO NOT wrap field values in XML tags or markdown code fences. DO NOT use comments or placeholders in code — it WILL be executed. Never save null or empty values.'''
+if fragment_mode
+else f'''7. You finish by calling the single `save_translation` tool EXACTLY ONCE with every required field filled. There is no separate JSON output. The required fields are:
    - source_validation_body: the {"schema-validation" if state.translation_type == TranslationType.SCHEMA else "query-execution harness"} BODY for the SOURCE side (see below).
    - target_validation_body: the {"schema-validation" if state.translation_type == TranslationType.SCHEMA else "query-execution harness"} BODY for the TARGET side (see below).
    You do NOT output the clean production schema/query separately — once these bodies pass validation, the user-facing translated code is derived from them automatically. Put all of your translation effort into making these two bodies correct, complete, and runnable.
@@ -824,7 +859,7 @@ Core translation contract:
    - source_validation_body MUST declare the source entrypoint class named exactly `{source_entry}`.
    - target_validation_body MUST declare the target entrypoint class named exactly `{target_entry}`.
    - Inside the entrypoint, reference the provided helpers directly (e.g. the serializer, `QueryRuntimeSupport`, the template factory) — they exist in the injected prelude.
-9. All code must be properly indented with real line breaks. DO NOT wrap field values in XML tags or markdown code fences. DO NOT use comments or placeholders in code — it WILL be executed. Never save null or empty values.
+9. All code must be properly indented with real line breaks. DO NOT wrap field values in XML tags or markdown code fences. DO NOT use comments or placeholders in code — it WILL be executed. Never save null or empty values.'''}
 
 Framework rules:
 1. For Java schema classes, avoid public access modifier unless explicitly required.
@@ -833,9 +868,8 @@ Framework rules:
 4. Keep translated query method shape close to source query method shape. Avoid adding extra method parameters unless required by source query.
 
 Additional rules:
-1. You do NOT run validators or compile code. After you call `save_translation`, the translated code is assembled with the canonical prelude and validated automatically by a downstream pipeline (compile + run on both sides, then equivalence). If it fails, you will be re-invoked with concrete feedback to fix and re-save. Focus on producing correct, complete bodies.
-2. You have research tools — use them to get the exact API right before saving:
-    - Use `read_skill_reference` FIRST for any target-side import/API you are not 100% sure of. It returns the curated, version-correct reference for {state.destination_target.value} (imports, entity mapping, query API). This is faster and more reliable than web/doc search and is the single best defense against a hallucinated package or method overload that fails the whole compile. Consult it before you write target imports and before any non-trivial query.
+1. {"You MAY preflight your saved draft with `validate_draft` (compiles + runs BOTH sides in real sandboxes and reports per-query equivalence). It is expensive — you have a budget of 3 calls, so save everything first and validate ONCE in batch, then fix and re-save only what failed. The downstream pipeline still performs the final authoritative validation after you finish." if fragment_mode else "You do NOT run validators or compile code. After you call `save_translation`, the translated code is assembled with the canonical prelude and validated automatically by a downstream pipeline (compile + run on both sides, then equivalence). If it fails, you will be re-invoked with concrete feedback to fix and re-save. Focus on producing correct, complete bodies."}
+2. You have research tools — use them to get the exact API right before saving. The TARGET FRAMEWORK SKILL section below already contains the curated, version-correct imports and API surface for {state.destination_target.value}; rely on it FIRST — reach for the tools only when it does not cover your case:
     - Use `search_spring_docs` to query the Spring documentation: `query` (search string), `top_k` (number of results to return, max 10), `module` (spring-data), `submodule` ("mongodb" or "neo4j"), and `version_major` (major version from the pom.xml, e.g. 5 for Spring Data MongoDB 5.x, 8 for Spring Data Neo4j 8.x).
     - Use `microsoft_docs_search`, `microsoft_code_sample_search`, and `microsoft_docs_fetch` for Microsoft documentation and code samples.
     - Use `search` to query the web for specific API usage or examples if you cannot find it in the above sources.
@@ -847,7 +881,7 @@ Target ({state.destination_target.value})
 {await get_framework_config_content(state.destination_target)}
 
 {skill_section}--- TARGET-LANGUAGE MAPPING REFERENCE ---
-Quick source->target mapping reference. For AUTHORITATIVE, version-correct imports and API surface, rely on the TARGET FRAMEWORK SKILL above and the `read_skill_reference` tool — never on memory for imports. Apply these patterns to the user's OWN entities/fields/queries only; never introduce names from this reference.
+Quick source->target mapping reference. For AUTHORITATIVE, version-correct imports and API surface, rely on the TARGET FRAMEWORK SKILL above — never on memory for imports. Apply these patterns to the user's OWN entities/fields/queries only; never introduce names from this reference.
 
 Type mapping (.NET -> Java):
 - `int`/`int?` -> `Integer`;  `long`/`long?` -> `Long`;  `bool` -> `Boolean`
@@ -862,8 +896,8 @@ Annotation / entity mapping (relational -> target ORM):
 - Names in `@Field`/`@Property`/`Criteria.where(...)`/Cypher are the TARGET store's field names (usually camelCase), NOT the SQL column and NOT the Java property.
 
 Query API (translate the query BODY; keep each method 1:1 with the source query, same result shape, no extra params):
-- Spring Data MongoDB: `MongoTemplate` + `Query`/`Criteria` (`.where().gte().lte()`, `.in()`, `.regex()`), `Sort` for ordering, `Aggregation` for group/having/count. Details: `read_skill_reference("queries")`, `read_skill_reference("aggregation")`.
-- Spring Data Neo4j: `Neo4jTemplate` + Cypher-DSL `Statement` (typed builders), NOT string concatenation. Details: `read_skill_reference("queries")`, `read_skill_reference("traversals")`.
+- Spring Data MongoDB: `MongoTemplate` + `Query`/`Criteria` (`.where().gte().lte()`, `.in()`, `.regex()`), `Sort` for ordering, `Aggregation` for group/having/count. Details: the "queries" and "aggregation" references in the TARGET FRAMEWORK SKILL above.
+- Spring Data Neo4j: `Neo4jTemplate` + Cypher-DSL `Statement` (typed builders), NOT string concatenation. Details: the "queries" and "traversals" references in the TARGET FRAMEWORK SKILL above.
 """
 
     # Validation-body reference: show ONLY the region below the schema seam (the part the model must
@@ -879,7 +913,35 @@ Query API (translate the query BODY; keep each method 1:1 with the source query,
     src_example = await get_snippet_content(state.source_target, is_schema=is_schema)
     tgt_example = await get_snippet_content(state.destination_target, is_schema=is_schema)
 
-    snippets = f"""
+    if fragment_mode:
+        # Fragment contract: show schema + query classes ONLY (the entrypoint main is generated by
+        # the assembler — showing it would tempt the model into redeclaring it).
+        src_body = strip_entrypoint_class(_body(src_example["content"]), src_example["entry_type_name"])
+        tgt_body = strip_entrypoint_class(_body(tgt_example["content"]), tgt_example["entry_type_name"])
+        snippets = f"""
+--- FRAGMENT STRUCTURE REFERENCE ---
+The examples below show the STRUCTURE of the schema classes and per-query classes for this framework
+pair. You save the schema classes via `save_schema_translation` and each `Query<N>` class via
+`save_query_translation` (one call per query id). The imports, JSON serializer, runtime support, DB
+template factory AND the entrypoint `main` (which runs every query with try/catch and writes the
+results JSON) are injected/generated automatically — they MUST NOT appear in your fragments.
+
+Imitate the SHAPE only (class layout, harness method signatures, flat count/firstSample/lastSample
+result maps). Use exclusively the user's own entities, fields, and queries — never this example's
+WideWorldImporters domain content.
+
+<fragment_structure side="source" framework="{state.source_target.value}">
+{src_body}
+</fragment_structure>
+
+<fragment_structure side="target" framework="{state.destination_target.value}">
+{tgt_body}
+</fragment_structure>
+
+System time: {datetime.now(tz=UTC).isoformat()}
+"""
+    else:
+        snippets = f"""
 --- VALIDATION BODY STRUCTURE REFERENCE ---
 The examples below show the exact STRUCTURE your `source_validation_body` and `target_validation_body`
 must follow for this framework pair. Each is the region BELOW the `{schema_marker}` seam only: entity
