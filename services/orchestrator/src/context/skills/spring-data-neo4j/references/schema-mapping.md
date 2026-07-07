@@ -231,7 +231,6 @@ final class Neo4jTemplateFactory {
     static Neo4jTemplate create(Driver driver) {
         Neo4jClient client = Neo4jClient.create(driver);
         var mappingContext = new Neo4jMappingContext();
-        mappingContext.setInitialEntitySet(Set.of(Order.class, Customer.class, OrderLine.class));
         mappingContext.afterPropertiesSet();
 
         Neo4jTransactionManager transactionManager = new Neo4jTransactionManager(driver);
@@ -240,9 +239,9 @@ final class Neo4jTemplateFactory {
 }
 ```
 
-`setInitialEntitySet(...)` registers every `@Node` class with the mapping context so the
-template can map them; `afterPropertiesSet()` finalizes it. List all node classes you
-intend to query.
+Do NOT call `setInitialEntitySet(...)` with a hardcoded class list — the mapping context
+registers each `@Node` class lazily on first use, and hardcoding names breaks compilation
+whenever the entity set differs. `afterPropertiesSet()` finalizes the context.
 
 ## 9. Validating a mapping
 

@@ -121,7 +121,7 @@ final class Neo4jTemplateFactory {
     static Neo4jTemplate create(Driver driver) {
         Neo4jClient client = Neo4jClient.create(driver);
         var mappingContext = new Neo4jMappingContext();
-        mappingContext.setInitialEntitySet(Set.of(Order.class, Customer.class, OrderLine.class));
+        // No setInitialEntitySet: @Node classes are registered lazily on first use.
         mappingContext.afterPropertiesSet();
 
         Neo4jTransactionManager transactionManager = new Neo4jTransactionManager(driver);
@@ -215,6 +215,7 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 | `org.neo4j.ogm.session.Session` / `SessionFactory` | `org.springframework.data.neo4j.core.Neo4jTemplate` / `Neo4jClient` |
 | `org.neo4j.cypherdsl.core.Functions.count(...)` | `org.neo4j.cypherdsl.core.Cypher.count(...)` |
 | `org.neo4j.cypherdsl.core.Functions.collect(...)` | `org.neo4j.cypherdsl.core.Cypher.collect(...)` |
+| `Functions.<anything>` — the `Functions` class NO LONGER EXISTS in this Cypher-DSL | the same-named static on `Cypher` (e.g. `Functions.call("apoc.x", …)` → `Cypher.call("apoc.x").withArgs(…).asFunction()`) |
 | `org.springframework.data.domain.Sort.Direction` (for Cypher-DSL) | `org.neo4j.cypherdsl.core.SortItem.Direction` |
 | `java.math.BigDecimal` for a `@Property` | `Double` (Neo4j has no decimal type) |
 | `java.util.Date` for date properties | `java.time.LocalDate` / `LocalDateTime` / `ZonedDateTime` |

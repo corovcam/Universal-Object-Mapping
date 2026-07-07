@@ -5,7 +5,6 @@ import java.time.*;
 import java.time.format.*;
 import java.time.temporal.*;
 import java.util.*;
-import java.util.function.*;
 
 import org.slf4j.*;
 import org.springframework.data.annotation.*;
@@ -474,7 +473,7 @@ public class MongoQueryEntrypoint {
 
         // Now create and execute the queries and capture results
         var results = new LinkedHashMap<String, Object>();
-        List<Supplier<Map<String, Object>>> harnesses = List.of(
+        List<java.util.function.Supplier<Map<String, Object>>> harnesses = List.of(
             () -> Query1.harness(template),
             () -> Query2.harness(template),
             () -> Query3.harness(template),

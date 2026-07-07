@@ -6,7 +6,6 @@ import java.time.format.*;
 import java.time.temporal.*;
 import java.util.*;
 import java.util.Set;
-import java.util.function.*;
 
 import org.neo4j.cypherdsl.core.*;
 import org.neo4j.cypherdsl.core.SortItem.*;
@@ -279,7 +278,8 @@ final class Neo4jTemplateFactory {
     static Neo4jTemplate create(Driver driver) {
         Neo4jClient client = Neo4jClient.create(driver);
         var mappingContext = new Neo4jMappingContext();
-        mappingContext.setInitialEntitySet(Set.of(Order.class, Customer.class, CustomerTransaction.class, OrderLine.class));
+        // No setInitialEntitySet: the @Node entity classes are dataset-specific, and the mapping
+        // context registers them lazily on first use — hardcoding names breaks other schemas.
         mappingContext.afterPropertiesSet();
     
         Neo4jTransactionManager transactionManager = new Neo4jTransactionManager(driver);
@@ -502,7 +502,7 @@ public class Neo4jQueryEntrypoint {
 
             // Now create and execute the queries and capture results
             var results = new LinkedHashMap<String, Object>();
-            List<Supplier<Map<String, Object>>> harnesses = List.of(
+            List<java.util.function.Supplier<Map<String, Object>>> harnesses = List.of(
                 () -> Query1.harness(template),
                 () -> Query2.harness(template),
                 () -> Query3.harness(template, client),
