@@ -1,8 +1,10 @@
-"""On-demand access to the target-framework "skills" that live in ``src/context/skills``.
+"""On-demand access to the per-framework "skills" that live in ``src/context/skills``.
 
 The translator's dominant *model* failure mode is hallucinated imports/APIs on the target side
 (e.g. missing ``org.bson.types.Decimal128``, the wrong ``MongoTemplate.count`` overload, invalid
-Cypher-DSL ``Statement`` usage). Those exact traps are already documented, per framework, in
+Cypher-DSL ``Statement`` usage) and *misread* semantics on the source side (an EF Core ``.Contains``
+that is really a ``LIKE``, an NHibernate mapping-by-code ``<Entity>Map`` requirement, Dapper
+``splitOn``). Those exact traps are already documented, per framework, in
 ``src/context/skills/<skill>/references/*.md`` — but nothing wired them into the agent, so the model
 never saw them and instead leaned on the in-prompt EXAMPLES (which only covered the small test set).
 
@@ -13,8 +15,10 @@ This module closes that gap with a *hybrid* delivery:
 * a :func:`build_skill_reference_tool` factory that lets the agent pull the detailed reference files
   on demand — the same shape as the reference/detail split the skills were authored for.
 
-Only the *target* framework has a skill (the production API the model must not hallucinate); the
-source side is plain .NET and needs no such reference.
+BOTH sides of a translation pair have a skill: the *target* (Java) skill teaches the production API
+the model must not hallucinate when WRITING, and the *source* (.NET) skill teaches how to correctly
+READ the source model/query and author the compilable source-side validation-harness fragment. Only
+the two skills relevant to the current pair are injected (see ``build_system_prompt``).
 """
 
 from __future__ import annotations
@@ -27,9 +31,14 @@ from langchain_core.tools import BaseTool, StructuredTool
 from react_agent.constants import FrameworkEnum
 from react_agent.utils.utils import get_context_dir, logger
 
-# Target framework -> skill directory under ``src/context/skills``. Source (.NET) frameworks have no
-# skill: the skills teach the *target* production API surface, which is where hallucinations happen.
+# Framework -> skill directory under ``src/context/skills``. Every supported framework has a skill:
+# the Java (target) skills teach the production API surface the model must not hallucinate when
+# writing, and the .NET (source) skills teach how to read the source correctly and author the
+# compilable source-side validation-harness fragment.
 FRAMEWORK_TO_SKILL: dict[FrameworkEnum, str] = {
+    FrameworkEnum.DOTNET_EFCORE: "dotnet-efcore",
+    FrameworkEnum.DOTNET_DAPPER: "dotnet-dapper",
+    FrameworkEnum.DOTNET_NHIBERNATE: "dotnet-nhibernate",
     FrameworkEnum.JAVA_SPRING_DATA_MONGODB: "spring-data-mongodb",
     FrameworkEnum.JAVA_SPRING_DATA_NEO4J: "spring-data-neo4j",
 }
@@ -56,11 +65,12 @@ def _available_references(framework: FrameworkEnum) -> list[str]:
 
 
 async def get_skill_overview(framework: FrameworkEnum) -> str:
-    """Return the target skill's ``SKILL.md`` orientation (YAML frontmatter stripped), or "".
+    """Return the framework skill's ``SKILL.md`` orientation (YAML frontmatter stripped), or "".
 
-    Injected always-on into the translation system prompt: the concise API/import rules and the
-    "renamed since 3.x" traps. Detailed per-topic reference files are fetched on demand via the
-    ``read_skill_reference`` tool built by :func:`build_skill_reference_tool`.
+    Called for BOTH the source and the target framework of the pair and injected always-on into the
+    translation system prompt: the concise API/import rules and the "renamed since X" traps. The
+    detailed per-topic reference files are injected in full alongside it via
+    :func:`get_skill_references`.
     """
     skill_dir = _skill_dir(framework)
     if not skill_dir:
@@ -86,11 +96,12 @@ async def get_skill_overview(framework: FrameworkEnum) -> str:
 async def get_skill_references(framework: FrameworkEnum) -> str:
     """Return ALL detailed reference files for the framework's skill, concatenated, or "".
 
-    Injected always-on into the translation system prompt alongside the SKILL.md overview.
-    Originally these were behind an on-demand ``read_skill_reference`` tool, but the reference
-    content is not actually optional — every translation needs the exact import/API surface, and
-    the 2026-07-02 traces showed the model compiling against hallucinated APIs without ever
-    pulling the references. ~40-55k chars per target; well within the models' context budget.
+    Injected always-on into the translation system prompt alongside the SKILL.md overview, for BOTH
+    the source and the target framework of the pair. Originally these were behind an on-demand
+    ``read_skill_reference`` tool, but the reference content is not actually optional — every
+    translation needs the exact import/API surface, and the 2026-07-02 traces showed the model
+    compiling against hallucinated APIs without ever pulling the references. ~40-55k chars per
+    skill; both sides together are well within the models' context budget.
     """
     skill_dir = _skill_dir(framework)
     if not skill_dir:

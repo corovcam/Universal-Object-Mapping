@@ -806,27 +806,47 @@ async def build_system_prompt(state: State) -> str:
     )
     expected_ids = expected_query_ids_from_source(state.source_query_code)
     id_list = ", ".join(str(i) for i in expected_ids)
-    # The TARGET framework's skill is injected always-on IN FULL: the SKILL.md orientation plus
-    # every detailed reference file. This content is not optional — the exact import/API surface
+    # BOTH sides of the pair get their skill injected always-on IN FULL: the SKILL.md orientation
+    # plus every detailed reference file. This content is not optional — the exact import/API surface
     # is needed for every translation, and when it sat behind an on-demand `read_skill_reference`
-    # tool the model routinely skipped it and compiled against hallucinated APIs.
-    skill_overview = await get_skill_overview(state.destination_target)
-    skill_references = await get_skill_references(state.destination_target)
-    skill_section = (
+    # tool the model routinely skipped it and compiled against hallucinated APIs. Only the two skills
+    # relevant to THIS pair are injected (source + target); frameworks not involved contribute
+    # nothing.
+    source_overview = await get_skill_overview(state.source_target)
+    source_references = await get_skill_references(state.source_target)
+    target_overview = await get_skill_overview(state.destination_target)
+    target_references = await get_skill_references(state.destination_target)
+    source_skill_section = (
+        f"""--- SOURCE FRAMEWORK SKILL: {state.source_target.value} ---
+Authoritative, version-correct guidance for the SOURCE framework you are translating FROM. Use it to
+read the source entities and queries correctly (the exact filter/projection/sort/relationship
+semantics you must preserve) and — in fragment mode — to author the compilable source-side
+validation-harness fragment. The detailed per-topic references follow the overview.
+
+{source_overview}
+
+{source_references}
+
+"""
+        if source_overview
+        else ""
+    )
+    target_skill_section = (
         f"""--- TARGET FRAMEWORK SKILL: {state.destination_target.value} ---
 Authoritative, version-correct guidance for the TARGET framework you are translating INTO. Follow its
 import and API rules exactly — they are the number-one defense against a hallucinated package or
 method that fails the whole compile. The detailed per-topic references (full import lists,
 query/mapping recipes) follow the overview; consult them BEFORE writing any target import or query.
 
-{skill_overview}
+{target_overview}
 
-{skill_references}
+{target_references}
 
 """
-        if skill_overview
+        if target_overview
         else ""
     )
+    skill_section = source_skill_section + target_skill_section
     base_prompt = f"""You are a Universal Object Mapping architect. Your goal is to aid in translating database schema structures and query logic between diverse languages and frameworks.
 
 Source Framework: {state.source_target.value}
@@ -869,7 +889,7 @@ Framework rules:
 
 Additional rules:
 1. {"You MAY preflight your saved draft with `validate_draft` (compiles + runs BOTH sides in real sandboxes and reports per-query equivalence). It is expensive — you have a budget of 3 calls, so save everything first and validate ONCE in batch, then fix and re-save only what failed. The downstream pipeline still performs the final authoritative validation after you finish." if fragment_mode else "You do NOT run validators or compile code. After you call `save_translation`, the translated code is assembled with the canonical prelude and validated automatically by a downstream pipeline (compile + run on both sides, then equivalence). If it fails, you will be re-invoked with concrete feedback to fix and re-save. Focus on producing correct, complete bodies."}
-2. You have research tools — use them to get the exact API right before saving. The TARGET FRAMEWORK SKILL section below already contains the curated, version-correct imports and API surface for {state.destination_target.value}; rely on it FIRST — reach for the tools only when it does not cover your case:
+2. You have research tools — use them to get the exact API right before saving. The SOURCE and TARGET FRAMEWORK SKILL sections below already contain the curated, version-correct guidance for reading the {state.source_target.value} source and writing the {state.destination_target.value} target (imports, API surface, harness-fragment rules); rely on them FIRST — reach for the tools only when they do not cover your case:
     - Use `search_spring_docs` to query the Spring documentation: `query` (search string), `top_k` (number of results to return, max 10), `module` (spring-data), `submodule` ("mongodb" or "neo4j"), and `version_major` (major version from the pom.xml, e.g. 5 for Spring Data MongoDB 5.x, 8 for Spring Data Neo4j 8.x).
     - Use `microsoft_docs_search`, `microsoft_code_sample_search`, and `microsoft_docs_fetch` for Microsoft documentation and code samples.
     - Use `search` to query the web for specific API usage or examples if you cannot find it in the above sources.

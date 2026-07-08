@@ -1377,9 +1377,10 @@ async def generate_translation_node(
     )
 
     save_tool = build_save_translation_tool(translation_type, source_entry, target_entry)
-    # The target framework's skill references (imports/APIs) are injected IN FULL into the system
-    # prompt by `build_system_prompt` — they are not optional, and the on-demand
-    # `read_skill_reference` tool they used to sit behind was routinely skipped by the model.
+    # Both the source (.NET) and target (Java) framework skills (imports/APIs + how to read the
+    # source / author its harness fragment) are injected IN FULL into the system prompt by
+    # `build_system_prompt` — they are not optional, and the on-demand `read_skill_reference` tool
+    # they used to sit behind was routinely skipped by the model.
 
     # Research-only tool surface: documentation (MCP) + web search, plus the state-writing save
     # tools and (fragment mode) the budgeted in-agent validate_draft preflight. Database
