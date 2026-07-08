@@ -1,19 +1,29 @@
 # Evaluation scripts — runnable workflow (WideWorldImporters)
 
-These three scripts turn the orchestrator's **LangSmith** traces into the thesis metrics. They run
-against a **separate venv** so the service env is untouched:
+These scripts turn the orchestrator's **LangSmith** experiments into the thesis metrics. They run in
+a **separate uv project** (`evaluation/`, its own `.venv` with the heavy CodeBLEU/tree-sitter/
+matplotlib deps pinned) so the service env is untouched — invoke everything with
+`uv run --project evaluation python evaluation/scripts/<script>.py`. Keys (`LANGSMITH_*`,
+`OPENAI_*`) come from `../.env`; the live-stack Daytona/DB knobs from `../.env.dev`.
 
-```bash
-uv venv evaluation/.venv-eval --python 3.12
-uv pip install --python evaluation/.venv-eval -r evaluation/eval-requirements.txt
-```
+## Workflow at a glance
 
-`LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` / `LANGSMITH_ENDPOINT` are read from `../.env.dev`.
+1. **`build_eval_dataset.py`** → upsert the per-pair examples into the "UOM Final Experiments" dataset.
+2. **`run_langsmith_eval.py`** → run the graph over the dataset as LangSmith Experiments (LLM judges +
+   deterministic metrics in one pass); or `run_experiment.py` for the single-pass-vs-loop ablation.
+3. **`fetch_experiments.py`** → download a set of experiments (by `run_tag`) to local CSVs.
+4. **`aggregate_results.py`** / **`plot_results.py`** → per-pair + cross-batch tables, pass@k, and
+   matplotlib charts (the thesis numbers).
+5. **`extract_predictions.py`** + **`score_predictions.py`** → post-hoc CodeBLEU (secondary metric).
+6. **`export_manual_prompts.py`** → the exact prompt for hand-running proprietary-model baselines.
+
+`aggregate_traces.py` (LangSmith-trace funnel/per-node-cost) and `metrics.py` / `aimock_recorder.py`
+are shared libraries used by the above. Detailed per-script docs follow.
 
 ## 1. `aggregate_traces.py` — E1 funnel + E4 internal stats + verifier confusion matrix
 
 ```bash
-.venv-eval/bin/python scripts/aggregate_traces.py --limit 50 --env ../.env.dev --out ./out --stratify
+uv run --project evaluation python evaluation/scripts/aggregate_traces.py --limit 50 --env ../.env.dev --out ./out --stratify
 ```
 
 Reconstructs, per run (root span `Universal Object Mapping Translator`), from the **current**
@@ -42,11 +52,11 @@ post-finalize-split graph — not the old structured-output contract:
 
 ```bash
 # predictions from every accepted run:
-.venv-eval/bin/python scripts/extract_predictions.py --limit 50 --env ../.env.dev --root ../predictions
+uv run --project evaluation python evaluation/scripts/extract_predictions.py --limit 50 --env ../.env.dev --root ../predictions
 # freeze ONE manually-reviewed accepted run as the CodeBLEU baseline for its (dataset, pair):
-.venv-eval/bin/python scripts/extract_predictions.py --limit 1 --env ../.env.dev --reference --root ../reference
+uv run --project evaluation python evaluation/scripts/extract_predictions.py --limit 1 --env ../.env.dev --reference --root ../reference
 # offline, from a LangGraph run export (lacks the pair → pass it):
-.venv-eval/bin/python scripts/extract_predictions.py --from-export '../../run-*.json' --pair efcore->mongo --lang java --root ../predictions
+uv run --project evaluation python evaluation/scripts/extract_predictions.py --from-export '../../run-*.json' --pair efcore->mongo --lang java --root ../predictions
 ```
 
 Writes `translated_schema_code` / `translated_query_code` as
@@ -56,7 +66,7 @@ Writes `translated_schema_code` / `translated_query_code` as
 ## 3. `score_predictions.py` — CodeBLEU vs the frozen reference (E3 step 2)
 
 ```bash
-.venv-eval/bin/python scripts/score_predictions.py --pred-root ../predictions --ref-root ../reference --out ./out
+uv run --project evaluation python evaluation/scripts/score_predictions.py --pred-root ../predictions --ref-root ../reference --out ./out
 ```
 
 Per artifact: CodeBLEU **with its 4-component breakdown** (ngram / weighted-ngram / syntax /
@@ -74,7 +84,7 @@ Runs the **same graph** twice on one WWI fixture and writes finalize artifacts +
 
 ```bash
 # needs the LIVE stack (e-INFRA model, Daytona, WWI DBs) and the ORCHESTRATOR venv (.venv), not .venv-eval
-.venv/bin/python evaluation/scripts/run_experiment.py --fixture efcore-mongodb-q1 \
+uv run python evaluation/scripts/run_experiment.py --fixture efcore-mongodb-q1 \
     --approaches baseline our_approach --pred-root evaluation/predictions --out evaluation/out
 ```
 
@@ -102,7 +112,7 @@ Add `--record-fixtures` and every run spawns its OWN throwaway aimock (`aimock_r
 proxies to e-INFRA and **saves** the run's LLM traffic into its own folder, so threads never mingle:
 
 ```bash
-.venv/bin/python evaluation/scripts/run_experiment.py --fixture efcore-mongodb-q1 \
+uv run python evaluation/scripts/run_experiment.py --fixture efcore-mongodb-q1 \
     --approaches our_approach --record-fixtures --aimock-root evaluation/aimock
 # or: make record_experiment FIXTURE=efcore-mongodb-q1 APPROACHES=our_approach
 ```
@@ -127,7 +137,7 @@ Code, Claude.ai, Gemini app, Google AI Studio, Antigravity), not API keys. This 
 translation-stage system + user prompt for a fixture so the baseline can be run by hand:
 
 ```bash
-.venv/bin/python evaluation/scripts/export_manual_prompts.py --fixture efcore-mongodb-q1 \
+uv run python evaluation/scripts/export_manual_prompts.py --fixture efcore-mongodb-q1 \
     --out evaluation/manual-eval --env .env.dev
 ```
 
@@ -235,26 +245,36 @@ echo 'cd /…/services/orchestrator && make eval_full_experiment' | at 01:00
 # or a systemd-timer / cron entry calling the same `make eval_full_experiment`.
 ```
 
-## 6b. `aggregate_results.py` + `plot_results.py` — cross-batch results, pass@k, charts
+## 6b. `fetch_experiments.py` + `aggregate_results.py` + `plot_results.py` — download, tables, charts
 
-LangSmith's UI shows ONE experiment at a time; when the 15-query workload runs as three 5-query
-batches (`eval_full`), each pair is 3 separate experiments and the UI never shows the pair's
-aggregate. Export the experiment CSVs (one dir, per-pair subdirs OR flat) and stitch them:
+LangSmith's UI shows ONE experiment at a time and exports one CSV at a time; when the 15-query
+workload runs as three 5-query batches, each pair is 3 separate experiments and the UI never shows the
+pair's aggregate. `fetch_experiments.py` pulls a whole SET down (READ-ONLY) in the UI-export CSV
+schema; the aggregator stitches them:
 
 ```bash
-# per-pair + overall table, pass@1/2/3 (Chen et al. unbiased), judge-vs-equivalence agreement:
+# list every experiment in the dataset (start / run_tag / variant / model / judge / reps):
+uv run --project evaluation python evaluation/scripts/fetch_experiments.py --list --env ../.env
+# download all experiments of one run (one CSV per experiment):
+uv run --project evaluation python evaluation/scripts/fetch_experiments.py \
+    --run-tag 20260705-231626 --out evaluation/traces/final-experiments/B --env ../.env
+# per-pair + overall table, pass@1/2/3 (Chen et al. unbiased), judge-vs-equivalence agreement
+# (--pair-from-name reads the pair from each CSV's experiment name; batch CSVs of a pair combine):
 uv run --project evaluation python evaluation/scripts/aggregate_results.py \
-    --root evaluation/traces/<date> --out evaluation/out/agg-<date>
-# matplotlib figures (pass@k, funnel, per-query acc/prec/recall, judge-vs-truth, latency, overview):
+    --root evaluation/traces/final-experiments/B --out evaluation/out/final/B --pair-from-name
+# matplotlib figures (pass@k, funnel, per-query equivalence/accuracy, judge-vs-truth, latency, overview):
 uv run --project evaluation python evaluation/scripts/plot_results.py \
-    --root evaluation/traces/<date> --out evaluation/out/charts-<date>
+    --root evaluation/traces/final-experiments/B --out evaluation/out/final/B/charts --pair-from-name
 ```
 
 Everything is built on the corrected **`passed`** metric (compiled/ran AND every demanded query
-execution-equivalent), NOT the pipeline's inflated `accepted` flag. `pass@k` is reported at the run
-level and, when `query_verdicts` is present, per query. The judge table shows each graded judge's
-mean score on passed vs failed runs + its correlation with `query_accuracy` — the diagnostic that
-exposes an always-reject (no pass/fail separation) or inverted-polarity (negative corr) judge.
+execution-equivalent), NOT the pipeline's inflated `accepted` flag, and is robust across metric-schema
+eras (older runs lack `queries_accepted`/`query_accuracy` → it falls back to `queries_equivalent`).
+`pass@k` is reported at the run level and, when `query_verdicts` is present, per query. The judge table
+shows each graded judge's mean score on passed vs failed runs + its correlation with the
+execution-equivalence rate — the diagnostic that exposes an always-reject (no pass/fail separation) or
+inverted-polarity (negative corr) judge. The final thesis analysis lives in `evaluation/out/final/`
+(see `FINAL-REPORT.md` there).
 
 ## CodeBLEU end-to-end (`make eval_codebleu`)
 
@@ -293,7 +313,7 @@ make eval_dataset                                                          # sam
   multiple datasets share one project, run per-dataset and tag, or add a metadata filter.
 - `metrics.py` holds the reusable comparators (normalized-exact, token-overlap, codebleu wrapper,
   execution-equivalence on `{count, firstSample, lastSample}`).
-- `fault_injection.py` is the old E2 skeleton — **superseded/skipped** (generator is fixed; precision
-  /recall now come from §1's judge-vs-execution matrix). Kept for reference only.
-- CodeBLEU deps are **version-pinned** (`eval-requirements.txt`): unpinning breaks with
+- Precision/recall come from the judge-vs-execution-equivalence agreement (§1 and the judge table in
+  §6b), not synthetic fault-injection mutants (the generator is fixed).
+- CodeBLEU deps are **version-pinned** (`evaluation/pyproject.toml`): unpinning breaks with
   "Incompatible Language version" / "an integer is required" (tree-sitter ABI mismatch).

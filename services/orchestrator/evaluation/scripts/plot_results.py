@@ -108,13 +108,15 @@ def plot_query_metrics(ax, per_pair: dict) -> None:
     pairs = _ordered_pairs(per_pair)
     x = range(len(pairs))
     w = 0.26
-    series = [("query_accuracy", "accuracy", C_PASS),
-              ("query_precision", "precision", C_GOOD),
+    # equiv_rate (queries_equivalent/demanded) is uniform across metric eras; accuracy/recall are only
+    # populated for the per-query-instrumented runs (empty on the oldest group), so equiv leads.
+    series = [("equiv_rate", "equivalence", C_PASS),
+              ("query_accuracy", "accuracy", C_GOOD),
               ("query_recall", "recall", C_WARN)]
     for i, (key, label, col) in enumerate(series):
         vals = [_val(per_pair[p], key) for p in pairs]
         ax.bar([xi + (i - 1) * w for xi in x], vals, w, label=label, color=col)
-    ax.set_title("Per-query accuracy / precision / recall")
+    ax.set_title("Per-query equivalence / accuracy / recall")
     ax.set_ylabel("rate")
     ax.set_ylim(0, 1.05)
     ax.set_xticks(list(x))

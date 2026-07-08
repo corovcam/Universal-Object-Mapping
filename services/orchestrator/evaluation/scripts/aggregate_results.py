@@ -105,21 +105,45 @@ def _f(row: dict, key: str) -> float | None:
 
 
 def _passed(row: dict) -> bool:
-    """Canonical functional success, derived from CSV columns (see module docstring).
+    """Canonical functional success, derived from CSV columns (see module docstring). Cross-era robust:
+    the metric schema evolved, so we prefer the strictest available signal and fall back in order.
 
-    Prefer an explicit ``passed`` column (emitted by newer run_experiment runs); otherwise derive
-    it from compile_pass + queries_accepted/queries_expected, with query_accuracy as a fallback.
-    """
+    A run PASSES iff it compiled/ran AND every demanded query is execution-equivalent, determined by:
+      1. an explicit ``passed`` column (newest run_experiment runs);
+      2. queries_accepted >= queries_expected (>0)  — the per-query-instrumented era (Groups B/C);
+      3. queries_equivalent >= queries_total (>0)    — the OLD era with only equivalence counts
+         (Group A / the oldest experiments, which lack queries_expected/accepted; there queries_total
+         is the task's full query count, all-or-nothing);
+      4. query_accuracy >= 1.0, else pass_at_1 >= 1.0 — last-resort fraction fallbacks.
+    Never a false 0 from a metric-schema gap: a run with no usable per-query signal at all can't be
+    scored and returns False, but that only happens when it also failed to compile."""
     p = _f(row, "passed")
     if p is not None:
         return p >= 1.0
-    compile_ok = (_f(row, "compile_pass") or 0.0) >= 1.0
-    exp = _f(row, "queries_expected")
-    acc = _f(row, "queries_accepted")
+    if (_f(row, "compile_pass") or 0.0) < 1.0:
+        return False
+    exp, acc = _f(row, "queries_expected"), _f(row, "queries_accepted")
     if exp is not None and acc is not None and exp > 0:
-        return compile_ok and acc >= exp
+        return acc >= exp
+    tot, equ = _f(row, "queries_total"), _f(row, "queries_equivalent")
+    if tot is not None and equ is not None and tot > 0:
+        return equ >= tot
     qa = _f(row, "query_accuracy")
-    return compile_ok and qa is not None and qa >= 1.0
+    if qa is not None:
+        return qa >= 1.0
+    p1 = _f(row, "pass_at_1")
+    return p1 is not None and p1 >= 1.0
+
+
+def _equiv_rate(row: dict) -> float | None:
+    """Per-run execution-equivalence rate = queries_equivalent / demanded, uniform across metric eras.
+    Denominator = queries_expected when present (Groups B/C), else queries_total (Group A). Falls back
+    to pass_at_1 (the scraped equivalence fraction) when equivalence counts are absent."""
+    equ = _f(row, "queries_equivalent")
+    denom = _f(row, "queries_expected") or _f(row, "queries_total")
+    if equ is not None and denom and denom > 0:
+        return min(1.0, equ / denom)
+    return _f(row, "pass_at_1")
 
 
 def _outputs(row: dict) -> dict[str, Any]:
@@ -211,6 +235,10 @@ def summarize_pair(rows: list[dict]) -> dict[str, Any]:
         "pass_rate": _mean(passed),
         "accept_rate_raw": _mean([_f(r, "accepted") for r in rows]),
         "compile_rate": _mean([_f(r, "compile_pass") for r in rows]),
+        # per-query execution-equivalence rate, uniform across metric eras: queries_equivalent over
+        # the demanded count (queries_expected when present, else queries_total) — the one per-query
+        # number available for ALL groups incl. the oldest (Group A lacks query_accuracy).
+        "equiv_rate": _mean([_equiv_rate(r) for r in rows]),
         "query_accuracy": _mean([_f(r, "query_accuracy") for r in rows]),
         "query_precision": _mean([_f(r, "query_precision") for r in rows]),
         "query_recall": _mean([_f(r, "query_recall") for r in rows]),
@@ -312,7 +340,7 @@ def render_table(per_pair: dict[str, dict], overall: dict) -> str:
     cols = [
         ("pair", "pair"), ("runs", "n"), ("pass_rate", "pass"),
         ("pass@1", "p@1"), ("pass@2", "p@2"), ("pass@3", "p@3"),
-        ("compile_rate", "compile"), ("query_accuracy", "q_acc"),
+        ("compile_rate", "compile"), ("equiv_rate", "equiv"), ("query_accuracy", "q_acc"),
         ("query_precision", "q_prec"), ("query_recall", "q_rec"),
         ("translation_loops", "loops"), ("wall_clock_s", "wall_s"), ("errors", "err"),
     ]

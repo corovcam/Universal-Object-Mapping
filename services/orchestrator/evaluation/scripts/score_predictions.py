@@ -17,9 +17,9 @@ CodeBLEU leads NOTHING here: the headline functional metric is computational acc
 (execution-equivalence pass@1) from aggregate_traces.py. CodeBLEU is reported only as a
 well-caveated structural similarity number (it penalises equivalent-but-restructured code).
 
-Usage:
-  pip install codebleu tree-sitter tree-sitter-java tree-sitter-c-sharp   # see eval-requirements.txt
-  python score_predictions.py --pred-root ../predictions --ref-root ../reference --out ./out
+Usage (deps are pinned in evaluation/pyproject.toml — `uv sync` in evaluation/ installs them):
+  uv run --project evaluation python evaluation/scripts/score_predictions.py \
+      --pred-root ../predictions --ref-root ../reference --out ./out
 """
 from __future__ import annotations
 
@@ -142,7 +142,7 @@ def main() -> None:
         w.writeheader()
         w.writerows(rows)
 
-    print(f"scored {len(rows)} artifact(s)  (codebleu {'OK' if codebleu_available else 'UNAVAILABLE — pip install -r eval-requirements.txt'})")
+    print(f"scored {len(rows)} artifact(s)  (codebleu {'OK' if codebleu_available else 'UNAVAILABLE — run `uv sync` in evaluation/'})")
     print(f"{'pair':<40}{'artifact':<9}{'codebleu':>9}{'ngram':>7}{'syntax':>7}{'dflow':>7}{'tok':>6}  run")
     for r in rows:
         print(f"{r['pair'][:39]:<40}{r['artifact']:<9}{str(r['codebleu']):>9}{str(r['ngram']):>7}"

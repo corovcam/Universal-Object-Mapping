@@ -131,3 +131,27 @@ This executes the ACP agent server loop, listens on standard input/output channe
 - **Run Unit & Sandbox Tests**: `make test`
 - **Run Integration Scenarios**: `make integration_tests`
 - **Formatting and Lints**: `make format && make lint`
+
+
+## Evaluation
+
+The thesis evaluation measures how well the pipeline generalizes across source→target framework pairs
+(`{EFCore, Dapper, NHibernate} × {Spring Data MongoDB, Spring Data Neo4j}`) on the self-contained
+[WideWorldImporters](https://learn.microsoft.com/en-us/sql/samples/wide-world-importers-what-is)
+schema + query set. It runs the **real graph** over a LangSmith dataset ("UOM Final Experiments") as
+proper **Experiments**, so each run produces, in a single pass:
+
+- **Deterministic metrics** (the headline) — compile/run success and per-query **execution-equivalence**
+  (real DB execution, `DeepDiff` on `{count, firstSample, lastSample}`), aggregated into `pass` /
+  `pass@k` / query accuracy. These are the functional ground truth.
+- **LLM-as-judge scores** (secondary, reference-free, graded against the source) — a supplementary
+  quality signal, reported alongside the deterministic ground truth (and correlated against it).
+- **CodeBLEU** (secondary, structural similarity vs. a frozen per-pair reference) — post-hoc.
+
+The `make eval_*` targets drive it (`eval_small`, `eval_full`, `eval_codebleu`, …) and need the live
+stack (e-INFRA model endpoint, Daytona, the WWI databases). Experiments are downloaded, aggregated
+(per-pair + cross-batch, pass@k), and charted with the scripts under `evaluation/`.
+
+**See [`evaluation/scripts/README.md`](evaluation/scripts/README.md) for the full evaluation workflow**
+(dataset build → experiments → download/aggregate/plot → CodeBLEU → manual-baseline export), and
+`evaluation/out/final/FINAL-REPORT.md` for the current results.
