@@ -18,6 +18,7 @@ the source: one source query method → one target method returning the same log
 8. Reading back the generated Cypher and parameters
 9. Dates, doubles, and literals in queries
 10. Worked examples (mirroring the project harness)
+11. Aggregates, DISTINCT, UNION, JSON (APOC), and the raw escape hatch — quick answers
 
 ---
 
@@ -93,6 +94,11 @@ Build conditions from property expressions; combine with `.and(...)` / `.or(...)
 
 Combine: `condA.and(condB)`, `condA.or(condB)`, `cond.not()`. On the builder,
 `.where(cond).and(otherCond)` is equivalent to anding into the WHERE.
+
+**String-op arguments are Expressions, not raw Strings** — wrap literals:
+`ol.property("description").contains(Cypher.literalOf("bubble"))` (same for
+`startsWith`/`endsWith`). Passing a bare Java `String` is a compile error
+("String cannot be converted to Expression").
 
 ```java
 var stmt = Cypher.match(ol)
@@ -283,3 +289,163 @@ var rows = client.query(stmt.getCypher())
 
 For grouping/counting by a field (e.g. "count per taxRate") and for relationship
 traversals, see `references/traversals.md`.
+
+## 11. Aggregates, DISTINCT, UNION, JSON (APOC), and the raw escape hatch — quick answers
+
+These are the API questions that most tempt a model into web-searching. **Do not search —
+the answers are below**, and every signature in this section was verified against the
+Cypher-DSL jar this project's sandbox actually compiles with (2025.2.0, pulled by Spring
+Boot 4.0.x / SDN 8.0). Every factory is a static on the `Cypher` facade (the old
+`Functions` class is gone; see `imports.md` §10). If an exact spelling still feels
+uncertain, save your best attempt and let the validator's compiler output settle it — one
+compile answers what ten searches cannot.
+
+### Aggregate functions (statics on `Cypher`)
+
+```java
+Cypher.count(expr)            // count(expr)          — also Cypher.count(Cypher.asterisk())
+Cypher.countDistinct(expr)    // count(DISTINCT expr)
+Cypher.collect(expr)          // collect(expr)
+Cypher.collectDistinct(expr)  // collect(DISTINCT expr)
+Cypher.max(expr)              // max(expr)
+Cypher.min(expr)              // min(expr)
+Cypher.sum(expr)              // sum(expr)
+Cypher.avg(expr)              // avg(expr)
+Cypher.coalesce(e1, e2)       // coalesce(...)
+Cypher.size(listExpr)         // size(...)
+```
+
+Aggregate over the whole match by returning the aggregate directly; group by carrying the
+grouping key through `.with(...)` (see `traversals.md` §6):
+
+```java
+// MAX over all order lines (scalar result -> Neo4jClient)
+var ol = Cypher.node("OrderLine").named("ol");
+var stmt = Cypher.match(ol)
+        .returning(Cypher.max(ol.property("unitPrice")).as("maxPrice"))
+        .build();
+```
+
+### DISTINCT scalar projection
+
+`RETURN DISTINCT n.prop` is expressed by making the projection distinct:
+
+```java
+var stmt = Cypher.match(o)
+        .returningDistinct(o.property("customerPurchaseOrderNumber").as("po"))
+        .build();
+```
+
+(`.returningDistinct(...)` sits exactly where `.returning(...)` does. For a distinct
+COUNT use `Cypher.countDistinct(expr)` instead.)
+
+### UNION / UNION ALL of two statements
+
+`Cypher.union(...)` / `Cypher.unionAll(...)` combine built `Statement`s. The returned
+columns must have the SAME names on both sides — align them with `.as("...")`:
+
+```java
+var a = Cypher.match(ol1)
+        .where(ol1.property("quantity").gt(Cypher.literalOf(250)))
+        .returning(ol1.property("orderLineId").as("id")).build();
+var b = Cypher.match(ol2)
+        .where(ol2.property("unitPrice").gt(Cypher.literalOf(100.0)))
+        .returning(ol2.property("orderLineId").as("id")).build();
+Statement union = Cypher.union(a, b);        // UNION (deduplicates)
+Statement unionAll = Cypher.unionAll(a, b);  // UNION ALL (keeps duplicates)
+// scalar rows -> execute on Neo4jClient:
+var rows = client.query(union.getCypher())
+        .bindAll(union.getCatalog().getParameters()).fetch().all();
+```
+
+Use two independent node variables (`ol1`, `ol2`) — do not reuse one variable across the
+two arms.
+
+### JSON stored in string properties (APOC — verified against this project's data)
+
+In the WideWorldImporters graph, `Person.customFields` is a STRING property holding a JSON
+object and `Person.otherLanguages` a STRING holding a JSON array. APOC is installed;
+these exact Cypher forms were verified live against the project database:
+
+```cypher
+-- JSON object field (source: JSON_VALUE(CustomFields, '$.Title') = 'Team Member'):
+MATCH (p:Person) WHERE p.customFields IS NOT NULL
+  AND apoc.convert.fromJsonMap(p.customFields).Title = 'Team Member'
+RETURN p ORDER BY p.personId
+
+-- JSON array membership (source: OPENJSON(OtherLanguages) contains 'Slovak'):
+MATCH (p:Person) WHERE p.otherLanguages IS NOT NULL
+  AND 'Slovak' IN apoc.convert.fromJsonList(p.otherLanguages)
+RETURN p ORDER BY p.personId
+```
+
+In Cypher-DSL, call the APOC *function* with `Cypher.call(name).withArgs(...).asFunction()`
+and dereference the resulting map with `Cypher.property(expression, "Key")` (`Cypher.property`
+accepts any expression container, not just a node):
+
+```java
+var p = Cypher.node("Person").named("p");
+
+// WHERE apoc.convert.fromJsonMap(p.customFields).Title = 'Team Member'
+var cf = Cypher.call("apoc.convert.fromJsonMap")
+        .withArgs(p.property("customFields")).asFunction();
+var byTitle = Cypher.match(p)
+        .where(p.property("customFields").isNotNull())
+        .and(Cypher.property(cf, "Title").isEqualTo(Cypher.literalOf("Team Member")))
+        .returning(p)
+        .orderBy(Cypher.sort(p.property("personId"), Direction.ASC))
+        .build();
+
+// WHERE 'Slovak' IN apoc.convert.fromJsonList(p.otherLanguages)
+var langs = Cypher.call("apoc.convert.fromJsonList")
+        .withArgs(p.property("otherLanguages")).asFunction();
+var byLang = Cypher.match(p)
+        .where(p.property("otherLanguages").isNotNull())
+        .and(Cypher.literalOf("Slovak").in(langs))
+        .returning(p)
+        .orderBy(Cypher.sort(p.property("personId"), Direction.ASC))
+        .build();
+```
+
+### The raw escape hatch (`Cypher.raw`)
+
+When one expression has no DSL builder, embed a raw Cypher FRAGMENT inside the otherwise
+type-safe statement. `Cypher.raw(format, args...)` substitutes each `$E` placeholder with
+the given expression, in order:
+
+```java
+// equivalent raw form of the JSON map access above
+var title = Cypher.raw("apoc.convert.fromJsonMap($E).Title", p.property("customFields"));
+var stmt = Cypher.match(p)
+        .where(p.property("customFields").isNotNull())
+        .and(title.isEqualTo(Cypher.literalOf("Team Member")))
+        .returning(p).build();
+```
+
+Rules: raw fragments are for single expressions/conditions the DSL cannot express — never
+assemble a whole query by string concatenation, and never interpolate user values into the
+raw string (bind them as `$E` expressions or parameters).
+
+### NULL ordering (translating SQL Server ORDER BY)
+
+Cypher has **no `NULLS FIRST`/`NULLS LAST` clause and `SortItem` has no `nullsFirst()`/
+`nullsLast()` methods** (verified against the bundled jar — do not search for them). The
+defaults DIFFER: SQL Server ascending puts NULLs FIRST; Cypher ascending puts nulls LAST.
+A faithful translation of `ORDER BY NullableCol` (SQL Server) therefore needs an explicit
+null-rank key, plus a deterministic tie-break on a unique key so row sets of TOP-N/LIMIT
+queries match exactly (verified live: `ORDER BY x IS NOT NULL, x` yields NULL, 1, 3):
+
+```java
+// SQL Server: SELECT TOP 1000 * FROM Sales.Orders ORDER BY ExpectedDeliveryDate
+var stmt = Cypher.match(o)
+        .returning(o)
+        .orderBy(
+                Cypher.sort(o.property("expectedDeliveryDate").isNotNull()),  // nulls first
+                Cypher.sort(o.property("expectedDeliveryDate"), Direction.ASC),
+                Cypher.sort(o.property("orderId"), Direction.ASC))            // tie-break
+        .limit(1000)
+        .build();
+// renders: ORDER BY o.expectedDeliveryDate IS NOT NULL, o.expectedDeliveryDate ASC, o.orderId ASC
+```
+
+(For SQL Server DESC — NULLs LAST — invert: sort `isNull()` first, then the column DESC.)

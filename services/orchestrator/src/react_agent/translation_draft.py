@@ -402,6 +402,13 @@ class TranslationConvergenceMiddleware(AgentMiddleware):
     2. **Research doom-loop** — 15+ consecutive web-search calls without ever saving.
        ``wrap_model_call`` counts prior tool calls; past ``research_budget`` it strips every tool
        except the save tools, forcing convergence.
+
+    The budget default is deliberately TIGHT (6): the 2026-07-08 neo4j traces showed the agent
+    burning 14-15 turns on unproductive Cypher-DSL API searches (the web-search snippets could
+    never answer them; ``microsoft_docs_fetch`` is Microsoft-only) while the context ballooned
+    past the summarization trigger and the run died having saved nothing. The system prompt
+    states the budget and the save-first workflow, and the framework skills answer the API
+    questions the searches were chasing — the compiler (``validate_draft``) resolves the rest.
     """
 
     state_schema = TranslationDraftState
@@ -411,7 +418,7 @@ class TranslationConvergenceMiddleware(AgentMiddleware):
         *,
         expected_query_ids: tuple[int, ...] = (),
         monolithic: bool = False,
-        research_budget: int = 14,
+        research_budget: int = 6,
         max_nudges: int = 3,
     ) -> None:
         super().__init__()

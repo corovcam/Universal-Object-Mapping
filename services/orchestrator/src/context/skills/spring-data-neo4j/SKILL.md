@@ -52,7 +52,7 @@ has many types that live in non-obvious nested packages (`SortItem.Direction`,
 |---|---|---|
 | Spring Boot | 4.0.x (`spring-boot-starter-data-neo4j`) | Pulls Spring Data Neo4j 8.0 + Cypher-DSL transitively |
 | Spring Data Neo4j | 8.0.x | The mapping annotations + `Neo4jTemplate`/`Neo4jClient` APIs below |
-| Cypher-DSL | bundled by SDN 8.0 (2024+ line) | `Cypher.*` facade: `node`, `match`, `count`, `collect`, `sort` |
+| Cypher-DSL | bundled by SDN 8.0 (2025.x line, verified 2025.2.0) | `Cypher.*` facade: `node`, `match`, `count`, `collect`, `sort` |
 | Java | 25 | Records, `var`, text blocks, pattern matching all available |
 | Neo4j Java Driver | 5.x (`org.neo4j.driver.*`) | `GraphDatabase.driver`, `AuthTokens`, `Driver` |
 | Jackson | 3.x | **Databind moved to `tools.jackson.*`**; annotations stay at `com.fasterxml.jackson.annotation.*` |
@@ -111,7 +111,10 @@ common cross-mapper mistake when translating from MongoDB or a relational source
 **Build queries with the Cypher-DSL, never string concatenation.** Compose a `Statement`
 via `Cypher.match(...)....build()` and pass it to `Neo4jTemplate`. The parameters travel
 with the statement — read them back with `statement.getCatalog().getParameters()` and pass
-that map to `template.findOne(stmt, params, Type.class)`.
+that map to `template.findOne(stmt, params, Type.class)`. The one sanctioned exception:
+when a SINGLE expression has no DSL builder (e.g. APOC JSON functions), embed a raw
+fragment inside the Statement with `Cypher.raw("...$E...", expr)` — see
+`references/queries.md` §11. Never build a whole query as a string.
 
 **Use `java.time`, never legacy date constructors.** Prefer `LocalDate` (Neo4j `DATE`),
 `LocalDateTime` (`LOCAL_DATETIME`), and `ZonedDateTime` (`DATETIME`). Build with
@@ -218,7 +221,13 @@ These are the API changes that catch out a model trained on older docs. Full lis
 
 - `Functions.count(...)` / `Functions.collect(...)` → **`Cypher.count(...)` /
   `Cypher.collect(...)`** (the recent Cypher-DSL moved the aggregate factories onto the
-  `Cypher` facade).
+  `Cypher` facade). The same holds for every aggregate: `Cypher.max/min/sum/avg/
+  countDistinct/collectDistinct`. UNION is `Cypher.union(a, b)` / `Cypher.unionAll(a, b)`,
+  APOC functions are `Cypher.call("apoc...").withArgs(...).asFunction()`, and map keys on a
+  function result are read with `Cypher.property(expr, "Key")`. **Do NOT web-search for
+  these** — `references/queries.md` §11 has compilable examples for all of them (verified
+  against this project's database), including the `Cypher.raw("...$E...", expr)` escape
+  hatch.
 - The Neo4j-OGM annotations `org.neo4j.ogm.annotation.*` (`@NodeEntity`,
   `@GraphId`, `@Relationship`) → **SDN annotations
   `org.springframework.data.neo4j.core.schema.*`** (`@Node`, `@Id @GeneratedValue`,

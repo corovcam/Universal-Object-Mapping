@@ -278,20 +278,33 @@ async def test_retry_middleware_succeeds_first_try_without_feedback() -> None:
 
 
 @pytest.mark.asyncio
-async def test_retry_middleware_caps_attempts_then_raises() -> None:
-    """After max_retries + 1 failed attempts the error propagates (escalates past the loop)."""
+async def test_retry_middleware_caps_attempts_then_surfaces_error() -> None:
+    """After max_retries + 1 failed attempts the failure is SURFACED, not raised.
+
+    The middleware deliberately returns an `ERROR_PREFIX` message instead of raising on
+    exhaustion: a raised `StructuredOutputValidationError` would be caught by the surrounding
+    `ModelFallbackMiddleware` and bounced to a (typically weaker) fallback model, which cannot
+    fix a schema-comprehension failure. Downstream routing keys on the prefix.
+    """
     agent = await _make_agent([AIMessage(content=_invalid_schema_payload())] * 6, max_retries=2)
 
-    with pytest.raises(StructuredOutputValidationError):
-        await agent.ainvoke({"messages": [HumanMessage(content="translate")]})
+    result = await agent.ainvoke({"messages": [HumanMessage(content="translate")]})
 
     # Initial attempt + 2 retries = 3 model calls (no fallback configured).
     assert len(BindableFakeChatModel.seen_messages) == 3
+    assert result.get("structured_response") is None
+    assert StructuredOutputRetryMiddleware.ERROR_PREFIX in str(result["messages"][-1].content)
 
 
 @pytest.mark.asyncio
-async def test_retry_middleware_escalates_to_fallback_after_exhaustion() -> None:
-    """When the primary exhausts its feedback retries, the fallback model is tried."""
+async def test_retry_middleware_does_not_escalate_validation_failures_to_fallback() -> None:
+    """Structured-output exhaustion must NOT trigger the fallback model.
+
+    Validation failures mean the model misread the schema, not that it is unavailable —
+    escalating burns budget on a weaker model. The middleware surfaces the error as a normal
+    response, so `ModelFallbackMiddleware` (which only reacts to raised exceptions) stays idle
+    and the fake fallback's valid payload is never consumed.
+    """
     agent = await _make_agent(
         [AIMessage(content=_invalid_schema_payload())] * 4,
         max_retries=1,
@@ -300,9 +313,11 @@ async def test_retry_middleware_escalates_to_fallback_after_exhaustion() -> None
 
     result = await agent.ainvoke({"messages": [HumanMessage(content="translate")]})
 
-    assert result.get("structured_response") is not None
-    # 2 primary attempts (initial + 1 retry) before the fallback resolved it.
-    assert len(BindableFakeChatModel.seen_messages) >= 3
+    # 2 primary attempts (initial + 1 retry); the fallback would have produced a valid
+    # structured_response — its absence proves the fallback never ran.
+    assert len(BindableFakeChatModel.seen_messages) == 2
+    assert result.get("structured_response") is None
+    assert StructuredOutputRetryMiddleware.ERROR_PREFIX in str(result["messages"][-1].content)
 
 
 def test_format_structured_output_error_extracts_validation_detail() -> None:
@@ -398,3 +413,57 @@ def test_sanitize_request_messages_removes_all_bare_string_lists() -> None:
             assert not any(isinstance(b, str) for b in m.content)
     assert isinstance(out[1].content, str) and out[1].content == "answer"
     assert out[1].tool_calls == messages[1].tool_calls
+
+
+# ---------------------------------------------------------------------------- retry routing
+# Regression tests for the 2026-07-08 neo4j failure: a generation that saved nothing surfaced
+# `[Structured Output Error]` and route_post_translation diverted STRAIGHT to human intervention
+# (which in eval mode ends the run) even though 2 of the 3 translation loops were unused. The
+# route must retry generate_translation_node — the node persisted any partial fragments, so the
+# retry is pre-seeded — and only hand off to a human once the loop budget is exhausted.
+
+
+def _routing_state(*, loops: int, single_pass: bool = False) -> State:
+    from react_agent.graph import StructuredOutputRetryMiddleware as _M
+
+    return State(
+        messages=[HumanMessage(content="translate this")],
+        translation_messages=[
+            AIMessage(content=f"{_M.ERROR_PREFIX} The translation agent finished without saving: queries 1, 2 (save_query_translation).")
+        ],
+        translation_loop_count=loops,
+        single_pass=single_pass,
+        source_target=FrameworkEnum.DOTNET_EFCORE,
+        destination_target=FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
+        translation_type=TranslationType.BOTH,
+    )
+
+
+def test_route_post_translation_retries_incomplete_generation_within_budget() -> None:
+    from react_agent.constants import MAX_TRANSLATION_LOOPS
+    from react_agent.graph import route_post_translation
+
+    assert MAX_TRANSLATION_LOOPS >= 2  # the retry path exists only with budget to spend
+    assert route_post_translation(_routing_state(loops=1)) == "generate_translation_node"
+
+
+def test_route_post_translation_hands_off_when_budget_exhausted() -> None:
+    from react_agent.constants import MAX_TRANSLATION_LOOPS
+    from react_agent.graph import route_post_translation
+
+    state = _routing_state(loops=MAX_TRANSLATION_LOOPS)
+    assert route_post_translation(state) == "human_intervention_node"
+
+
+def test_route_post_translation_single_pass_terminates() -> None:
+    from react_agent.graph import route_post_translation
+
+    assert route_post_translation(_routing_state(loops=1, single_pass=True)) == "__end__"
+
+
+def test_route_post_translation_clean_generation_proceeds_to_validation() -> None:
+    from react_agent.graph import route_post_translation
+
+    state = _routing_state(loops=1)
+    state.translation_messages = [AIMessage(content="Translation generated successfully.")]
+    assert route_post_translation(state) == "prep_query_validation"

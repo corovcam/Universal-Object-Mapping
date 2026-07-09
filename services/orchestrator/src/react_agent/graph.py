@@ -19,7 +19,6 @@ from langchain.agents.middleware import (
     ContextEditingMiddleware,
     ModelFallbackMiddleware,
     ModelRetryMiddleware,
-    SummarizationMiddleware,
     ToolRetryMiddleware,
 )
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
@@ -1447,7 +1446,31 @@ async def generate_translation_node(
                         expected_query_ids=expected_ids,
                         monolithic=not fragment_mode,
                     ),
-                    SummarizationMiddleware(model, trigger=("fraction", 0.9)),
+                    # Context relief WITHOUT summarization. The 2026-07-08 traces showed
+                    # SummarizationMiddleware firing mid-research and degrading to the literal
+                    # placeholder "Previous conversation was too long to summarize." (its 4000-token
+                    # trim window, start_on="human", finds no human message behind the huge search/
+                    # reasoning turns) — and its keep-window then DISCARDED the original task
+                    # message, so the agent lost the source code and correctly refused to fabricate
+                    # (all three neo4j pairs died this way). ClearToolUsesEdit instead stubs the
+                    # OLDEST research ToolMessage contents in place: the task HumanMessage is
+                    # untouchable, AI/Tool pairing is preserved, and the save/validate results the
+                    # convergence loop depends on are excluded.
+                    ContextEditingMiddleware(
+                        edits=[
+                            ClearToolUsesEdit(
+                                trigger=50_000,
+                                clear_at_least=8_000,
+                                keep=4,
+                                exclude_tools=(
+                                    "save_translation",
+                                    "save_schema_translation",
+                                    "save_query_translation",
+                                    "validate_draft",
+                                ),
+                            )
+                        ],
+                    ),
                     ModelFallbackMiddleware(
                         await get_model(
                             config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING
@@ -1478,7 +1501,7 @@ async def generate_translation_node(
 
             try:
                 response = await agent.ainvoke(
-                    agent_input, {"recursion_limit": 60}
+                    agent_input, {"recursion_limit": 100}
                 )  # type: ignore
             except GraphRecursionError:
                 # The inner ReAct loop ran out of steps (2026-07-03 traces: 14/18 runs died
@@ -2594,15 +2617,23 @@ def should_extract_input(state: State) -> Literal["schema_inspection", "extract_
 def route_post_translation(
     state: State,
 ) -> Literal[
-    "prep_schema_validation", "prep_query_validation", "human_intervention_node", "__end__"
+    "prep_schema_validation",
+    "prep_query_validation",
+    "generate_translation_node",
+    "human_intervention_node",
+    "__end__",
 ]:
     """Determine the next validation state transition after code generation.
 
     If generation could not produce a valid structured output (surfaced by
-    `generate_translation_node` as a `[Structured Output Error]` message), routes to
-    `human_intervention_node` so the failure is reviewed instead of pushing empty/invalid code
-    into validation. Otherwise routes to `prep_schema_validation` for SCHEMA translations, or to
-    `prep_query_validation` for QUERY/BOTH.
+    `generate_translation_node` as a `[Structured Output Error]` message), RETRIES
+    `generate_translation_node` while translation-loop budget remains — the node persisted any
+    partial fragments, so the retry is pre-seeded and only the missing pieces are regenerated
+    (this is the "outer retry loop takes over" the forced-completion cap was designed around;
+    the 2026-07-08 neo4j runs died at loop 1 because this route unconditionally diverted to
+    human intervention instead). Only when the budget is exhausted does it route to
+    `human_intervention_node`. Otherwise routes to `prep_schema_validation` for SCHEMA
+    translations, or to `prep_query_validation` for QUERY/BOTH.
 
     Args:
         state (State): The current state of the graph.
@@ -2619,7 +2650,11 @@ def route_post_translation(
     if StructuredOutputRetryMiddleware.ERROR_PREFIX in last_msg:
         # Baseline arm: a failed single-shot generation terminates rather than interrupting for a
         # human (which would block batch experiment runs).
-        return "__end__" if state.single_pass else "human_intervention_node"
+        if state.single_pass:
+            return "__end__"
+        if state.translation_loop_count < MAX_TRANSLATION_LOOPS:
+            return "generate_translation_node"
+        return "human_intervention_node"
     if state.translation_type == TranslationType.SCHEMA:
         return "prep_schema_validation"
     return "prep_query_validation"
