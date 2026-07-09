@@ -15,7 +15,9 @@ matplotlib deps pinned) so the service env is untouched — invoke everything wi
 4. **`aggregate_results.py`** / **`plot_results.py`** → per-pair + cross-batch tables, pass@k, and
    matplotlib charts (the thesis numbers).
 5. **`extract_predictions.py`** + **`score_predictions.py`** → post-hoc CodeBLEU (secondary metric).
-6. **`export_manual_prompts.py`** → the exact prompt for hand-running proprietary-model baselines.
+6. **`export_manual_prompts.py`** → **`score_external.py`** (or one-shot **`claude_arm.sh`**) →
+   the closed "vs SOTA harness" loop: byte-identical prompt out, external answer validated back
+   through the pipeline's own sandbox gauntlet.
 
 `aggregate_traces.py` (LangSmith-trace funnel/per-node-cost) and `metrics.py` / `aimock_recorder.py`
 are shared libraries used by the above. Detailed per-script docs follow.
@@ -148,11 +150,47 @@ It drives the real graph with `interrupt_before=["generate_translation_node"]` �
 stops **before** the translation model call, so it spends no SOTA tokens and never touches the
 proprietary models (it does need the live stack for extract_input/schema_inspection).
 
-Per fixture, under `<out>/wwi/<fixture>__<timestamp>/`: `system.txt`, `user.txt` (raw, cleanest to
-copy), and `prompt.md` (both + per-platform paste instructions + a manual-run adaptation that turns
-the `save_translation` tool-call into two labeled `*_validation_body` code blocks + an output-capture
-template). See `evaluation/manual-eval/SAMPLE/` for an illustrative render. Capture each model's two
-bodies and assemble→validate→finalize them through the same pipeline for an apples-to-apples score.
+Per export, under `<out>/wwi/<name>__<timestamp>/`: `system.txt`, `user.txt`, `adaptation.txt`
+(the no-tools rewrite of the save-tool contract), `prompt.md` (everything + per-platform paste
+instructions), and — in fragment mode — a pre-labeled `capture.md` template with one fenced block
+per required piece.
+
+**Experiment-workload mode (the comparison arm):** `--pair <source>-<target> --variant full`
+exports the SAME bundled 15-query prompt the LangSmith dataset examples carry (built by
+`build_eval_dataset.build_prompt`), so the external harness answers the identical task the
+pipeline is scored on:
+
+```bash
+uv run python evaluation/scripts/export_manual_prompts.py --pair dapper-mongodb --variant full \
+    --out evaluation/manual-eval --env .env
+```
+
+### 5b. `score_external.py` + `claude_arm.sh` — the closed "vs SOTA harness" loop
+
+`score_external.py` validates a captured external answer with the pipeline's own gauntlet — the
+same `assemble_query_harness`, the same Daytona sandboxes, the same per-query execution
+equivalence — and emits the same metrics row (`passed`, `compile_pass`,
+`queries_expected/claimed/accepted`, `query_accuracy`, verdicts) plus a predictions-tree entry
+(CodeBLEU-comparable). Deterministic equivalence IS acceptance in this arm (no judge) — the same
+strict standard as the pipeline's `passed`.
+
+```bash
+uv run python evaluation/scripts/score_external.py \
+    --capture evaluation/manual-eval/wwi/dapper-mongodb__full__<ts>/capture.md \
+    --pair dapper-mongodb --variant full --approach claude_code --model-label claude-opus-4-8
+```
+
+Outputs: `evaluation/out/external/<approach>/<pair>__<variant>__<ts>/result.json` (+ sandbox logs
++ assembled harnesses), one appended row in `evaluation/out/external/<approach>/results.csv`, and
+predictions under `evaluation/predictions/wwi/external-<approach>/…`.
+
+`claude_arm.sh` automates the whole arm for Claude Code (export → headless `claude -p` with
+`--tools ""` chat mode, CWD isolated to the export folder so no repo context leaks → capture →
+score). **It spends Claude tokens** — run it deliberately, one pair at a time:
+
+```bash
+evaluation/scripts/claude_arm.sh dapper-mongodb full claude-opus-4-8
+```
 
 **Gate the FIRST live baseline run** (the one path not testable without infra): open its LangSmith
 trace and confirm **exactly one `generate_translation_node` span and zero docs-MCP tool calls**.
