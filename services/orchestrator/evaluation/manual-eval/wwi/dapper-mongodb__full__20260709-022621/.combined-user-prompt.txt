@@ -1,0 +1,419 @@
+Translate the following Source Code (schema/query) from .NET Dapper to Java Spring Data MongoDB 5.0.
+
+Database Schema Context:
+Here is the comprehensive schema summary for both source and target databases relevant to the translation.
+
+---
+
+## SOURCE: Microsoft SQL Server (WideWorldImporters)
+
+### Table: `Sales.OrderLines`
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| OrderLineID | int | NO | PK |
+| OrderID | int | NO | FK → Sales.Orders |
+| StockItemID | int | NO | FK → Warehouse.StockItems |
+| Description | nvarchar | NO | |
+| PackageTypeID | int | NO | |
+| Quantity | int | NO | |
+| UnitPrice | decimal | YES | Nullable decimal |
+| TaxRate | decimal | NO | |
+| PickedQuantity | int | NO | |
+| PickingCompletedWhen | datetime2 | YES | Nullable |
+| LastEditedBy | int | NO | |
+| LastEditedWhen | datetime2 | NO | |
+
+### Table: `Sales.Orders`
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| OrderID | int | NO | PK |
+| CustomerID | int | NO | FK → Sales.Customers |
+| SalespersonPersonID | int | NO | |
+| PickedByPersonID | int | YES | Nullable |
+| ContactPersonID | int | NO | |
+| BackorderOrderID | int | YES | Nullable |
+| OrderDate | date | NO | |
+| ExpectedDeliveryDate | date | NO | |
+| CustomerPurchaseOrderNumber | nvarchar | YES | Nullable |
+| IsUndersupplyBackordered | bit | NO | |
+| Comments | nvarchar | YES | Nullable |
+| DeliveryInstructions | nvarchar | YES | Nullable |
+| InternalComments | nvarchar | YES | Nullable |
+| PickingCompletedWhen | datetime2 | YES | Nullable |
+| LastEditedBy | int | NO | |
+| LastEditedWhen | datetime2 | NO | |
+
+### Table: `Application.People`
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| PersonID | int | NO | PK |
+| FullName | nvarchar | NO | |
+| PreferredName | nvarchar | NO | |
+| SearchName | nvarchar | NO | |
+| IsPermittedToLogon | bit | NO | |
+| LogonName | nvarchar | YES | |
+| IsExternalLogonProvider | bit | NO | |
+| HashedPassword | varbinary | YES | |
+| IsSystemUser | bit | NO | |
+| IsEmployee | bit | NO | |
+| IsSalesperson | bit | NO | |
+| UserPreferences | nvarchar | YES | |
+| PhoneNumber | nvarchar | YES | |
+| FaxNumber | nvarchar | YES | |
+| EmailAddress | nvarchar | YES | |
+| Photo | varbinary | YES | |
+| **CustomFields** | nvarchar | YES | JSON string, e.g. `{ "OtherLanguages": ["Polish","Chinese","Japanese"], "HireDate":"...", "Title":"Team Member", ...}` |
+| **OtherLanguages** | nvarchar | YES | JSON array string, e.g. `["Polish","Chinese","Japanese"]` |
+| LastEditedBy | int | NO | |
+| ValidFrom | datetime2 | NO | |
+| ValidTo | datetime2 | NO | |
+
+### Table: `Purchasing.Suppliers`
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| SupplierID | int | NO | PK |
+| SupplierName | nvarchar | NO | |
+| SupplierCategoryID | int | NO | |
+| PrimaryContactPersonID | int | NO | |
+| AlternateContactPersonID | int | NO | |
+| ... (additional columns for addresses, banking, etc.) | | | |
+| PaymentDays | int | NO | |
+| SupplierReference | nvarchar | YES | |
+| LastEditedBy | int | NO | |
+| ValidFrom | datetime2 | NO | |
+| ValidTo | datetime2 | NO | |
+
+---
+
+## TARGET: MongoDB (Database: `uom`)
+
+### Collection: `orderLines` (231,412 documents)
+Top-level fields:
+| Field | BSON Type | Notes |
+|---|---|---|
+| _id | ObjectId | |
+| orderLineId | Number | PK equivalent |
+| orderId | Number | Reference to orders collection |
+| stockItemId | Number | |
+| description | String | |
+| packageTypeId | Number | |
+| quantity | Number | |
+| unitPrice | Decimal128 | Nullable decimal |
+| taxRate | Decimal128 | |
+| pickedQuantity | Number | |
+| pickingCompletedWhen | Date | Nullable |
+| lastEditedBy | Number | |
+| lastEditedWhen | Date | |
+| **stockItem** | Embedded Document | Single embedded doc from StockItems table, containing: stockItemId, stockItemName, supplierId, unitPrice, taxRate, recommendedRetailPrice, typicalWeightPerUnit, brand, size, barcode, colorId, leadTimeDays, quantityPerOuter, isChillerStock (bool), marketingComments, customFields (String - JSON), tags (String - JSON array), searchDetails, validFrom, validTo, etc. |
+| **stockItem.stockItemStockGroups** | Array of Embedded Docs | Each with: stockItemStockGroupId, stockItemId, stockGroupId, lastEditedBy, lastEditedWhen |
+
+### Collection: `orders` (73,595 documents)
+Top-level fields:
+| Field | BSON Type | Notes |
+|---|---|---|
+| _id | ObjectId | |
+| orderId | Number | PK equivalent |
+| customerId | Number | |
+| salespersonPersonId | Number | |
+| pickedByPersonId | Number / Null | Nullable |
+| contactPersonId | Number | |
+| backorderOrderId | Number / Null | Nullable |
+| orderDate | Date | |
+| expectedDeliveryDate | Date | |
+| customerPurchaseOrderNumber | String | Nullable |
+| isUndersupplyBackordered | Boolean | |
+| comments | Null | |
+| deliveryInstructions | Null | |
+| internalComments | Null | |
+| pickingCompletedWhen | Date / Null | |
+| lastEditedBy | Number | |
+| lastEditedWhen | Date | |
+| **customer** | Embedded Document | Single embedded doc from Customers table with: customerId, customerName, phoneNumber, faxNumber, websiteUrl, delivery/postal addresses, creditLimit (Decimal128), paymentDays, standardDiscountPercentage, etc. |
+| **customer.customerTransactions** | Array of Embedded Docs | Each with: customerTransactionId, transactionTypeId, transactionDate, amountExcludingTax, taxAmount, transactionAmount, outstandingBalance (all Decimal128), isFinalized (bool), etc. |
+
+**IMPORTANT**: Unlike the SQL JOIN in Query10, order lines are NOT embedded in orders. They are in a separate `orderLines` collection, referenced by `orderId`.
+
+### Collection: `people` (1,111 documents)
+Top-level fields:
+| Field | BSON Type | Notes |
+|---|---|---|
+| _id | ObjectId | |
+| personId | Number | PK equivalent |
+| fullName | String | |
+| preferredName | String | |
+| searchName | String | |
+| emailAddress | String | |
+| phoneNumber | String | |
+| faxNumber | String | |
+| isPermittedToLogon | Boolean | |
+| logonName | String | |
+| isExternalLogonProvider | Boolean | |
+| isSystemUser | Boolean | |
+| isEmployee | Boolean | |
+| isSalesperson | Boolean | |
+| **customFields** | String (Null) | Stored as a JSON **string** (not embedded doc). Sample: `"{ \"OtherLanguages\": [\"Polish\",\"Chinese\",\"Japanese\"], \"HireDate\":\"2008-04-19T00:00:00\", \"Title\":\"Team Member\", ...}"`. Only 19 of 1,111 docs have non-null customFields. |
+| **otherLanguages** | String (Null) | Stored as a JSON **string** (not array). Sample: `"[\"Polish\",\"Chinese\",\"Japanese\"]"`. Only 19 of 1,111 docs have non-null otherLanguages. |
+| userPreferences | Null | |
+| hashedPassword | Null | |
+| photo | Null | |
+| lastEditedBy | Number | |
+| validFrom | Date | |
+| validTo | Date | |
+
+Also has embedded arrays: purchaseOrders, customerTransactions, customers, stockGroups, stockItemStockGroups, stockItems (per the mapping, though not visible in sample due to small sample limit).
+
+### Collection: `suppliers` (13 documents)
+Top-level fields:
+| Field | BSON Type | Notes |
+|---|---|---|
+| _id | ObjectId | |
+| supplierId | Number | PK equivalent |
+| supplierName | String | |
+| supplierReference | String | |
+| paymentDays | Number | |
+| supplierCategoryId | Number | |
+| primaryContactPersonId | Number | |
+| alternateContactPersonId | Number | |
+| phoneNumber | String | |
+| faxNumber | String | |
+| websiteUrl | String | |
+| ... (address, banking fields) | | |
+| **purchaseOrders** | Array of Embedded Docs | Each with: purchaseOrderId, supplierId, orderDate, expectedDeliveryDate, isOrderFinalized, etc. |
+| **stockItems** | Array of Embedded Docs | Each with: stockItemId, stockItemName, supplierId, unitPrice, taxRate, etc. |
+
+---
+
+## KEY TRANSLATION MAPPINGS
+
+| Concept | SQL Server (Dapper) | MongoDB (Spring Data) |
+|---|---|---|
+| Table | `Sales.OrderLines` | `orderLines` collection |
+| Table | `Sales.Orders` | `orders` collection |
+| Table | `Application.People` | `people` collection |
+| Table | `Purchasing.Suppliers` | `suppliers` collection |
+| PK | `OrderLineID` (int) | `orderLineId` (Number) |
+| PK | `OrderID` (int) | `orderId` (Number) |
+| PK | `PersonID` (int) | `personId` (Number) |
+| PK | `SupplierID` (int) | `supplierId` (Number) |
+| Decimal | `decimal` → `decimal?` | `Decimal128` (nullable) |
+| DateTime | `datetime2` / `date` | `Date` (ISODate) |
+| Bit | `bit` | `Boolean` |
+| NVARCHAR | `nvarchar` | `String` |
+| Nullable | `int?` / `DateTime?` | Field can be `null` |
+| JOIN (Query10) | `LEFT JOIN Sales.OrderLines ON Orders.OrderID = OrderLines.OrderID` | `$lookup` aggregation from `orders` to `orderLines` on `orderId` |
+| `JSON_VALUE(CustomFields, '$.Title')` | SQL JSON path | Regex/string match on `customFields` string field: `customFields: { $regex: '"Title"\\s*:\\s*"Team Member"' }` |
+| `OPENJSON(OtherLanguages)` | SQL JSON array | Regex/string match on `otherLanguages` string field: `otherLanguages: { $regex: '"Slovak"' }` |
+| `ORDER BY ... OFFSET ... FETCH NEXT` | SQL pagination | `.skip(N).limit(M)` in Spring Data |
+| `GROUP BY` + `COUNT(*)` | SQL aggregation | `$group` + `$sort` aggregation pipeline |
+| `MAX()` / `SUM()` | SQL scalar | `$group` with `$max` / `$sum` in aggregation |
+| `IN @Ids` | SQL array param | `$in` operator with list of values |
+| `LIKE '%C++%'` | SQL pattern | `$regex` with pattern |
+| `TOP 1000` | SQL limit | `.limit(1000)` |
+| `DISTINCT` | SQL distinct | `.distinct()` or `$group` |
+| `UNION` | SQL set operation | `$unionWith` in aggregation pipeline |
+| Embedded doc (stockItem) | Separate `StockItems` table | Embedded `stockItem` sub-document in `orderLines` |
+| Embedded array (stockItemStockGroups) | Separate `StockItemStockGroups` table | Embedded `stockItem.stockItemStockGroups` array |
+| Embedded doc (customer) | Separate `Customers` table | Embedded `customer` sub-document in `orders` |
+| Embedded array (customerTransactions) | Separate `CustomerTransactions` table | Embedded `customer.customerTransactions` array |
+---
+Source Code:
+<source_schema_code>
+public class OrderLine
+{
+    public int OrderLineID { get; set; }
+    public int OrderID { get; set; }
+    public int StockItemID { get; set; }
+    public required string Description { get; set; }
+    public int PackageTypeID { get; set; }
+    public int Quantity { get; set; }
+    public decimal? UnitPrice { get; set; }
+    public decimal TaxRate { get; set; }
+    public int PickedQuantity { get; set; }
+    public DateTime? PickingCompletedWhen { get; set; }
+    public int LastEditedBy { get; set; }
+    public DateTime LastEditedWhen { get; set; }
+}
+public class Order
+{
+    public int OrderID { get; set; }
+    public int CustomerID { get; set; }
+    public int SalespersonPersonID { get; set; }
+    public int? PickedByPersonID { get; set; }
+    public int ContactPersonID { get; set; }
+    public int? BackorderOrderID { get; set; }
+    public DateTime OrderDate { get; set; }
+    public DateTime ExpectedDeliveryDate { get; set; }
+    public string? CustomerPurchaseOrderNumber { get; set; }
+    public bool IsUndersupplyBackordered { get; set; }
+    public string? Comments { get; set; }
+    public string? DeliveryInstructions { get; set; }
+    public string? InternalComments { get; set; }
+    public DateTime? PickingCompletedWhen { get; set; }
+    public int LastEditedBy { get; set; }
+    public DateTime LastEditedWhen { get; set; }
+    public List<OrderLine> OrderLines { get; set; } = [];
+}
+public class Person
+{
+    public int PersonID { get; set; }
+    public required string FullName { get; set; }
+    public required string PreferredName { get; set; }
+    public string? EmailAddress { get; set; }
+    public string? CustomFields { get; set; }
+    public string? OtherLanguages { get; set; }
+}
+public class Supplier
+{
+    public int SupplierID { get; set; }
+    public required string SupplierName { get; set; }
+    public string? SupplierReference { get; set; }
+    public int PaymentDays { get; set; }
+}
+</source_schema_code>
+<source_query_code>
+public static IEnumerable<OrderLine> Query1(SqlConnection conn)
+{
+    string sql = @"SELECT * FROM Sales.OrderLines WHERE OrderID = @OrderID";
+    return conn.Query<OrderLine>(sql, new { OrderID = 26866 });
+}
+
+public static IEnumerable<OrderLine> Query2(SqlConnection conn)
+{
+    string sql = @"SELECT * FROM Sales.OrderLines WHERE UnitPrice = @UnitPrice";
+    return conn.Query<OrderLine>(sql, new { UnitPrice = 25m });
+}
+
+public static IEnumerable<OrderLine> Query3(SqlConnection conn)
+{
+    var from = new DateTime(2014, 12, 20);
+    var to = new DateTime(2014, 12, 31);
+    string sql = @"SELECT * FROM Sales.OrderLines WHERE PickingCompletedWhen >= @From AND PickingCompletedWhen <= @To";
+    return conn.Query<OrderLine>(sql, new { From = from, To = to });
+}
+
+public static IEnumerable<OrderLine> Query4(SqlConnection conn)
+{
+    var orderIds = new[] { 1, 10, 100, 1000, 10000 };
+    string sql = @"SELECT * FROM Sales.OrderLines WHERE OrderID IN @Ids";
+    return conn.Query<OrderLine>(sql, new { Ids = orderIds });
+}
+
+public static IEnumerable<OrderLine> Query5(SqlConnection conn)
+{
+    string sql = @"SELECT * FROM Sales.OrderLines WHERE Description LIKE @Pattern";
+    return conn.Query<OrderLine>(sql, new { Pattern = "%C++%" });
+}
+
+public static IEnumerable<OrderLine> Query6(SqlConnection conn)
+{
+    string sql = @"SELECT * FROM Sales.OrderLines ORDER BY OrderLineID OFFSET @Skip ROWS FETCH NEXT @Take ROWS ONLY";
+    return conn.Query<OrderLine>(sql, new { Skip = 1000, Take = 50 });
+}
+
+public static IEnumerable<(decimal TaxRate, int Count)> Query7(SqlConnection conn)
+{
+    string sql = @"SELECT TaxRate, COUNT(*) AS Count FROM Sales.OrderLines GROUP BY TaxRate ORDER BY Count DESC";
+    return conn.Query<(decimal TaxRate, int Count)>(sql);
+}
+
+public static decimal? Query8(SqlConnection conn)
+{
+    string sql = @"SELECT MAX(UnitPrice) FROM Sales.OrderLines";
+    return conn.ExecuteScalar<decimal?>(sql);
+}
+
+public static decimal? Query9(SqlConnection conn)
+{
+    string sql = @"SELECT SUM(Quantity * UnitPrice) FROM Sales.OrderLines";
+    return conn.ExecuteScalar<decimal?>(sql);
+}
+
+static Order Query10mapRow(Order o, OrderLine ol)
+{
+    if (ol != null) o.OrderLines.Add(ol);
+    return o;
+}
+public static Order? Query10(SqlConnection conn)
+{
+    string sql = @"
+        SELECT o.*, ol.*
+        FROM Sales.Orders o
+        LEFT JOIN Sales.OrderLines ol ON o.OrderID = ol.OrderID
+        WHERE o.OrderID = 530";
+    var rows = conn.Query<Order, OrderLine, Order>(sql, Query10mapRow, splitOn: "OrderLineID");
+    return rows.GroupBy(o => o.OrderID).Select(g => {
+        var order = g.First();
+        order.OrderLines = g.SelectMany(o => o.OrderLines).ToList();
+        return order;
+    }).SingleOrDefault();
+}
+
+public static IEnumerable<Order> Query11(SqlConnection conn)
+{
+    string sql = @"SELECT TOP 1000 * FROM Sales.Orders ORDER BY ExpectedDeliveryDate";
+    return conn.Query<Order>(sql);
+}
+
+public static IEnumerable<string?> Query12(SqlConnection conn)
+{
+    string sql = @"SELECT DISTINCT CustomerPurchaseOrderNumber FROM Sales.Orders";
+    return conn.Query<string?>(sql);
+}
+
+public static IEnumerable<Person> Query13(SqlConnection conn)
+{
+    string sql = @"
+        SELECT PersonID, FullName, PreferredName, EmailAddress, CustomFields, OtherLanguages
+        FROM Application.People
+        WHERE JSON_VALUE(CustomFields, '$.Title') = @Title
+        ORDER BY PersonID";
+    return conn.Query<Person>(sql, new { Title = "Team Member" });
+}
+
+public static IEnumerable<Person> Query14(SqlConnection conn)
+{
+    string sql = @"
+        SELECT PersonID, FullName, PreferredName, EmailAddress, CustomFields, OtherLanguages
+        FROM Application.People
+        WHERE EXISTS (
+            SELECT 1 FROM OPENJSON(OtherLanguages)
+            WHERE value = @Language
+        )
+        ORDER BY PersonID";
+    return conn.Query<Person>(sql, new { Language = "Slovak" });
+}
+
+public static IEnumerable<int> Query15(SqlConnection conn)
+{
+    string sql = @"
+        SELECT SupplierID FROM Purchasing.Suppliers WHERE SupplierID < 5
+        UNION
+        SELECT SupplierID FROM Purchasing.Suppliers WHERE SupplierID BETWEEN 5 AND 10
+        ORDER BY SupplierID";
+    return conn.Query<int>(sql);
+}
+</source_query_code>
+
+Translate ONLY the entities, fields, and queries that appear above. Do not invent or carry over any entity or field that is not present in this source code.
+
+
+There are no tools available in this chat. Do NOT call the save_* tools; instead, output every
+piece the save tools would have collected, as fenced code blocks labeled EXACTLY like this (one
+schema pair + one source/target pair per query id — required ids: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
+
+```source_schema_body
+<the SOURCE-side entity/mapping classes>
+```
+```target_schema_body
+<the TARGET-side entity/mapping classes>
+```
+```source_query_body id=1
+<Query1's SOURCE-side harness fragment>
+```
+```target_query_body id=1
+<Query1's TARGET-side harness fragment>
+```
+... repeat the source/target pair for every required query id ...
+
+The fragment shapes/signatures are the ones the system prompt already specifies. Use only your own
+knowledge for framework API details (the research tools are unavailable). Do not omit any query id.
