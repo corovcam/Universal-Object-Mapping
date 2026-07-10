@@ -203,9 +203,18 @@ class State(InputState, OutputState):
 
     accepted_query_ids: list[str] = field(default_factory=list)
     """
-    Query ids whose translations have been accepted (deterministically Equivalent, or explicitly
-    passed by the evaluation judge). Frozen across retries: feedback instructs the agent not to
-    re-save them, and the evaluation node never un-accepts them.
+    Query ids whose translations are currently accepted (deterministically Equivalent, or
+    explicitly passed by the evaluation judge). NOT frozen across retries: a query accepted
+    deterministically in an earlier loop that stops verifying after a revision is a regression
+    and gets re-decided (dropped or re-judged) in the next evaluation pass.
+    """
+
+    judge_accepted_query_ids: list[str] = field(default_factory=list)
+    """
+    The subset of ``accepted_query_ids`` accepted by the evaluation JUDGE rather than the
+    deterministic checker. These stay accepted across loops (their diff is a shape change the
+    judge already ruled on, which by construction keeps reporting "Differences Found"), while
+    deterministic acceptances must re-verify every loop.
     """
 
     query_verdicts: dict[str, str] | None = field(default=None)

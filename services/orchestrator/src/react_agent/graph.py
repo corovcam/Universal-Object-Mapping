@@ -923,7 +923,7 @@ async def schema_inspection(
                         config, runtime, AvailableModel.EINFRA_KIMI_K2_7
                     ),
                     await get_model(
-                        config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B
+                        config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO
                     ),
                     await get_model(config, runtime),
                     # await get_model(
@@ -1041,7 +1041,7 @@ async def translation_agent(
                     reasoning=False,
                 ),
                 await get_model(
-                    config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0
+                    config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO, temperature=0
                 ),
             ),
             ToolRetryMiddleware(),
@@ -1477,7 +1477,7 @@ async def generate_translation_node(
                             config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING
                         ),
                         await get_model(
-                            config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B
+                            config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO
                         ),
                     ),
                     ToolRetryMiddleware(),
@@ -2186,6 +2186,43 @@ class EvaluationOutput(BaseModel):
     )
 
 
+def _partition_query_statuses(
+    diffs: dict[str, Any],
+    previously_accepted: set[str],
+    previously_judge: set[str],
+) -> tuple[set[str], set[str], list[str], list[str]]:
+    """Split the fresh per-query equivalence statuses into the evaluation-node decision sets.
+
+    Judge acceptance is sticky: an accepted shape change keeps reporting "Differences Found"
+    every loop by construction, so re-judging it only burns tokens and risks flip-flops.
+    DETERMINISTIC acceptance is not sticky: a query that verified in an earlier loop but no
+    longer does was broken by a later revision (run 20260709-150203 nhib-neo4j shipped a
+    loop-2 id-leak on query13/14 as "accepted") — it re-enters the undecided set.
+
+    Args:
+        diffs: Fresh per-query equivalence results (`{query_id: {"status": ...}}`).
+        previously_accepted: `accepted_query_ids` from the previous loop.
+        previously_judge: `judge_accepted_query_ids` from the previous loop.
+
+    Returns:
+        tuple: ``(det_pass, sticky_judge, regressed, undecided)`` — deterministically
+        equivalent now; judge-accepted earlier (stays accepted); accepted deterministically
+        earlier but no longer verifying (flagged to the judge as regressions); all queries
+        needing a judge verdict this loop (includes the regressed ones).
+    """
+    det_pass = {
+        qid
+        for qid, entry in diffs.items()
+        if isinstance(entry, dict) and dict(entry).get("status") == "Equivalent"
+    }
+    sticky_judge = previously_judge & set(diffs.keys())
+    regressed = sorted(
+        (previously_accepted & set(diffs.keys())) - previously_judge - det_pass
+    )
+    undecided = sorted(set(diffs.keys()) - det_pass - sticky_judge)
+    return det_pass, sticky_judge, regressed, undecided
+
+
 async def evaluation_node(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ) -> dict[str, Any]:
@@ -2216,24 +2253,32 @@ async def evaluation_node(
     # (Differences Found — is the shape change acceptable? — and Execution Errors).
     diffs = state.query_equivalence_deep_diffs or {}
     previously_accepted = set(state.accepted_query_ids or [])
-    det_pass = {
-        qid
-        for qid, entry in diffs.items()
-        if isinstance(entry, dict) and dict(entry).get("status") == "Equivalent"
-    }
-    undecided = sorted(set(diffs.keys()) - det_pass - previously_accepted)
+    previously_judge = set(state.judge_accepted_query_ids or [])
+    det_pass, sticky_judge, regressed, undecided = _partition_query_statuses(
+        diffs, previously_accepted, previously_judge
+    )
 
     undecided_section = ""
     if undecided:
         undecided_details = {qid: diffs[qid] for qid in undecided}
+        regressed_note = (
+            f"\nREGRESSED queries {regressed}: these verified as Equivalent in an earlier loop "
+            'and stopped verifying after the latest revision — vote "fail" unless the current '
+            "diff is genuinely acceptable, and name what regressed.\n"
+            if regressed
+            else ""
+        )
         undecided_section = f"""
-Already accepted deterministically (do NOT re-judge, do NOT mention): {sorted(det_pass | previously_accepted)}.
-
+Already accepted (do NOT re-judge, do NOT mention): {sorted(det_pass | sticky_judge)}.
+{regressed_note}
 UNDECIDED queries — give a per-query verdict for EACH of {undecided} in `query_verdicts`:
 - "pass" if the reported difference is an acceptable consequence of the paradigm translation
   (e.g. intended relational→document/graph shape change) and the target query is semantically
   faithful to the source.
 - "fail" if the target must be fixed. A target-side execution error is always "fail".
+- A target-side null where the source has a value is NOT an acceptable paradigm consequence
+  when the value is reachable in the target store (e.g. recoverable via relationship
+  traversal) — vote "fail" so the translation recovers it or synchronizes the projection.
 
 <undecided_query_diffs>
 {orjson.dumps(undecided_details, option=orjson.OPT_INDENT_2).decode("utf-8")}
@@ -2257,7 +2302,7 @@ Is the translation logically equivalent and syntactically valid? Provide your re
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
                 await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_7),
-                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B),
+                await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO),
                 await get_model(config, runtime)
             ),
             # Innermost (last): flatten reasoning list-content so re-sent turns don't 400.
@@ -2294,15 +2339,16 @@ Is the translation logically equivalent and syntactically valid? Provide your re
     judge_fail_reasons = {
         v.query_id: v.reason for v in output.query_verdicts if v.verdict == "fail"
     }
-    accepted = sorted(previously_accepted | det_pass | judge_pass)
+    accepted = sorted(det_pass | sticky_judge | judge_pass)
+    judge_accepted = sorted((sticky_judge | judge_pass) - det_pass)
     verdicts: dict[str, str] = {}
     for qid in diffs.keys():
         if qid in det_pass:
             verdicts[qid] = "pass (deterministic: Equivalent)"
-        elif qid in previously_accepted:
-            verdicts[qid] = "pass (accepted in an earlier loop)"
         elif qid in judge_pass:
             verdicts[qid] = "pass (judge)"
+        elif qid in sticky_judge:
+            verdicts[qid] = "pass (judge, earlier loop)"
         else:
             verdicts[qid] = f"fail: {judge_fail_reasons.get(qid, 'not passed by the judge')}"
     failing = sorted(set(diffs.keys()) - set(accepted))
@@ -2337,6 +2383,7 @@ Evaluation:
     return {
         "explanation_message": summary,
         "accepted_query_ids": accepted,
+        "judge_accepted_query_ids": judge_accepted,
         "query_verdicts": verdicts or None,
         "messages": messages,
         "translation_messages": messages,

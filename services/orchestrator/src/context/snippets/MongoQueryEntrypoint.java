@@ -107,6 +107,33 @@ final class QueryRuntimeSupport {
     static String defaultMongoDatabase() {
         return System.getenv("MONGODB_DATABASE") != null ? System.getenv("MONGODB_DATABASE") : DEFAULT_MONGO_DATABASE;
     }
+
+    /**
+     * Strip store-internal identifiers before results are written: equivalence compares source and
+     * target result JSON field-by-field, and the mapped store id (Mongo ObjectId / Neo4j element
+     * id, always surfacing as a bare "id" property) has no source-side counterpart — the C#
+     * entities expose only domain keys (orderId, orderLineId, ...). Removing it centrally means a
+     * translated entity that misses @JsonIgnoreProperties({"id"}) can no longer fail equivalence
+     * on shape alone.
+     */
+    static void stripStoreInternalIds(JsonNode node) {
+        if (node == null) {
+            return;
+        }
+        if (node.isObject()) {
+            ((tools.jackson.databind.node.ObjectNode) node).remove("id");
+        }
+        for (JsonNode child : node) {
+            stripStoreInternalIds(child);
+        }
+    }
+
+    static void writeResults(String path, Object results) {
+        JsonMapper mapper = createJsonMapper();
+        JsonNode tree = mapper.valueToTree(results);
+        stripStoreInternalIds(tree);
+        mapper.writeValue(new java.io.File(path), tree);
+    }
 }
 
 // --- Schema and Related Settings ---
@@ -494,6 +521,6 @@ public class MongoQueryEntrypoint {
                 results.put("query" + idx, Map.of("error", e.toString()));
             }
         }
-        QueryRuntimeSupport.createJsonMapper().writeValue(new java.io.File(System.getenv("MONGO_RESULTS_PATH") + "/mongo_results_" + System.currentTimeMillis() + ".json"), results);
+        QueryRuntimeSupport.writeResults(System.getenv("MONGO_RESULTS_PATH") + "/mongo_results_" + System.currentTimeMillis() + ".json", results);
     }
 }

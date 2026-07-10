@@ -116,6 +116,33 @@ final class QueryRuntimeSupport {
         String pass = System.getenv("NEO4J_PASSWORD");
         return pass != null ? pass : DEFAULT_NEO4J_PASS;
     }
+
+    /**
+     * Strip store-internal identifiers before results are written: equivalence compares source and
+     * target result JSON field-by-field, and the mapped store id (Neo4j element id / Mongo
+     * ObjectId, always surfacing as a bare "id" property) has no source-side counterpart — the C#
+     * entities expose only domain keys (orderId, orderLineId, ...). Removing it centrally means a
+     * translated entity that misses @JsonIgnoreProperties({"id"}) can no longer fail equivalence
+     * on shape alone.
+     */
+    static void stripStoreInternalIds(JsonNode node) {
+        if (node == null) {
+            return;
+        }
+        if (node.isObject()) {
+            ((tools.jackson.databind.node.ObjectNode) node).remove("id");
+        }
+        for (JsonNode child : node) {
+            stripStoreInternalIds(child);
+        }
+    }
+
+    static void writeResults(String path, Object results) {
+        JsonMapper mapper = createJsonMapper();
+        JsonNode tree = mapper.valueToTree(results);
+        stripStoreInternalIds(tree);
+        mapper.writeValue(new java.io.File(path), tree);
+    }
 }
 
 // --- Schema and Related Settings ---
@@ -523,7 +550,7 @@ public class Neo4jQueryEntrypoint {
                     results.put("query" + idx, Map.of("error", e.toString()));
                 }
             }
-            QueryRuntimeSupport.createJsonMapper().writeValue(new java.io.File(System.getenv("NEO4J_RESULTS_PATH") + "/neo4j_results_" + System.currentTimeMillis() + ".json"), results);
+            QueryRuntimeSupport.writeResults(System.getenv("NEO4J_RESULTS_PATH") + "/neo4j_results_" + System.currentTimeMillis() + ".json", results);
         }
     }
 }

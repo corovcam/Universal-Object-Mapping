@@ -374,7 +374,10 @@ public class {entry_name} {{
                 results.put("query" + h.id(), Map.of("error", e.toString()));
             }}
         }}
-        QueryRuntimeSupport.createJsonMapper().writeValue(new java.io.File(System.getenv("{results_env}") + "/{results_prefix}_" + System.currentTimeMillis() + ".json"), results);
+        // writeResults strips store-internal "id" properties (Mongo ObjectId / Neo4j element id)
+        // before serializing: they have no source-side counterpart, and a model that forgets
+        // @JsonIgnoreProperties({{"id"}}) on one entity must not fail equivalence on shape alone.
+        QueryRuntimeSupport.writeResults(System.getenv("{results_env}") + "/{results_prefix}_" + System.currentTimeMillis() + ".json", results);
 {closing}
     }}
 }}

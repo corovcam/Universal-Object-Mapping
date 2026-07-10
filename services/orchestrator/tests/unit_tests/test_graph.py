@@ -467,3 +467,74 @@ def test_route_post_translation_clean_generation_proceeds_to_validation() -> Non
     state = _routing_state(loops=1)
     state.translation_messages = [AIMessage(content="Translation generated successfully.")]
     assert route_post_translation(state) == "prep_query_validation"
+
+
+# ---------------------------------------------------------------------------
+# _partition_query_statuses — the evaluation node's accept/carry-forward rules
+# ---------------------------------------------------------------------------
+
+
+def _diffs(**statuses: str) -> dict:
+    return {qid: {"status": status} for qid, status in statuses.items()}
+
+
+def test_partition_first_loop_splits_equivalent_from_undecided() -> None:
+    from react_agent.graph import _partition_query_statuses
+
+    det, sticky, regressed, undecided = _partition_query_statuses(
+        _diffs(query1="Equivalent", query2="Differences Found", query3="Execution Error"),
+        previously_accepted=set(),
+        previously_judge=set(),
+    )
+    assert det == {"query1"}
+    assert sticky == set()
+    assert regressed == []
+    assert undecided == ["query2", "query3"]
+
+
+def test_partition_judge_acceptance_is_sticky_across_loops() -> None:
+    from react_agent.graph import _partition_query_statuses
+
+    # query2 was judge-accepted in loop 1; its diff keeps reporting Differences Found by
+    # construction — it must stay accepted and NOT be re-judged.
+    det, sticky, regressed, undecided = _partition_query_statuses(
+        _diffs(query1="Equivalent", query2="Differences Found"),
+        previously_accepted={"query1", "query2"},
+        previously_judge={"query2"},
+    )
+    assert det == {"query1"}
+    assert sticky == {"query2"}
+    assert regressed == []
+    assert undecided == []
+
+
+def test_partition_deterministic_acceptance_regresses_when_no_longer_equivalent() -> None:
+    from react_agent.graph import _partition_query_statuses
+
+    # query13/query14 verified Equivalent in loop 1, then a loop-2 revision broke them
+    # (the 20260709-150203 nhib-neo4j id-leak). They must re-enter the undecided set,
+    # flagged as regressions — not ride along as accepted.
+    det, sticky, regressed, undecided = _partition_query_statuses(
+        _diffs(query12="Equivalent", query13="Differences Found", query14="Differences Found"),
+        previously_accepted={"query12", "query13", "query14"},
+        previously_judge=set(),
+    )
+    assert det == {"query12"}
+    assert sticky == set()
+    assert regressed == ["query13", "query14"]
+    assert undecided == ["query13", "query14"]
+
+
+def test_partition_regressed_is_limited_to_freshly_validated_queries() -> None:
+    from react_agent.graph import _partition_query_statuses
+
+    # A previously accepted query absent from the fresh diffs (e.g. partial validation)
+    # must not be reported as a regression the judge cannot see.
+    det, sticky, regressed, undecided = _partition_query_statuses(
+        _diffs(query1="Equivalent"),
+        previously_accepted={"query1", "query9"},
+        previously_judge=set(),
+    )
+    assert det == {"query1"}
+    assert regressed == []
+    assert undecided == []
