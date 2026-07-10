@@ -493,6 +493,19 @@ wheels = [
 ]
 
 [[package]]
+name = "claude-code-sdk"
+version = "0.0.25"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "mcp" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ec/0d/0f4a71415826578a5ace16817c52df84d76ffbda5cdad02f520a2b963bde/claude_code_sdk-0.0.25.tar.gz", hash = "sha256:0d9e1eba432d4fe8a2f75f06ec9bb4c310f39b1d55246e7e4b2c69bfdd69eab3", size = 41273, upload-time = "2025-09-29T20:14:51.882Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/41/c934058080f3233bbc95bc9abac5e0191bf336ad5f69a33b5f54a4737e88/claude_code_sdk-0.0.25-py3-none-any.whl", hash = "sha256:3d6a4ef958182f311d6050776d2675d9b39650a2db221c582a0a5156472dcee3", size = 31031, upload-time = "2025-09-29T20:14:50.687Z" },
+]
+
+[[package]]
 name = "click"
 version = "8.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1730,6 +1743,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/03/f6/113cf54064b5847367b5a535d80ca2bee34edaea9fddb56ac4466de5e595/langchain_anthropic-1.4.4.tar.gz", hash = "sha256:9ea39ed345f8b13f13bb37549130eedcec2d032eb08b4942642e758c5ba3ece5", size = 687917, upload-time = "2026-05-28T20:20:20.342Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c5/e6/d13340529db7fc52ffb1436b18e988df29ebfdd207a2944975136cc82093/langchain_anthropic-1.4.4-py3-none-any.whl", hash = "sha256:10a5d2915e8d4fd8a9f169774e760b089c7f14de044e13259db5f1c2d3d59d9b", size = 51263, upload-time = "2026-05-28T20:20:18.757Z" },
+]
+
+[[package]]
+name = "langchain-claude-code-cli"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "claude-code-sdk" },
+    { name = "langchain-core" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/28/77/c8c3114b0545122f406279c37469124960ee8fc4574570ccbe13cb83b904/langchain_claude_code_cli-0.1.0.tar.gz", hash = "sha256:9ee9803a2546605459bde8271e456657c49a31c0555d9ae4e8b53daf1643814a", size = 169936, upload-time = "2026-02-10T03:36:38.396Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ba/dd/a41a4f386f3dcd482314013b358475dad472cb24e1534b83f0b45da61075/langchain_claude_code_cli-0.1.0-py3-none-any.whl", hash = "sha256:b148d44a53c68225e02facaca91b468f5ce99801ad1bd48d0d4dc6326aa9a215", size = 17397, upload-time = "2026-02-10T03:36:37.342Z" },
 ]
 
 [[package]]
@@ -4118,6 +4144,9 @@ dev = [
 docs = [
     { name = "py2puml" },
 ]
+eval = [
+    { name = "langchain-claude-code-cli" },
+]
 test = [
     { name = "aimock-pytest" },
     { name = "langgraph-sdk" },
@@ -4176,6 +4205,7 @@ dev = [
     { name = "ty", specifier = ">=0.0.34" },
 ]
 docs = [{ name = "py2puml", specifier = ">=0.11.0" }]
+eval = [{ name = "langchain-claude-code-cli", specifier = ">=0.1.0" }]
 test = [
     { name = "aimock-pytest", specifier = ">=0.4.0" },
     { name = "langgraph-sdk", specifier = ">=0.3.14" },
