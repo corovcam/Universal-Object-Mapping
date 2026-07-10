@@ -212,6 +212,34 @@ def get_normalized_framework_name(
     return FRAMEWORK_TO_NORMALIZED_NAME[cast(FrameworkEnum, framework)]
 
 
+# Progress noise emitted by dotnet restore / Maven dependency resolution. These lines carry no
+# diagnostic value but once inflated a single evaluation prompt to 1.5 MB (nhib-neo4j,
+# run 20260708-234928): the sandbox restores the whole package graph per validation.
+_BUILD_NOISE_RE = re.compile(
+    r"^\s*(?:Restored /|Determining projects to restore|Downloading from |Downloaded from |Progress \(\d)"
+)
+
+
+def compact_build_log(text: str, cap: int = 20_000) -> str:
+    """Compact a sandbox build/run log for inclusion in an LLM prompt or ToolMessage.
+
+    Drops restore/download progress noise lines, then caps the remainder head+tail. Error and
+    warning lines are never noise-matched, and the parsed JSON results travel through graph
+    state — this text is only advisory context for the model.
+    """
+    lines = text.splitlines()
+    kept = [ln for ln in lines if not _BUILD_NOISE_RE.match(ln)]
+    dropped = len(lines) - len(kept)
+    out = "\n".join(kept)
+    if dropped:
+        out += f"\n[... {dropped} build/restore progress lines omitted ...]"
+    if len(out) > cap:
+        half = cap // 2
+        omitted = len(out) - cap
+        out = out[:half] + f"\n[... {omitted} chars omitted ...]\n" + out[-half:]
+    return out
+
+
 def get_message_text(msg: BaseMessage) -> str:
     """Get the text content of a message."""
     content = msg.content

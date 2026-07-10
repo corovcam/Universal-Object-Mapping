@@ -13,13 +13,15 @@
 # scoring) and the orchestrator venv.
 #
 # Usage (from services/orchestrator):
-#   evaluation/scripts/claude_arm.sh <pair> [variant] [model]
-#   evaluation/scripts/claude_arm.sh dapper-mongodb full claude-opus-4-8
+#   evaluation/scripts/claude_arm.sh <pair> [variant] [model] [effort]
+#   evaluation/scripts/claude_arm.sh dapper-mongodb full claude-opus-4-8 high
 #
 #   pair    : dapper-mongodb | dapper-neo4j | efcore-mongodb | efcore-neo4j |
 #             nhibernate-mongodb | nhibernate-neo4j
 #   variant : full (default) | batch1 | batch2 | batch3 | small
 #   model   : Claude Code --model value (default: the CLI's default model)
+#   effort  : Claude Code --effort value: low|medium|high|xhigh|max (default: high —
+#             the comparison matrix runs opus-4.8/fable-5/sonnet-5 all at high)
 #
 # The Claude call runs with CWD = the export folder so the repo's CLAUDE.md / code / predictions
 # are NOT in its context — the arm sees exactly what a chat UI would see. Re-running reuses the
@@ -29,6 +31,7 @@ set -euo pipefail
 PAIR="${1:?pair required (e.g. dapper-mongodb)}"
 VARIANT="${2:-full}"
 MODEL="${3:-}"
+EFFORT="${4:-high}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"   # services/orchestrator
 OUT_ROOT="$ROOT/evaluation/manual-eval/wwi"
 
@@ -51,19 +54,23 @@ cat "$EXPORT_DIR/user.txt" > "$PROMPT_FILE"
 printf '\n\n' >> "$PROMPT_FILE"
 cat "$EXPORT_DIR/adaptation.txt" >> "$PROMPT_FILE"
 
-CLAUDE_ARGS=(-p --append-system-prompt-file "$EXPORT_DIR/system.txt" --tools "")
+CLAUDE_ARGS=(-p --append-system-prompt-file "$EXPORT_DIR/system.txt" --tools "" --effort "$EFFORT")
 [[ -n "$MODEL" ]] && CLAUDE_ARGS+=(--model "$MODEL")
+
+# Per-model capture name: the comparison matrix runs several models against ONE shared export,
+# so a fixed capture.md would silently overwrite the previous model's answer.
+MODEL_LABEL="${MODEL:-claude-code-default}-${EFFORT}"
+CAPTURE="$EXPORT_DIR/capture-claude_code-${MODEL_LABEL}.md"
 
 echo "== running: claude ${CLAUDE_ARGS[*]} (prompt: $(wc -c < "$PROMPT_FILE") bytes) — this spends Claude tokens"
 START=$(date +%s)
-(cd "$EXPORT_DIR" && claude "${CLAUDE_ARGS[@]}" < "$PROMPT_FILE" > "$EXPORT_DIR/capture.md")
+(cd "$EXPORT_DIR" && claude "${CLAUDE_ARGS[@]}" < "$PROMPT_FILE" > "$CAPTURE")
 WALL=$(( $(date +%s) - START ))
-echo "== captured $(wc -c < "$EXPORT_DIR/capture.md") bytes in ${WALL}s -> $EXPORT_DIR/capture.md"
+echo "== captured $(wc -c < "$CAPTURE") bytes in ${WALL}s -> $CAPTURE"
 
 # ---- 3. score with the pipeline's own gauntlet
-MODEL_LABEL="${MODEL:-claude-code-default}"
 uv run python evaluation/scripts/score_external.py \
-  --capture "$EXPORT_DIR/capture.md" \
+  --capture "$CAPTURE" \
   --pair "$PAIR" --variant "$VARIANT" \
   --approach claude_code --model-label "$MODEL_LABEL" \
   --out evaluation/out/external --pred-root evaluation/predictions --env .env.dev

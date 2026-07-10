@@ -117,6 +117,7 @@ from react_agent.utils.harness_assembler import (
     assemble_validation_code,
 )
 from react_agent.utils.utils import (
+    compact_build_log,
     get_message_text,
     get_snippet_content,
     override_pydantic_model_schema,
@@ -1500,8 +1501,13 @@ async def generate_translation_node(
                 )
 
             try:
+                # Scale the step budget with the workload: a model that saves one fragment per
+                # turn burns ~2 super-steps per query, so the 40-query bundled variant (xl)
+                # exhausts a flat 100 before research/validation. 100 is kept as the floor so
+                # the small/batch variants behave exactly as before.
+                recursion_limit = max(100, 3 * len(expected_ids) + 40)
                 response = await agent.ainvoke(
-                    agent_input, {"recursion_limit": 100}
+                    agent_input, {"recursion_limit": recursion_limit}
                 )  # type: ignore
             except GraphRecursionError:
                 # The inner ReAct loop ran out of steps (2026-07-03 traces: 14/18 runs died
@@ -2200,7 +2206,10 @@ async def evaluation_node(
     """
     model = await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING)
 
-    last_msgs = [str(msg) for msg in state.translation_messages[-4:]]
+    # compact_build_log: a raw validation ToolMessage once inflated this prompt to 1.5 MB of
+    # dotnet-restore noise (nhib-neo4j, run 20260708-234928). The validators compact at source
+    # now; this guards any other oversized message that lands in the window.
+    last_msgs = [compact_build_log(str(msg)) for msg in state.translation_messages[-4:]]
 
     # ---- Deterministic per-query pre-pass. The (now trustworthy) equivalence statuses decide
     # most queries without burning judge tokens; the judge only rules on the undecided ones

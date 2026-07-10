@@ -10,6 +10,11 @@ Inputs:
   * external arms: `--external <label>=<results.csv>`        (from score_external.py; several rows
     per pair average; batch-variant rows of one pair aggregate by query counts)
 
+An external results.csv accumulates rows from EVERY model run through that arm (the matrix runs
+opus/fable/sonnet, or both Gemini tiers). When the file holds more than one distinct `model`,
+the arm is automatically SPLIT into one column per model (label `<label>:<model>`); pass
+`--external label=csv@<model-substring>` to select a single model's rows instead.
+
 Usage:
   uv run --project evaluation python evaluation/scripts/compare_arms.py \\
       --pipeline our_approach=evaluation/out/agg-9-7/summary_by_pair.csv \\
@@ -60,24 +65,32 @@ def load_pipeline(path: Path) -> dict[str, dict]:
     return out
 
 
-def load_external(path: Path) -> dict[str, dict]:
-    """score_external results.csv → {pair: {equiv, pass, n}} aggregated by query counts."""
-    acc: dict[str, dict] = defaultdict(lambda: {"eq": 0, "exp": 0, "passed": 0, "n": 0})
+def load_external(path: Path, model_filter: str | None = None) -> dict[str, dict[str, dict]]:
+    """score_external results.csv → {model: {pair: {equiv, pass, n}}} aggregated by query counts.
+
+    Grouped by the `model` column so a matrix results.csv (several models per approach) yields one
+    arm per model instead of blurring them together. `model_filter` (substring) selects one model.
+    """
+    acc: dict[tuple[str, str], dict] = defaultdict(lambda: {"eq": 0, "exp": 0, "passed": 0, "n": 0})
     with path.open() as fh:
         for row in csv.DictReader(fh):
             pair = _short_pair(row.get("pair_slug") or row.get("pair", ""))
             if "?" in pair:
                 continue
-            a = acc[pair]
+            model = row.get("model") or "?"
+            if model_filter and model_filter not in model:
+                continue
+            a = acc[(model, pair)]
             a["eq"] += int(_f(row.get("queries_equivalent")) or 0)
             a["exp"] += int(_f(row.get("queries_expected")) or 0)
             a["passed"] += 1 if str(row.get("passed")).lower() in ("true", "1", "1.0") else 0
             a["n"] += 1
-    return {
-        p: {"equiv": (a["eq"] / a["exp"]) if a["exp"] else None,
-            "q_acc": None, "pass": a["passed"] / a["n"] if a["n"] else None, "n": a["n"]}
-        for p, a in acc.items()
-    }
+    out: dict[str, dict[str, dict]] = defaultdict(dict)
+    for (model, p), a in acc.items():
+        out[model][p] = {"equiv": (a["eq"] / a["exp"]) if a["exp"] else None,
+                         "q_acc": None, "pass": a["passed"] / a["n"] if a["n"] else None,
+                         "n": a["n"]}
+    return dict(out)
 
 
 def _fmt(v: float | None) -> str:
@@ -97,7 +110,13 @@ def main() -> None:
         arms.append((label, load_pipeline(Path(path))))
     for spec in args.external:
         label, _, path = spec.partition("=")
-        arms.append((label, load_external(Path(path))))
+        path, _, model_filter = path.partition("@")
+        by_model = load_external(Path(path), model_filter or None)
+        if len(by_model) == 1:
+            arms.append((label, next(iter(by_model.values()))))
+        else:
+            for model, data in sorted(by_model.items()):
+                arms.append((f"{label}:{model}", data))
     if not arms:
         raise SystemExit("give at least one --pipeline or --external arm")
 

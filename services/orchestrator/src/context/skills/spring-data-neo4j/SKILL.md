@@ -246,6 +246,13 @@ These are the API changes that catch out a model trained on older docs. Full lis
 - Derived-query `Neo4jRepository` interfaces still exist, but this project's pattern is
   **explicit `Neo4jTemplate` + Cypher-DSL `Statement`s**, not repository interfaces. Prefer
   the template unless the user asks for repositories.
+- **Result-shape mismatches that fail equivalence but are NOT logic errors** — see
+  `references/queries.md` §12 for the four recipes: LEFT JOIN/`.Include()` semantics need
+  `optionalMatch` (a plain `match` drops the row); INTEGER-stored booleans need
+  `Cypher.toBoolean(...)` in the projection; JSON-string properties need
+  `apoc.convert.fromJsonMap/List` in the RETURN clause (not only WHERE); FK columns that
+  became relationships are reconstructed by optional traversal. Projecting a property the
+  schema doesn't list renders NULL silently — check the schema inspection first.
 
 ## Project context (Universal Object Mapping)
 

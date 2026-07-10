@@ -19,6 +19,7 @@ the source: one source query method → one target method returning the same log
 9. Dates, doubles, and literals in queries
 10. Worked examples (mirroring the project harness)
 11. Aggregates, DISTINCT, UNION, JSON (APOC), and the raw escape hatch — quick answers
+12. Result-shape fidelity — matching the source rows exactly (OPTIONAL MATCH, casts, JSON)
 
 ---
 
@@ -449,3 +450,106 @@ var stmt = Cypher.match(o)
 ```
 
 (For SQL Server DESC — NULLs LAST — invert: sort `isNull()` first, then the column DESC.)
+
+---
+
+## 12. Result-shape fidelity — matching the source rows exactly (OPTIONAL MATCH, casts, JSON)
+
+The execution-equivalence checker compares your rows against the source framework's rows
+field-by-field (DeepDiff). Three avoidable shape mismatches account for almost every
+"Differences Found" that is NOT a genuine logic error. All patterns below are compile-verified
+against Cypher-DSL 2025.2.0 and run live against this project's database.
+
+### 12.1 LEFT JOIN / EF `.Include()` / nullable FK → OPTIONAL MATCH, never MATCH
+
+A required `MATCH` on a relationship pattern silently **drops the whole row** when the
+relationship is absent — the source's LEFT JOIN would have kept the row with NULLs. If the
+source query can produce a row whose joined side is NULL (any `.Include()`, any LEFT JOIN,
+any nullable FK), the traversal MUST be `optionalMatch`:
+
+```java
+var o  = Cypher.node("Order").named("o");
+var ol = Cypher.node("OrderLine").named("ol");
+var bo = Cypher.node("Order").named("bo");
+
+var stmt = Cypher.match(o)
+        .where(o.property("orderId").isEqualTo(Cypher.literalOf(530)))
+        .optionalMatch(ol.relationshipTo(o, "ORDERS"))          // lines may be unlinked
+        .optionalMatch(o.relationshipTo(bo, "BACKORDER"))       // backorder usually absent
+        .returning(o.getRequiredSymbolicName(),
+                   Cypher.collect(ol).as("orderLines"),
+                   bo.property("orderId").as("backorderOrderId"))
+        .build();
+// OPTIONAL MATCH keeps the Order row; bo.orderId renders as NULL when absent — same as
+// the source's LEFT JOIN. A plain MATCH here returns NO row at all (verified live).
+```
+
+Symptom in validation feedback: `firstSampleDiff` shows the whole row as
+`old_type: dict, new_type: NoneType` while counts agree — your MATCH dropped a row the
+source kept.
+
+### 12.2 INTEGER-stored booleans → `toBoolean()` in the projection
+
+This graph stores several source-side `bit`/boolean columns as INTEGER 0/1 (e.g.
+`Order.isUndersupplyBackordered`, `Person.isEmployee`, `Customer.isOnCreditHold`). If the
+source returns `true/false`, project the cast — `toBoolean(1)` → `TRUE` (verified live):
+
+```java
+Cypher.toBoolean(o.property("isUndersupplyBackordered")).as("isUndersupplyBackordered")
+```
+
+Symptom: `type_changes ... old_type: bool, new_type: int, old_value: true, new_value: 1`.
+
+### 12.3 JSON-string properties → parse in the RETURN clause, not just in WHERE
+
+§11 shows `apoc.convert.fromJsonMap/fromJsonList` in WHERE clauses. The same applies to the
+**projection**: when the source returns a structured value (OPENJSON / JSON_VALUE results,
+arrays, objects), returning the raw property yields a STRING and fails equivalence:
+
+```java
+var cf    = Cypher.call("apoc.convert.fromJsonMap")
+        .withArgs(p.property("customFields")).asFunction();
+var langs = Cypher.call("apoc.convert.fromJsonList")
+        .withArgs(p.property("otherLanguages")).asFunction();
+// RETURN apoc.convert.fromJsonMap(p.customFields) AS customFields, ...
+var stmt = Cypher.match(p).returning(cf.as("customFields"), langs.as("otherLanguages")).build();
+```
+
+Symptom: `type_changes ... old_type: list (or dict), new_type: str`.
+
+### 12.4 FK columns that became relationships → reconstruct via traversal
+
+The graph model replaces many source FK columns with relationships (e.g. `OrderLine` has no
+`orderId` property; the link is `(:OrderLine)-[:ORDERS]->(:Order)`). When the source SELECTs
+such a column, traverse and project it back — with `optionalMatch`, because ETL'd graphs are
+often sparsely linked:
+
+```java
+var stmt = Cypher.match(ol)
+        .optionalMatch(ol.relationshipTo(o, "ORDERS"))
+        .returning(ol.property("orderLineId").as("orderLineId"),
+                   o.property("orderId").as("orderId"))
+        .build();
+```
+
+Do NOT project a property that the schema inspection did not list for the label — it renders
+as NULL, not an error, and quietly fails equivalence (symptom:
+`old_type: int, new_type: NoneType`).
+
+### 12.5 Know what the store cannot give you — and what it CAN via traversal
+
+Before declaring a column unrecoverable, check the relationship counts: in this dataset the
+`OrderLine` links are COMPLETE (`(:OrderLine)-[:ORDERS]->(:Order)`,
+`(:OrderLine)-[:STOCK_ITEMS]->(:StockItem)`, `(:OrderLine)-[:PEOPLE]->(:Person)` — one each
+per OrderLine), so `orderId`, `stockItemId` and `lastEditedBy` ARE recoverable with §12.4
+traversals. Genuinely unrecoverable here:
+
+* `packageTypeId` — no `PackageType` label, no property, no relationship anywhere;
+* `Order`'s person-role FKs (`salespersonPersonId`, `pickedByPersonId`, `contactPersonId`,
+  `lastEditedBy`) — Order has several untyped `-[:PEOPLE]->` edges mixing all roles, so no
+  query can tell which person is which.
+
+For those, do not burn retries — translate the rest of the row faithfully and note the store
+limitation in the explanation. Also mind DIRECTION when one rel type serves two shapes:
+`ORDERS` is both `(:OrderLine)-[:ORDERS]->(:Order)` and the backorder self-reference
+`(:Order)-[:ORDERS]->(:Order)` — constrain both endpoint labels.

@@ -249,3 +249,30 @@ def test_bind_tools_with_empty_list_omits_tools_field():
 
         full = model.bind_tools([dummy_tool], response_format=response_format)
         assert full.kwargs.get("tools"), "non-empty tools must still be bound"
+
+
+def test_compact_build_log_strips_noise_and_caps():
+    """Restore/download progress noise is dropped and oversized logs are head+tail capped —
+    a raw validation log once inflated a single evaluation prompt to 1.5 MB (nhib-neo4j,
+    run 20260708-234928)."""
+    from react_agent.utils import compact_build_log
+
+    noise = "\n".join(f"  Restored /sandbox/x/sandbox.csproj (in {i} ms)." for i in range(2000))
+    log = (
+        "Determining projects to restore...\n" + noise +
+        "\nerror CS1002: ; expected\nwarning CS0168: unused\nBuild FAILED.\n"
+    )
+    out = compact_build_log(log)
+    assert "Restored /sandbox" not in out
+    assert "build/restore progress lines omitted" in out
+    assert "error CS1002" in out and "warning CS0168" in out and "Build FAILED." in out
+
+    # Cap: huge non-noise content keeps head and tail with an omission marker.
+    big = "HEAD-MARKER\n" + ("x" * 100_000) + "\nTAIL-MARKER"
+    capped = compact_build_log(big, cap=10_000)
+    assert len(capped) < 12_000
+    assert capped.startswith("HEAD-MARKER") and capped.rstrip().endswith("TAIL-MARKER")
+    assert "chars omitted" in capped
+
+    # Small clean logs pass through untouched.
+    assert compact_build_log("BUILD SUCCESS") == "BUILD SUCCESS"

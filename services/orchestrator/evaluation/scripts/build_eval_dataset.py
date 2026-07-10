@@ -63,18 +63,27 @@ TARGETS = {
     "neo4j": {"label": "Spring Data Neo4j 8.0.0", "slug": "java_spring_data_neo4j"},
 }
 
-# Variant -> [start, end) slice of the 15-query workload. The batches are the experiment default
+# Variant -> [start, end) slice of the 40-query workload. The batches are the experiment default
 # (5 queries per prompt — the size the pipeline translates reliably); "small" is the legacy fast
-# gate (same content as batch1); "full" bundles all 15 into one prompt for comparison. Query16
-# (G2 intersect) is deliberately excluded everywhere — see the module docstring.
+# gate (same content as batch1); "full" bundles the original 15 into one prompt for comparison;
+# batch4-8 slice the 2026-07-10 EXTENDED workload (Query16-40: A1-A3, G2-G3, D2/D3/D4/D6, B7-B11,
+# C4-C9, E3-E5, F3 — every answerable benchmark FEATURE category, see eval_inputs/efcore.py);
+# "xl" bundles the ENTIRE 40-query workload (original 15 + extended 25) into ONE prompt — the
+# user-selected shape for the extended experiments (2026-07-10: "not batched, fully bundled").
 VARIANT_SLICES: dict[str, tuple[int, int]] = {
     "small": (0, 5),
     "batch1": (0, 5),
     "batch2": (5, 10),
     "batch3": (10, 15),
+    "batch4": (15, 20),
+    "batch5": (20, 25),
+    "batch6": (25, 30),
+    "batch7": (30, 35),
+    "batch8": (35, 40),
     "full": (0, 15),
+    "xl": (0, 40),
 }
-BATCH_VARIANTS = ["batch1", "batch2", "batch3"]
+BATCH_VARIANTS = ["batch1", "batch2", "batch3", "batch4", "batch5", "batch6", "batch7", "batch8"]
 
 
 def build_prompt(source: str, target: str, variant: str) -> str:

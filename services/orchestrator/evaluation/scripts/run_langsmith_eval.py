@@ -35,7 +35,11 @@ Needs the LIVE stack (e-INFRA model endpoint, Daytona sandboxes, WWI DBs) and th
 
     uv sync --extra eval
     uv run python evaluation/scripts/run_langsmith_eval.py --approach our_approach \
-        --judge-model einfra/gemma4 --env .env
+        --variants full --repetitions 10 --global-concurrency 4 --env .env.dev
+
+The judge is a fallback CHAIN (comma-separated ``--judge-model``, default
+deepseek-v4-pro-thinking -> deepseek-v4-pro -> gemma4); the model that produced each verdict is
+recorded in the feedback comment (``[judge=<model>]``) and aggregated in the summary JSON.
 
 Use ``--dry-run`` to validate dataset/judge plumbing with a trivial echo target (no graph, no
 Daytona) before spending tokens on a real run.
@@ -92,7 +96,17 @@ DATASET_NAME = "UOM Final Experiments"
 # separates a real translation from an empty one. kimi-k2.7 (thinking) discriminates finer (catches a
 # subtle single-query corruption) but its structured-output path is slow → some None under judge
 # concurrency — pass --judge-model einfra/kimi-k2.7 when you want that finer sensitivity. See _judge_call.
-DEFAULT_JUDGE_MODEL = "einfra/gemma4"
+#
+# 2026-07-09 (user decision): the judge is now a FALLBACK CHAIN, default
+# deepseek-v4-pro-thinking → deepseek-v4-pro → gemma4. Rationale: gemma4's knowledge cutoff is 2025
+# while deepseek-v4-pro's is April 2026 (it knows the current framework APIs it is grading);
+# deepseek-v4-pro-thinking is long-running and its structured-output path is flaky, so every call
+# degrades per-model (structured → plain-JSON) and then per-chain (next model). WHICH model produced
+# each verdict is recorded as a "[judge=<model>]" prefix on the feedback comment and aggregated into
+# the run-summary JSON (judge_model_usage) — required for the thesis to state the judge composition.
+# All judge calls share ONE global semaphore (--judge-concurrency, default 4 = the e-INFRA
+# per-provider in-flight cap) so chained+parallel judging never floods the endpoint.
+DEFAULT_JUDGE_MODEL = "einfra/deepseek-v4-pro-thinking,einfra/deepseek-v4-pro,einfra/gemma4"
 DEFAULT_TRANSLATION_MODEL = "einfra/kimi-k2.7"  # default graph model (non-reasoning, fast, multimodal)
 
 
@@ -306,6 +320,28 @@ async def _build_judge_model(model_name: str):
     )
 
 
+async def _build_judge_chain(spec: str) -> list[tuple[str, Any, Any]]:
+    """Build the judge fallback chain from a comma-separated ``--judge-model`` spec.
+
+    Returns ``[(short_name, model, structured_model), ...]`` in fallback order. Each judge call
+    walks the chain until one model yields a parseable score (see :func:`_judge_call`); the
+    load_chat_model path returns the Safe* wrappers, so no ``tools: []`` is ever sent (the known
+    deepseek-v4-pro-thinking 400).
+    """
+    chain = []
+    for name in [n.strip() for n in spec.split(",") if n.strip()]:
+        judge = await _build_judge_model(name)
+        chain.append((name.rsplit("/", 1)[-1], judge, judge.with_structured_output(JudgeResult)))
+    if not chain:
+        raise SystemExit(f"--judge-model produced an empty chain: {spec!r}")
+    return chain
+
+
+# Which chain model actually produced each verdict — aggregated into the run-summary JSON so the
+# experimental record states the judge composition (e.g. thinking-model timeouts falling back).
+JUDGE_MODEL_USAGE: dict[str, int] = {}
+
+
 # --- Scaffold-aware judges (rewritten 2026-07-06) -------------------------------------------------
 # WHY the previous judges scored ~0 on EVERYTHING (even runs the deterministic execution-equivalence
 # checker passed): the translated output the judge sees is INSTRUMENTED for automated testing — each
@@ -470,63 +506,90 @@ def _coalesce_text(content: Any) -> str:
     return str(content or "")
 
 
-async def _judge_call(judge, structured, prompt: str, key: str, timeout_s: float) -> dict:
-    """Grade one (prompt) with the judge, robustly, and return a LangSmith feedback dict.
+_PLAIN_JSON_SUFFIX = (
+    '\n\nRespond with ONLY a JSON object, no other text, no markdown, score FIRST — score '
+    'is a FRACTION in [0,1] = the proportion of the translation satisfying the criterion '
+    '(1.0=fully, 0.0=not at all; do not return 0 for a minority of bad queries): '
+    '{"score": 0.0-1.0, "reasoning": "<brief, <=40 words>"}'
+)
+
+
+async def _judge_call(
+    chain: list[tuple[str, Any, Any]], prompt: str, key: str, timeout_s: float,
+    sem: asyncio.Semaphore,
+) -> dict:
+    """Grade one (prompt) walking the judge FALLBACK CHAIN, and return a LangSmith feedback dict.
 
     Why not openevals' own scorer: ``create_async_llm_as_judge`` drives the judge through a
     structured-output method that HANGS against the e-INFRA thinking models here (verified). We keep
-    our prompts but make the call ourselves: try ``with_structured_output`` first (clean), and on any
-    failure/timeout/unparseable-score fall back to a plain invoke + lenient JSON parse. On total
-    failure we return a ``None`` score (never a fake 0) so one flaky judge never stalls the experiment,
-    and the aggregate simply skips None.
+    our prompts but make the call ourselves. Per chain model: try ``with_structured_output`` first
+    (clean), then a plain invoke + lenient JSON parse; on both failing, fall through to the NEXT
+    model in the chain (default: deepseek-v4-pro-thinking → deepseek-v4-pro → gemma4). On total
+    failure we return a ``None`` score (never a fake 0) so one flaky judge never stalls the
+    experiment, and the aggregate simply skips None.
 
-    JUDGE-MODEL NOTE (both verified live on the 35KB harness prompts, tradeoff is real):
-      * kimi-k2.7 (THINKING): more DISCRIMINATING — scores a genuine 13/15 run ~0.81, catches a single
-        corrupted query filter (~0.75), an empty output 0.0 — but its structured-output path is slow
-        and under judge concurrency some calls time out → ``None`` (graceful; the aggregate skips it).
-      * gemma4 (NON-thinking): perfectly RELIABLE (0 None) and cleanly separates a real translation
-        (~0.73) from an empty one (0.0), but COARSER — it missed the single-filter corruption (scored
-        it the same 0.73). Fast, no structured hang. ``--judge-model einfra/gemma4``.
-    Pick by need: gemma4 for clean aggregate correlation with query_accuracy (no None), kimi-k2.7 for
-    finer per-query sensitivity. The per-judge ``timeout_s`` bounds either way."""
-    try:
-        res = await asyncio.wait_for(structured.ainvoke(prompt), timeout=timeout_s)
-        if _clamp01(res.score) is not None:
-            return {"key": key, "score": _clamp01(res.score), "comment": res.reasoning}
-        raise ValueError("structured verdict had no parseable score")
-    except Exception as primary:
-        # Fallback: ask for raw JSON and parse it ourselves (handles models whose structured-output
-        # path is unreliable but which answer plain prompts fine).
+    The verdict records WHICH model produced it (``[judge=<model>]`` comment prefix +
+    ``JUDGE_MODEL_USAGE`` counter → run-summary JSON): the chain makes the judge composition an
+    experimental variable that must be reported.
+
+    Concurrency: every model call holds the shared ``sem`` (global across evaluators AND
+    experiments) — the e-INFRA provider allows ~4 in-flight requests, and the thinking model is
+    long-running, so we parallelize up to the cap but never beyond it. The semaphore is held only
+    around the network call, not the chain walk, so a fallback never double-books slots.
+
+    JUDGE-MODEL NOTE (verified live on the 35KB harness prompts, tradeoff is real):
+      * thinking models (deepseek-v4-pro-thinking, kimi-k2.7): more DISCRIMINATING but slow, and the
+        structured-output path can hang → per-call timeout, then plain-JSON, then next chain model.
+      * gemma4 (NON-thinking): perfectly RELIABLE (0 None) and fast, but COARSER (missed a
+        single-filter corruption) and its knowledge cutoff (2025) predates the graded frameworks —
+        hence terminal-fallback position, not default."""
+    errors: list[str] = []
+    for name, judge, structured in chain:
         try:
-            suffix = (
-                '\n\nRespond with ONLY a JSON object, no other text, no markdown, score FIRST — score '
-                'is a FRACTION in [0,1] = the proportion of the translation satisfying the criterion '
-                '(1.0=fully, 0.0=not at all; do not return 0 for a minority of bad queries): '
-                '{"score": 0.0-1.0, "reasoning": "<brief, <=40 words>"}'
-            )
-            msg = await asyncio.wait_for(judge.ainvoke(prompt + suffix), timeout=timeout_s)
+            async with sem:
+                res = await asyncio.wait_for(structured.ainvoke(prompt), timeout=timeout_s)
+            score = _clamp01(res.score)
+            if score is not None:
+                JUDGE_MODEL_USAGE[name] = JUDGE_MODEL_USAGE.get(name, 0) + 1
+                return {"key": key, "score": score, "comment": f"[judge={name}] {res.reasoning}"}
+            errors.append(f"{name}/structured: no parseable score")
+        except Exception as e:  # noqa: BLE001 — degrade to the plain path, then the next model
+            errors.append(f"{name}/structured: {type(e).__name__}: {e}")
+        # Plain fallback on the SAME model: raw JSON answer, parsed leniently (handles models whose
+        # structured-output path is unreliable but which answer plain prompts fine).
+        try:
+            async with sem:
+                msg = await asyncio.wait_for(judge.ainvoke(prompt + _PLAIN_JSON_SUFFIX),
+                                             timeout=timeout_s)
             m = _JSON_OBJ_RE.search(_coalesce_text(msg.content))
             if m:
                 data = json.loads(m.group(0))
-                return {"key": key, "score": _clamp01(data.get("score")),
-                        "comment": str(data.get("reasoning", ""))}
-            raise ValueError("no JSON object in judge response")
-        except Exception as fallback:
-            return {"key": key, "score": None,
-                    "comment": f"judge error: structured={type(primary).__name__}: {primary}; "
-                               f"fallback={type(fallback).__name__}: {fallback}"}
+                score = _clamp01(data.get("score"))
+                if score is not None:
+                    JUDGE_MODEL_USAGE[name] = JUDGE_MODEL_USAGE.get(name, 0) + 1
+                    return {"key": key, "score": score,
+                            "comment": f"[judge={name}] {data.get('reasoning', '')}"}
+            errors.append(f"{name}/plain: no parseable JSON verdict")
+        except Exception as e:  # noqa: BLE001 — fall through to the next chain model
+            errors.append(f"{name}/plain: {type(e).__name__}: {e}")
+    return {"key": key, "score": None, "comment": "judge error (all chain models failed): "
+            + " | ".join(errors)}
 
 
-def _build_evaluators(judge, *, timeout_s: float = 90.0):
+def _build_evaluators(chain: list[tuple[str, Any, Any]], *, timeout_s: float = 180.0,
+                      concurrency: int = 4):
     """Return ASYNC ``aevaluate`` evaluators that grade with our SCAFFOLD-AWARE prompts via the robust
-    call (see :func:`_judge_call`). All four are reference-free, graded against the SOURCE, and score
-    true=good (uniform polarity, so charts are 'higher is better' without a special-cased judge). We
-    dropped openevals' generic prompts + the detection-phrased hallucination judge: the generic
-    prompts read the execution-probe harness as 'invented behavior' and rejected everything, and the
-    hallucination judge's polarity was inverted/vacuous on empty outputs. ``faithfulness`` replaces it
-    (true = faithful, no invented/dropped DOMAIN content, ignoring the harness).
+    chain call (see :func:`_judge_call`). All four are reference-free, graded against the SOURCE, and
+    score true=good (uniform polarity, so charts are 'higher is better' without a special-cased
+    judge). We dropped openevals' generic prompts + the detection-phrased hallucination judge: the
+    generic prompts read the execution-probe harness as 'invented behavior' and rejected everything,
+    and the hallucination judge's polarity was inverted/vacuous on empty outputs. ``faithfulness``
+    replaces it (true = faithful, no invented/dropped DOMAIN content, ignoring the harness).
+
+    Built ONCE per invocation: the semaphore created here is therefore GLOBAL — shared by all four
+    evaluators and every concurrently running experiment.
     """
-    structured = judge.with_structured_output(JudgeResult)
+    sem = asyncio.Semaphore(max(1, concurrency))
 
     def _grade(inputs: dict, outputs: dict) -> tuple[str, str]:
         return _source_prompt(inputs), _translation_text(outputs)
@@ -534,8 +597,8 @@ def _build_evaluators(judge, *, timeout_s: float = 90.0):
     def _make(key: str, prompt: str):
         async def _ev(inputs: dict, outputs: dict) -> dict:
             src, tgt = _grade(inputs, outputs)
-            return await _judge_call(judge, structured, prompt.format(inputs=src, outputs=tgt),
-                                     key, timeout_s)
+            return await _judge_call(chain, prompt.format(inputs=src, outputs=tgt),
+                                     key, timeout_s, sem)
         _ev.__name__ = f"{key}_evaluator"
         return _ev
 
@@ -724,10 +787,15 @@ async def main_async(args: argparse.Namespace) -> None:
     from langsmith import Client, aevaluate
 
     # Build the judges (shared across all experiments) + the cheap deterministic evaluators.
+    # The chain + its global semaphore are created ONCE here, so judge concurrency is capped
+    # across every experiment no matter how many run concurrently.
     evaluators: list = []
     if not args.no_judges:
-        judge = await _build_judge_model(args.judge_model)
-        evaluators = _build_evaluators(judge)
+        chain = await _build_judge_chain(args.judge_model)
+        evaluators = _build_evaluators(chain, timeout_s=args.judge_timeout,
+                                       concurrency=args.judge_concurrency)
+        print(f"  judge chain: {' -> '.join(n for n, _, _ in chain)} "
+              f"(timeout {args.judge_timeout:.0f}s, global concurrency {args.judge_concurrency})")
     det_evaluators = _build_deterministic_evaluators()
     if not args.no_codebleu:
         cb = _build_codebleu_evaluator(args.dataset, args.ref_root)
@@ -766,10 +834,14 @@ async def main_async(args: argparse.Namespace) -> None:
         return getattr(e, "metadata", None) or {}
 
     pairs = args.pairs or sorted({_meta(e).get("pair") for e in all_examples if _meta(e).get("pair")})
-    # small variant first (the fast gate), then the 5-query batches, then full.
-    _variant_order = {"small": 0, "batch1": 1, "batch2": 2, "batch3": 3, "full": 4}
+    # small variant first (the fast gate), then the 5-query batches, then the bundled arms.
+    _variant_order = {"small": 0, "batch1": 1, "batch2": 2, "batch3": 3, "batch4": 4,
+                      "batch5": 5, "batch6": 6, "batch7": 7, "batch8": 8, "full": 9, "xl": 10}
     variants = sorted(set(args.variants), key=lambda v: _variant_order.get(v, 9))
-    models = SWEEP_MODELS if args.sweep else [(None, None)]
+    if args.sweep and args.sweep_models:
+        models = [(m.strip(), None) for m in args.sweep_models.split(",") if m.strip()]
+    else:
+        models = SWEEP_MODELS if args.sweep else [(None, None)]
 
     # Per-INVOCATION tag (timestamp): groups this batch's predictions/summary and guarantees a re-run
     # never overwrites a previous batch's artifacts.
@@ -787,8 +859,29 @@ async def main_async(args: argparse.Namespace) -> None:
     # Each experiment is isolated: a failure in ONE (LangSmith API error, auth blip, etc.) is caught
     # and logged so the remaining experiments still run — the overnight matrix is never aborted by a
     # single transient fault. (Per-EXAMPLE faults are already absorbed inside the target + run_one.)
-    summary: list[dict] = []
-    for i, (variant, pair, (gen_model, gen_reasoning)) in enumerate(plan, 1):
+    #
+    # Cross-experiment WORK-STEALING (--global-concurrency N): instead of running the plan
+    # sequentially (which idles slots while an experiment's last reps drain — e.g. 8/10 done, 2
+    # running, 2 slots dead until the tail finishes), every experiment is launched concurrently and
+    # every pipeline run must hold one of N global slots. The semaphore wakes waiters FIFO and the
+    # tasks are created in plan order, so earlier experiments keep priority — later experiments only
+    # consume slots the tail frees. Total in-flight pipeline runs never exceeds N.
+    global_sem = (
+        asyncio.Semaphore(args.global_concurrency)
+        if args.global_concurrency and args.global_concurrency > 0
+        else None
+    )
+
+    def _steal(target):
+        async def wrapped(inputs: dict[str, Any]) -> dict[str, Any]:
+            assert global_sem is not None
+            async with global_sem:
+                return await target(inputs)
+
+        wrapped.__name__ = getattr(target, "__name__", "target")
+        return wrapped
+
+    async def _run_experiment(i: int, variant: str, pair: str, gen_model, gen_reasoning) -> dict:
         examples = [
             e for e in all_examples
             if _meta(e).get("pair") == pair and _meta(e).get("variant") == variant
@@ -797,9 +890,9 @@ async def main_async(args: argparse.Namespace) -> None:
             f"-{args.approach}-{_pair_short(pair)}-{variant}-{_model_short(gen_model)}"
         if not examples:
             print(f"  ({i}/{len(plan)} skip) no examples for {pair} [{variant}]")
-            summary.append({"experiment": prefix, "pair": pair, "variant": variant,
-                            "generate_model": gen_model or DEFAULT_TRANSLATION_MODEL, "status": "skipped-no-examples"})
-            continue
+            return {"experiment": prefix, "pair": pair, "variant": variant,
+                    "generate_model": gen_model or DEFAULT_TRANSLATION_MODEL,
+                    "status": "skipped-no-examples"}
         target = await _make_target(
             args.approach, pred_root=args.pred_root, dataset=args.dataset, run_tag=run_tag,
             pair=pair, variant=variant,
@@ -812,8 +905,14 @@ async def main_async(args: argparse.Namespace) -> None:
                "generate_model": gen_model or DEFAULT_TRANSLATION_MODEL, "examples": len(examples)}
         try:
             await aevaluate(
-                target, data=examples, evaluators=[*evaluators, *det_evaluators],
-                experiment_prefix=prefix, max_concurrency=args.max_concurrency,
+                _steal(target) if global_sem is not None else target,
+                data=examples, evaluators=[*evaluators, *det_evaluators],
+                experiment_prefix=prefix,
+                # Under work-stealing, per-experiment concurrency opens up to the global cap so a
+                # draining neighbor's freed slots can actually be claimed; the semaphore enforces
+                # the true in-flight limit.
+                max_concurrency=(args.global_concurrency if global_sem is not None
+                                 else args.max_concurrency),
                 num_repetitions=args.repetitions,
                 metadata={
                     "approach": args.approach, "pair": pair, "variant": variant, "run_tag": run_tag,
@@ -825,7 +924,21 @@ async def main_async(args: argparse.Namespace) -> None:
             rec["status"] = "failed"
             rec["error"] = f"{type(e).__name__}: {e}"
             print(f"  ✘ experiment FAILED (continuing): {rec['error']}")
-        summary.append(rec)
+        return rec
+
+    if global_sem is not None:
+        print(f"  cross-experiment work-stealing ON: {len(plan)} experiment(s) launched "
+              f"concurrently under {args.global_concurrency} global pipeline slot(s)")
+        tasks = [
+            asyncio.create_task(_run_experiment(i, variant, pair, gen_model, gen_reasoning))
+            for i, (variant, pair, (gen_model, gen_reasoning)) in enumerate(plan, 1)
+        ]
+        summary: list[dict] = list(await asyncio.gather(*tasks))
+    else:
+        summary = [
+            await _run_experiment(i, variant, pair, gen_model, gen_reasoning)
+            for i, (variant, pair, (gen_model, gen_reasoning)) in enumerate(plan, 1)
+        ]
 
     # Durable, timestamped summary (never overwrites a prior batch) — also the fault audit trail.
     ok = sum(1 for s in summary if s["status"] == "ok")
@@ -835,7 +948,12 @@ async def main_async(args: argparse.Namespace) -> None:
     summary_path = out_dir / f"experiments-summary-{run_tag}.json"
     summary_path.write_text(json.dumps(
         {"run_tag": run_tag, "approach": args.approach, "judge_model": args.judge_model,
+         # Which chain model actually produced the verdicts (fallbacks make this a variable):
+         "judge_model_usage": JUDGE_MODEL_USAGE,
          "ok": ok, "failed": len(failed), "experiments": summary}, indent=2))
+    if JUDGE_MODEL_USAGE:
+        print("  judge verdicts by model: "
+              + ", ".join(f"{k}={v}" for k, v in sorted(JUDGE_MODEL_USAGE.items())))
 
     print(f"\nDone: {ok}/{len(plan)} experiments OK, {len(failed)} failed. Summary → {summary_path}")
     if failed:
@@ -855,16 +973,36 @@ def main() -> None:
     ap.add_argument("--approach", default="our_approach", choices=["our_approach", "baseline"],
                     help="full agentic loop vs single_pass baseline")
     ap.add_argument("--variants", nargs="+", default=["batch1", "batch2", "batch3"],
-                    choices=["small", "batch1", "batch2", "batch3", "full"],
+                    choices=["small", "batch1", "batch2", "batch3", "batch4", "batch5",
+                             "batch6", "batch7", "batch8", "full", "xl"],
                     help="which bundled query variants to run (default: the three 5-query "
-                         "batches covering all 15 queries; small gate runs first if included)")
+                         "batches covering the original 15 queries; batch4-8 = the extended "
+                         "Query16-40 workload sliced; xl bundles the ENTIRE 40-query workload "
+                         "in one prompt; small gate runs first if included)")
     ap.add_argument("--pairs", nargs="*", default=None,
                     help="restrict to these metadata.pair slugs (default: all in the dataset)")
     ap.add_argument("--sweep", action="store_true",
                     help="run the 3-model generate_translation_node sweep (opt-in; otherwise the "
                          "production default model only)")
+    ap.add_argument("--sweep-models", default=None,
+                    help="comma-separated generate-model ids narrowing the --sweep list "
+                         "(default: the built-in SWEEP_MODELS trio), e.g. "
+                         "'einfra/glm-5.2,einfra/deepseek-v4-pro-thinking'")
     ap.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL,
-                    help="einfra/* model the LLM judges run on")
+                    help="comma-separated einfra/* judge FALLBACK CHAIN, tried in order per call "
+                         "(default: deepseek-v4-pro-thinking -> deepseek-v4-pro -> gemma4); the "
+                         "model that produced each verdict is recorded in the feedback comment "
+                         "and the summary JSON")
+    ap.add_argument("--judge-timeout", type=float, default=180.0,
+                    help="per-model per-path judge timeout in seconds (thinking models are "
+                         "long-running; each timeout falls through the chain)")
+    ap.add_argument("--judge-concurrency", type=int, default=4,
+                    help="GLOBAL in-flight cap for judge requests across all experiments "
+                         "(e-INFRA allows ~4 concurrent requests)")
+    ap.add_argument("--global-concurrency", type=int, default=None,
+                    help="cross-experiment WORK-STEALING: launch all experiments concurrently "
+                         "under this many global pipeline slots, so a draining experiment's idle "
+                         "slots are used by the next one (e.g. 4). Overrides --max-concurrency.")
     ap.add_argument("--experiment-prefix", default=None,
                     help="LangSmith experiment name prefix (default: 'uom')")
     ap.add_argument("--max-concurrency", type=int, default=1,
