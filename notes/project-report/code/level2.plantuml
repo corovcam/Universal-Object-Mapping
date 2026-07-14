@@ -1,9 +1,11 @@
-@startuml C4_Containers
+@startuml LAYOUT_TOP_DOWN HIDE_STEREOTYPE SHOW_ELEMENT_TYPE C4_Containers
+
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
 !$ICONURL = "https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/v3.0.0/icons"
 !include $ICONURL/common.puml
 !define DEVICONS2 $ICONURL/devicons2
+!define FA6 $ICONURL/font-awesome-6
 !include DEVICONS2/python.puml
 !include DEVICONS2/microsoftsqlserver.puml
 !include DEVICONS2/mongodb.puml
@@ -12,61 +14,100 @@
 !include DEVICONS2/redis.puml
 !include DEVICONS2/dot_net.puml
 !include DEVICONS2/java.puml
+!include DEVICONS2/spring_original.puml
+!include FA6/microsoft.puml
 
-title UOM System - Container Diagram
+LAYOUT_TOP_DOWN()
+SHOW_ELEMENT_TYPE()
+HIDE_STEREOTYPE()
 
-Person(dev, "Developer / DB Architect", "Migrates schemas/queries.")
+Person(dev, "Developer / DB Architect", "Migrates schemas/queries; loads equivalent data.")
 
-System_Boundary(uom, "Universal Object Mapping (UOM) System") {
-    
-    Container(frontend, "UOM UI Web App", "Next.js, Node.js", "Provides chat UI, streaming compiler logs, and DeepDiff visualization. Proxies API requests.")
-    
-    Container(orchestrator, "LangGraph Orchestrator", "Python, FastAPI", "Core deterministic translation pipeline. Manages LangGraph state machine, deep agent loops, and evaluation logic.", $sprite="python")
-    
-    Container(mcp_toolbox, "GenAI DB Toolbox MCP", "Python", "Provides Relational & Neo4j database inspection context to the Orchestrator.", $sprite="python")
-    Container(mcp_mongo, "MongoDB MCP Server", "TypeScript", "Provides MongoDB database inspection context to the Orchestrator.")
-    
-    Container(daytona, "Daytona Daemon", "Go", "Spawns and manages isolated ephemeral sandbox environments.")
-    
-    Container(sandbox_dotnet, ".NET 10 Sandbox", "Docker", "Compiles C# models/queries and executes ADO.NET checks.", $sprite="dot_net")
-    Container(sandbox_java, "Java 25 Sandbox", "Docker", "Compiles Spring Data models/queries and executes database checks.", $sprite="java")
-    
-    Boundary(db, "Databases") {
-        ContainerDb(pg, "PostgreSQL", "Postgres + pgvector", "State checkpointing and vector embeddings.", $sprite="postgresql")
-        ContainerDb(redis, "Redis", "Redis", "In-memory cache for the agent state.", $sprite="redis")
-        ContainerDb(mssql, "MS SQL Server", "SQL Server 2022", "Source database (WideWorldImporters).", $sprite="microsoftsqlserver")
-        ContainerDb(mongo, "MongoDB", "MongoDB 8", "Target document database.", $sprite="mongodb")
-        ContainerDb(neo4j, "Neo4j", "Neo4j 2026", "Target graph database.", $sprite="neo4j")
-    }
+Container(frontend, "UOM UI Web App", "Next.js, React", "Chat workspace, streaming run view, HITL cards; proxies API requests and injects credentials.")
+
+System_Boundary(langgraph, "LangGraph") {
+    Container(orchestrator, "LangGraph Agent Server (Orchestrator)", "Python, LangGraph, FastAPI", "The translation state graph and its API, MCP and ACP interfaces; model gateway, tool implementations, and evaluation logic.", $sprite="python")
+    ContainerDb(pg, "PostgreSQL", "Postgres + pgvector", "Graph checkpoints, thread state, vector storage.", $sprite="postgresql")
+    ContainerDb(redis, "Redis", "Redis", "Caching layer.", $sprite="redis")
 }
+' Lay_U(pg, redis)
 
-System_Ext(ollama_ext, "MFF UK Ollama Server", "Ollama")
-System_Ext(einfra_ext, "E-Infra vLLM API", "vLLM")
+Boundary(mcp, "Tool Servers (MCP)") {
+    Container(mcp_toolbox, "GenAI DB Toolbox MCP", "Python", "SQL Server & Neo4j inspection tools for schema inspection.")
+    Container(mcp_mongo, "MongoDB MCP Server", "TypeScript", "MongoDB inspection tools for schema inspection.", $sprite="mongodb")
+    Container(mcp_spring, "Spring-docs MCP", "Python", "Versioned Spring reference-documentation search for generation.", $sprite="spring_original")
+}
+' Lay_U(mcp, langgraph)
+
+System_Boundary(validation, "Validation Infrastructure") {
+    System(daytona, "Daytona", "Provisions and manages the ephemeral validation sandboxes.")
+    Container(sandbox_dotnet, ".NET 10 Sandbox", "Docker (.NET 10 SDK)", "Compiles and executes source-side C# harnesses.", $sprite="dot_net")
+    Container(sandbox_java, "Java 25 Sandbox", "Docker (Java 25, Maven)", "Compiles and executes target-side Spring Data harnesses.", $sprite="java")
+}
+' Lay_U(validation, langgraph)
+
+Container(aimock, "AI Mock Proxy", "aimock", "Records and replays complete LLM traffic for deterministic tests and evaluation.")
+' Lay_D(aimock, langgraph)
+
+Container(relational_migrator, "Relational Migrator", "MongoDB tool", "One-time relational-to-document ETL; containerized for reproducibility.", $sprite="mongodb")
+
+Boundary(db, "Databases") {
+    ContainerDb(mssql, "MS SQL Server", "SQL Server 2022", "Source database (WideWorldImporters).", $sprite="microsoftsqlserver")
+    ContainerDb(mongo, "MongoDB", "MongoDB 8", "Target document database.", $sprite="mongodb")
+    ContainerDb(neo4j, "Neo4j", "Neo4j 2026", "Target graph database.", $sprite="neo4j")
+}
+' Lay_U(validation, db)
+' Lay_U(mcp, db)
+' Lay_U(langgraph, db)
+' Lay_U(neo4j, mongo)
+' Lay_U(mongo, mssql)
+
+Boundary(ext, "LLM Providers") {
+    System_Ext(einfra_ext, "e-INFRA CZ AI-aaS", "vLLM")
+    System_Ext(ollama_ext, "MFF UK Ollama Server", "Ollama")
+}
+' Lay_U(ollama_ext, einfra_ext)
+
+System_Ext(ms_learn, "Microsoft Learn MCP", "Remote MCP endpoint for .NET reference docs.", $sprite="microsoft")
+System_Ext(tavily, "Tavily API", "Remote (general-purpose) Web Search API")
+System_Ext(neo4j_etl, "Neo4j ETL Tool", "One-time relational-to-graph data population.")
+
 
 Rel(dev, frontend, "Interacts with workspace", "HTTPS")
+Rel(dev, orchestrator, "Connects IDE deep agent", "ACP / MCP")
+Rel(dev, relational_migrator, "Configures mapping, loads data")
+Rel(dev, neo4j_etl, "Configures mapping, loads data")
 
-Rel(frontend, orchestrator, "Proxies requests (Runs/Threads)", "HTTP / SSE")
+Rel(frontend, orchestrator, "Proxies requests (Runs / Threads)", "HTTP / SSE")
 
-Rel(orchestrator, mcp_toolbox, "Inspects Schema", "MCP / Stdio")
-Rel(orchestrator, mcp_mongo, "Inspects Schema", "MCP / Stdio")
+Rel(orchestrator, mcp_toolbox, "Inspects schema", "MCP / Stdio")
+Rel(orchestrator, mcp_mongo, "Inspects schema", "MCP / Stdio")
+Rel(orchestrator, mcp_spring, "Searches Spring docs", "MCP / Stdio")
+Rel_Up(orchestrator, ms_learn, "Searches .NET docs", "MCP / HTTPS")
+Rel_Up(orchestrator, tavily, "Searches web", "MCP / HTTPS")
 
-Rel(orchestrator, daytona, "Spawns Sandboxes", "REST API")
+Rel(orchestrator, daytona, "Spawns sandboxes", "REST API")
 Rel(daytona, sandbox_dotnet, "Manages container")
 Rel(daytona, sandbox_java, "Manages container")
 
-Rel(mcp_toolbox, mssql, "Inspects tables", "ADO.NET/ODBC")
-Rel(mcp_toolbox, neo4j, "Inspects labels/relationships", "Bolt")
+Rel(mcp_toolbox, mssql, "Inspects tables", "ADO.NET / ODBC")
+Rel(mcp_toolbox, neo4j, "Inspects labels / relationships", "Bolt")
 Rel(mcp_mongo, mongo, "Inspects collections", "Mongo Protocol")
 
-Rel(sandbox_dotnet, mssql, "Executes query", "ADO.NET")
-Rel(sandbox_java, mongo, "Executes query", "Spring Data")
-Rel(sandbox_java, neo4j, "Executes query", "Spring Data")
+Rel(sandbox_dotnet, mssql, "Executes source harness", "ADO.NET")
+Rel(sandbox_java, mongo, "Executes target harness", "Spring Data")
+Rel(sandbox_java, neo4j, "Executes target harness", "Spring Data")
 
-Rel(orchestrator, pg, "Persists state", "SQL")
+Rel(orchestrator, pg, "Persists state / checkpoints", "SQL")
 Rel(orchestrator, redis, "Caches", "Redis Protocol")
 
-Rel(orchestrator, ollama_ext, "Uses LLM", "SSH Tunnel")
-Rel(orchestrator, einfra_ext, "Uses LLM", "HTTPS")
+Rel(orchestrator, aimock, "Invokes models (recorded / replayed)", "HTTPS")
+Rel(aimock, einfra_ext, "Forwards requests", "HTTPS")
+Rel(aimock, ollama_ext, "Forwards requests", "SSH Tunnel")
 
-SHOW_LEGEND()
+Rel(relational_migrator, mssql, "Reads source data", "ADO.NET")
+Rel(relational_migrator, mongo, "Writes documents", "Mongo Protocol")
+Rel(neo4j_etl, mssql, "Reads source data", "JDBC")
+Rel(neo4j_etl, neo4j, "Writes graph", "Bolt")
+
 @enduml

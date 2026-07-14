@@ -1,26 +1,26 @@
-@startuml C4_Context
+@startuml LAYOUT_LANDSCAPE HIDE_STEREOTYPE SHOW_ELEMENT_TYPE C4_Context
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
 
 !$ICONURL = "https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/v3.0.0/icons"
 !include $ICONURL/common.puml
-!define DEVICONS2 $ICONURL/devicons2
 
-title UOM System - Context Diagram
+LAYOUT_LANDSCAPE()
+SHOW_ELEMENT_TYPE()
+HIDE_STEREOTYPE()
 
-Person(dev, "Developer / DB Architect", "Migrates ORM schemas and queries across frameworks; evaluates performance.")
+Person(dev, "Developer / DB Architect", "Migrates persistence-layer artifacts (entities, mappings, queries) across ORM/ODM/OGM frameworks and reviews the validated translations.")
 
-System(uom, "Universal Object Mapping (UOM) System", "LLM-driven translation, validation, and evaluation pipeline for cross-paradigm ORM migrations.")
+System(uom, "Universal Object Mapping (UOM) System", "LLM-assisted translation, validation, and evaluation pipeline for cross-paradigm persistence-layer migrations.")
 
-System_Ext(ollama_ext, "MFF UK Ollama Server", "Faculty's local Ollama server")
-System_Ext(einfra_ext, "E-Infra vLLM API", "Remote LLM API provided by Metacentrum")
-System_Ext(etl_migrators, "ETL Migration Tools", "MongoDB Relational Migrator & Neo4j ETL for data population")
+System_Ext(einfra_ext, "e-INFRA CZ AI-as-a-Service", "OpenAI-compatible vLLM inference serving the open-weight model portfolio.")
+System_Ext(ollama_ext, "MFF UK Ollama Server", "Faculty-hosted Ollama runtime serving the smaller local fallback models over an SSH tunnel.")
+System_Ext(etl_migrators, "ETL Migration Tools", "MongoDB Relational Migrator & Neo4j ETL Tool: one-time population of the equivalent target databases.")
 
-Rel(dev, uom, "Submits schema/queries, reviews results", "Web UI")
-Rel(dev, etl_migrators, "Configures mapping and loads data")
-Rel(etl_migrators, uom, "Prepares equivalent databases for validation")
+Rel(dev, uom, "Submits frameworks, entities and queries; reviews and approves translations", "Web UI / IDE")
+Rel(dev, etl_migrators, "Configures mappings and loads source data")
+Rel_Down(etl_migrators, uom, "Provisions logically equivalent target databases for validation")
 
-Rel(uom, ollama_ext, "Uses LLM for translation fallback", "SSH Tunnel")
-Rel(uom, einfra_ext, "Uses LLM for translation and logic", "HTTPS")
+Rel_Left(uom, einfra_ext, "Invokes models for extraction, generation and judging", "HTTPS")
+Rel_Left(uom, ollama_ext, "Invokes local fallback models", "SSH Tunnel")
 
-SHOW_LEGEND()
 @enduml
