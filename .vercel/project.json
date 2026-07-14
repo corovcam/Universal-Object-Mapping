@@ -1,0 +1,16 @@
+{
+  "projectId": "prj_Oqo7pCpBHHoW6iB3cNyEnftIBPoQ",
+  "orgId": "team_vXYvhFhZHFmNV2j5s6nBLloq",
+  "projectName": "universal-object-mapping-assistant",
+  "settings": {
+    "createdAt": 1780500994132,
+    "framework": "nextjs",
+    "devCommand": null,
+    "installCommand": "pnpm install",
+    "buildCommand": "pnpm run build",
+    "outputDirectory": null,
+    "rootDirectory": "frontend/uom-translator-ui",
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
+}

@@ -1001,10 +1001,7 @@ def prep_query_validation(state: State) -> dict[str, Any]:
     assert state.source_target is not None and state.destination_target is not None
 
     # Source validation
-    if state.source_target in [
-        FrameworkEnum.DOTNET_EFCORE,
-        FrameworkEnum.DOTNET_DAPPER,
-    ]:
+    if state.source_target in DotnetFramework:
         tool_calls.append(
             {
                 "name": "validate_dotnet_code",
@@ -1016,10 +1013,7 @@ def prep_query_validation(state: State) -> dict[str, Any]:
                 "type": "tool_call",
             }
         )
-    elif state.source_target in [
-        FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
-        FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
-    ]:
+    elif state.source_target in JavaFramework:
         tool_calls.append(
             {
                 "name": "validate_java_code",
@@ -1035,10 +1029,7 @@ def prep_query_validation(state: State) -> dict[str, Any]:
         )
 
     # Target validation
-    if state.destination_target in [
-        FrameworkEnum.DOTNET_EFCORE,
-        FrameworkEnum.DOTNET_DAPPER,
-    ]:
+    if state.destination_target in DotnetFramework:
         tool_calls.append(
             {
                 "name": "validate_dotnet_code",
@@ -1050,10 +1041,7 @@ def prep_query_validation(state: State) -> dict[str, Any]:
                 "type": "tool_call",
             }
         )
-    elif state.destination_target in [
-        FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
-        FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
-    ]:
+    elif state.destination_target in JavaFramework:
         tool_calls.append(
             {
                 "name": "validate_java_code",

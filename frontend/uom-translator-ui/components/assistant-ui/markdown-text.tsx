@@ -19,6 +19,7 @@ import {
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { AutoScrollJsonViewer } from "@/components/json-viewer";
 import { cn } from "@/lib/utils";
+import isEmpty from "lodash/isEmpty";
 
 const MarkdownTextImpl = () => {
 	return (
@@ -77,22 +78,21 @@ const useCopyToClipboard = ({
 };
 
 const SyntaxHighlighterImpl: FC<HighlighterProps> = (props) => {
-	const codeString = String(props.code || "")
-		.trim()
-		.replace(/^"|"$/g, "");
-	if (props.language === "json" && codeString.startsWith("{")) {
-		console.debug("Parsing partial JSON code block:", codeString);
+	if (props.language === "json" && props.code.startsWith("{")) {
+		console.debug("Parsing partial JSON code block:", props.code);
 		try {
-			const parsed = parsePartialJson(codeString, Allow.ALL);
-			return (
-				<AutoScrollJsonViewer
-					value={parsed}
-					containerClassName={cn(
-						"border p-4 max-h-[500px] w-full overflow-y-auto custom-scrollbar",
-						props?.className,
-					)}
-				/>
-			);
+			const parsed = parsePartialJson(props.code, Allow.ALL);
+			if (!isEmpty(parsed)) {
+				return (
+					<AutoScrollJsonViewer
+						value={parsed}
+						containerClassName={cn(
+							"border p-4 max-h-[500px] w-full overflow-y-auto custom-scrollbar",
+							props?.className,
+						)}
+					/>
+				);
+			}
 		} catch {
 			// Fall back to default rendering if parsing exception occurs
 		}
