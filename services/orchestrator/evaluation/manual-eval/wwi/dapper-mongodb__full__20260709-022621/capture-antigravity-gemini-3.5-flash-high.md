@@ -1,4 +1,7 @@
 ```source_schema_body
+using System;
+using System.Collections.Generic;
+
 public class OrderLine
 {
     public int OrderLineID { get; set; }
@@ -53,53 +56,51 @@ public class Supplier
     public string? SupplierReference { get; set; }
     public int PaymentDays { get; set; }
 }
-
-public record TaxRateCount(decimal TaxRate, int Count);
 ```
 
 ```target_schema_body
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.ReadOnlyProperty;
+import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.DocumentReference;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 @Document(collection = "orderLines")
 @JsonIgnoreProperties({ "id" })
 class OrderLine {
-
     @Id
     private String id;
-
     @Field("orderLineId")
     private Integer orderLineId;
-
     @Field("orderId")
     private Integer orderId;
-
     @Field("stockItemId")
     private Integer stockItemId;
-
     private String description;
-
     @Field("packageTypeId")
     private Integer packageTypeId;
-
     private Integer quantity;
-
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal unitPrice;
-
-    @Field("taxRate")
+    @Field(value = "taxRate", targetType = FieldType.DECIMAL128)
     private BigDecimal taxRate;
-
     @Field("pickedQuantity")
     private Integer pickedQuantity;
-
     @Field("pickingCompletedWhen")
     private LocalDateTime pickingCompletedWhen;
-
     @Field("lastEditedBy")
     private Integer lastEditedBy;
-
     @Field("lastEditedWhen")
     private LocalDateTime lastEditedWhen;
 
-    public OrderLine() {
-    }
+    public OrderLine() {}
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -132,54 +133,37 @@ class OrderLine {
 @Document(collection = "orders")
 @JsonIgnoreProperties({ "id" })
 class Order {
-
     @Id
     private String id;
-
     @Field("orderId")
     private Integer orderId;
-
     @Field("customerId")
     private Integer customerId;
-
     @Field("salespersonPersonId")
     private Integer salespersonPersonId;
-
     @Field("pickedByPersonId")
     private Integer pickedByPersonId;
-
     @Field("contactPersonId")
     private Integer contactPersonId;
-
     @Field("backorderOrderId")
     private Integer backorderOrderId;
-
     @Field("orderDate")
     private LocalDate orderDate;
-
     @Field("expectedDeliveryDate")
     private LocalDate expectedDeliveryDate;
-
     @Field("customerPurchaseOrderNumber")
     private String customerPurchaseOrderNumber;
-
     @Field("isUndersupplyBackordered")
     private Boolean isUndersupplyBackordered;
-
     private String comments;
-
     @Field("deliveryInstructions")
     private String deliveryInstructions;
-
     @Field("internalComments")
     private String internalComments;
-
     @Field("pickingCompletedWhen")
     private LocalDateTime pickingCompletedWhen;
-
     @Field("lastEditedBy")
     private Integer lastEditedBy;
-
     @Field("lastEditedWhen")
     private LocalDateTime lastEditedWhen;
 
@@ -187,8 +171,7 @@ class Order {
     @DocumentReference(lazy = true, lookup = "{ 'orderId': ?#{#self.orderId} }", sort = "{ 'orderLineId': 1 }")
     private List<OrderLine> orderLines = new ArrayList<>();
 
-    public Order() {
-    }
+    public Order() {}
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -231,30 +214,22 @@ class Order {
 @Document(collection = "people")
 @JsonIgnoreProperties({ "id" })
 class Person {
-
     @Id
     private String id;
-
     @Field("personId")
     private Integer personId;
-
     @Field("fullName")
     private String fullName;
-
     @Field("preferredName")
     private String preferredName;
-
     @Field("emailAddress")
     private String emailAddress;
-
     @Field("customFields")
     private String customFields;
-
     @Field("otherLanguages")
     private String otherLanguages;
 
-    public Person() {
-    }
+    public Person() {}
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -275,24 +250,18 @@ class Person {
 @Document(collection = "suppliers")
 @JsonIgnoreProperties({ "id" })
 class Supplier {
-
     @Id
     private String id;
-
     @Field("supplierId")
     private Integer supplierId;
-
     @Field("supplierName")
     private String supplierName;
-
     @Field("supplierReference")
     private String supplierReference;
-
     @Field("paymentDays")
     private Integer paymentDays;
 
-    public Supplier() {
-    }
+    public Supplier() {}
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -305,42 +274,49 @@ class Supplier {
     public Integer getPaymentDays() { return paymentDays; }
     public void setPaymentDays(Integer paymentDays) { this.paymentDays = paymentDays; }
 }
-
-record CountProjection(Long count) {}
-record TotalProjection(BigDecimal total) {}
-record TaxRateCount(BigDecimal taxRate, Long count) {}
 ```
 
 ```source_query_body id=1
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query1
 {
     public static object Harness(SqlConnection conn)
     {
         string sql = @"SELECT * FROM Sales.OrderLines WHERE OrderID = @OrderID";
-        return HarnessSupport.RunRows(() => conn.Query<OrderLine>(sql, new { OrderID = 26866 }), ol => ol.OrderLineID);
+        return HarnessSupport.RunRows(() => conn.Query<OrderLine>(sql, new { OrderID = 26866 }), x => x.OrderLineID);
     }
 }
 ```
 
 ```target_query_body id=1
 final class Query1 {
-    public static Query query() {
-        return new Query(Criteria.where("orderId").is(26866));
-    }
-
-    static Map<String, Object> harness(MongoTemplate template) {
-        Query q = query();
-        long count = template.count(q, OrderLine.class);
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        org.springframework.data.mongodb.core.query.Query query = new org.springframework.data.mongodb.core.query.Query(
+            org.springframework.data.mongodb.core.query.Criteria.where("orderId").is(26866)
+        );
+        long count = template.count(query, OrderLine.class);
         Object first = null;
         if (count > 0) {
-            first = template.findOne(query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1), OrderLine.class);
+            first = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("orderId").is(26866)
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "orderLineId")).limit(1),
+                OrderLine.class
+            );
         }
         Object last = null;
         if (count > 1) {
-            last = template.findOne(query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1), OrderLine.class);
+            last = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("orderId").is(26866)
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "orderLineId")).limit(1),
+                OrderLine.class
+            );
         }
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject()));
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", first);
         map.put("lastSample", last);
@@ -350,35 +326,47 @@ final class Query1 {
 ```
 
 ```source_query_body id=2
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query2
 {
     public static object Harness(SqlConnection conn)
     {
         string sql = @"SELECT * FROM Sales.OrderLines WHERE UnitPrice = @UnitPrice";
-        return HarnessSupport.RunRows(() => conn.Query<OrderLine>(sql, new { UnitPrice = 25m }), ol => ol.OrderLineID);
+        return HarnessSupport.RunRows(() => conn.Query<OrderLine>(sql, new { UnitPrice = 25m }), x => x.OrderLineID);
     }
 }
 ```
 
 ```target_query_body id=2
 final class Query2 {
-    public static Query query() {
-        return new Query(Criteria.where("unitPrice").is(new BigDecimal("25")));
-    }
-
-    static Map<String, Object> harness(MongoTemplate template) {
-        Query q = query();
-        long count = template.count(q, OrderLine.class);
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        java.math.BigDecimal unitPrice = new java.math.BigDecimal("25");
+        org.springframework.data.mongodb.core.query.Query query = new org.springframework.data.mongodb.core.query.Query(
+            org.springframework.data.mongodb.core.query.Criteria.where("unitPrice").is(unitPrice)
+        );
+        long count = template.count(query, OrderLine.class);
         Object first = null;
         if (count > 0) {
-            first = template.findOne(query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1), OrderLine.class);
+            first = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("unitPrice").is(unitPrice)
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "orderLineId")).limit(1),
+                OrderLine.class
+            );
         }
         Object last = null;
         if (count > 1) {
-            last = template.findOne(query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1), OrderLine.class);
+            last = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("unitPrice").is(unitPrice)
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "orderLineId")).limit(1),
+                OrderLine.class
+            );
         }
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject()));
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", first);
         map.put("lastSample", last);
@@ -388,6 +376,11 @@ final class Query2 {
 ```
 
 ```source_query_body id=3
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System;
+using System.Collections.Generic;
+
 public static class Query3
 {
     public static object Harness(SqlConnection conn)
@@ -395,32 +388,39 @@ public static class Query3
         var from = new DateTime(2014, 12, 20);
         var to = new DateTime(2014, 12, 31);
         string sql = @"SELECT * FROM Sales.OrderLines WHERE PickingCompletedWhen >= @From AND PickingCompletedWhen <= @To";
-        return HarnessSupport.RunRows(() => conn.Query<OrderLine>(sql, new { From = from, To = to }), ol => ol.OrderLineID);
+        return HarnessSupport.RunRows(() => conn.Query<OrderLine>(sql, new { From = from, To = to }), x => x.OrderLineID);
     }
 }
 ```
 
 ```target_query_body id=3
 final class Query3 {
-    public static Query query() {
-        LocalDateTime from = LocalDateTime.of(2014, 12, 20, 0, 0);
-        LocalDateTime to = LocalDateTime.of(2014, 12, 31, 0, 0);
-        return new Query(Criteria.where("pickingCompletedWhen").gte(from).lte(to));
-    }
-
-    static Map<String, Object> harness(MongoTemplate template) {
-        Query q = query();
-        long count = template.count(q, OrderLine.class);
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        java.time.LocalDateTime from = java.time.LocalDateTime.of(2014, 12, 20, 0, 0);
+        java.time.LocalDateTime to = java.time.LocalDateTime.of(2014, 12, 31, 0, 0);
+        org.springframework.data.mongodb.core.query.Query query = new org.springframework.data.mongodb.core.query.Query(
+            org.springframework.data.mongodb.core.query.Criteria.where("pickingCompletedWhen").gte(from).lte(to)
+        );
+        long count = template.count(query, OrderLine.class);
         Object first = null;
         if (count > 0) {
-            first = template.findOne(query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1), OrderLine.class);
+            first = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("pickingCompletedWhen").gte(from).lte(to)
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "orderLineId")).limit(1),
+                OrderLine.class
+            );
         }
         Object last = null;
         if (count > 1) {
-            last = template.findOne(query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1), OrderLine.class);
+            last = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("pickingCompletedWhen").gte(from).lte(to)
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "orderLineId")).limit(1),
+                OrderLine.class
+            );
         }
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject()));
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", first);
         map.put("lastSample", last);
@@ -430,36 +430,48 @@ final class Query3 {
 ```
 
 ```source_query_body id=4
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query4
 {
     public static object Harness(SqlConnection conn)
     {
         var orderIds = new[] { 1, 10, 100, 1000, 10000 };
         string sql = @"SELECT * FROM Sales.OrderLines WHERE OrderID IN @Ids";
-        return HarnessSupport.RunRows(() => conn.Query<OrderLine>(sql, new { Ids = orderIds }), ol => ol.OrderLineID);
+        return HarnessSupport.RunRows(() => conn.Query<OrderLine>(sql, new { Ids = orderIds }), x => x.OrderLineID);
     }
 }
 ```
 
 ```target_query_body id=4
 final class Query4 {
-    public static Query query() {
-        return new Query(Criteria.where("orderId").in(List.of(1, 10, 100, 1000, 10000)));
-    }
-
-    static Map<String, Object> harness(MongoTemplate template) {
-        Query q = query();
-        long count = template.count(q, OrderLine.class);
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        java.util.List<Integer> orderIds = java.util.List.of(1, 10, 100, 1000, 10000);
+        org.springframework.data.mongodb.core.query.Query query = new org.springframework.data.mongodb.core.query.Query(
+            org.springframework.data.mongodb.core.query.Criteria.where("orderId").in(orderIds)
+        );
+        long count = template.count(query, OrderLine.class);
         Object first = null;
         if (count > 0) {
-            first = template.findOne(query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1), OrderLine.class);
+            first = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("orderId").in(orderIds)
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "orderLineId")).limit(1),
+                OrderLine.class
+            );
         }
         Object last = null;
         if (count > 1) {
-            last = template.findOne(query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1), OrderLine.class);
+            last = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("orderId").in(orderIds)
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "orderLineId")).limit(1),
+                OrderLine.class
+            );
         }
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject()));
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", first);
         map.put("lastSample", last);
@@ -469,35 +481,46 @@ final class Query4 {
 ```
 
 ```source_query_body id=5
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query5
 {
     public static object Harness(SqlConnection conn)
     {
         string sql = @"SELECT * FROM Sales.OrderLines WHERE Description LIKE @Pattern";
-        return HarnessSupport.RunRows(() => conn.Query<OrderLine>(sql, new { Pattern = "%C++%" }), ol => ol.OrderLineID);
+        return HarnessSupport.RunRows(() => conn.Query<OrderLine>(sql, new { Pattern = "%C++%" }), x => x.OrderLineID);
     }
 }
 ```
 
 ```target_query_body id=5
 final class Query5 {
-    public static Query query() {
-        return new Query(Criteria.where("description").regex("C\\+\\+"));
-    }
-
-    static Map<String, Object> harness(MongoTemplate template) {
-        Query q = query();
-        long count = template.count(q, OrderLine.class);
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        org.springframework.data.mongodb.core.query.Query query = new org.springframework.data.mongodb.core.query.Query(
+            org.springframework.data.mongodb.core.query.Criteria.where("description").regex("C\\+\\+")
+        );
+        long count = template.count(query, OrderLine.class);
         Object first = null;
         if (count > 0) {
-            first = template.findOne(query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1), OrderLine.class);
+            first = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("description").regex("C\\+\\+")
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "orderLineId")).limit(1),
+                OrderLine.class
+            );
         }
         Object last = null;
         if (count > 1) {
-            last = template.findOne(query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1), OrderLine.class);
+            last = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("description").regex("C\\+\\+")
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "orderLineId")).limit(1),
+                OrderLine.class
+            );
         }
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject()));
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", first);
         map.put("lastSample", last);
@@ -507,6 +530,10 @@ final class Query5 {
 ```
 
 ```source_query_body id=6
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query6
 {
     public static object Harness(SqlConnection conn)
@@ -519,20 +546,17 @@ public static class Query6
 
 ```target_query_body id=6
 final class Query6 {
-    public static Query query() {
-        return new Query()
-                .with(Sort.by(Sort.Direction.ASC, "orderLineId"))
-                .skip(1000)
-                .limit(50);
-    }
-
-    static Map<String, Object> harness(MongoTemplate template) {
-        List<OrderLine> results = template.find(query(), OrderLine.class);
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        org.springframework.data.mongodb.core.query.Query query = new org.springframework.data.mongodb.core.query.Query()
+            .with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "orderLineId"))
+            .skip(1000)
+            .limit(50);
+        java.util.List<OrderLine> results = template.find(query, OrderLine.class);
         long count = results.size();
         Object first = results.isEmpty() ? null : results.get(0);
-        Object last = results.size() > 1 ? results.get(results.size() - 1) : null;
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", query().getQueryObject(), "sort", query().getSortObject()));
+        Object last = results.size() < 2 ? null : results.get(results.size() - 1);
+
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", first);
         map.put("lastSample", last);
@@ -542,8 +566,18 @@ final class Query6 {
 ```
 
 ```source_query_body id=7
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query7
 {
+    public class TaxRateCount
+    {
+        public decimal TaxRate { get; set; }
+        public int Count { get; set; }
+    }
+
     public static object Harness(SqlConnection conn)
     {
         string sql = @"SELECT TaxRate, COUNT(*) AS Count FROM Sales.OrderLines GROUP BY TaxRate ORDER BY Count DESC";
@@ -554,36 +588,29 @@ public static class Query7
 
 ```target_query_body id=7
 final class Query7 {
-    public static TypedAggregation<OrderLine> query() {
-        return Aggregation.newAggregation(
-            OrderLine.class,
-            Aggregation.group("taxRate").count().as("count"),
-            Aggregation.project("count").and("taxRate").previousOperation(),
-            Aggregation.sort(Sort.Direction.DESC, "count")
-        );
+    static class TaxRateCount {
+        private java.math.BigDecimal taxRate;
+        private Long count;
+        public TaxRateCount() {}
+        public java.math.BigDecimal getTaxRate() { return taxRate; }
+        public void setTaxRate(java.math.BigDecimal taxRate) { this.taxRate = taxRate; }
+        public Long getCount() { return count; }
+        public void setCount(Long count) { this.count = count; }
     }
 
-    static Map<String, Object> harness(MongoTemplate template) {
-        var baseAgg = query();
-        
-        var countOps = new ArrayList<>(baseAgg.getPipeline().getOperations());
-        countOps.add(Aggregation.count().as("count"));
-        var countAgg = Aggregation.newAggregation(OrderLine.class, countOps);
-        var countResult = template.aggregate(countAgg, OrderLine.class, CountProjection.class).getUniqueMappedResult();
-        long count = countResult != null ? countResult.count() : 0L;
-        
-        Object first = null;
-        if (count > 0) {
-            var agg = Aggregation.newAggregation(query().getPipeline().add(Aggregation.sort(Sort.Direction.ASC, "taxRate")).add(Aggregation.limit(1)).getOperations());
-            first = template.aggregate(agg, template.getCollectionName(OrderLine.class), Object.class).getUniqueMappedResult();
-        }
-        Object last = null;
-        if (count > 1) {
-            var desc = Aggregation.newAggregation(query().getPipeline().add(Aggregation.sort(Sort.Direction.DESC, "taxRate")).add(Aggregation.limit(1)).getOperations());
-            last = template.aggregate(desc, template.getCollectionName(OrderLine.class), Object.class).getUniqueMappedResult();
-        }
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoAggregation", Map.of("collection", template.getCollectionName(OrderLine.class), "pipeline", baseAgg.toString()));
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        org.springframework.data.mongodb.core.aggregation.TypedAggregation<OrderLine> agg = org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation(
+            OrderLine.class,
+            org.springframework.data.mongodb.core.aggregation.Aggregation.group("taxRate").count().as("count"),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.project("count").and("taxRate").previousOperation(),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.sort(org.springframework.data.domain.Sort.Direction.DESC, "count")
+        );
+        java.util.List<TaxRateCount> results = template.aggregate(agg, OrderLine.class, TaxRateCount.class).getMappedResults();
+        long count = results.size();
+        Object first = results.isEmpty() ? null : results.get(0);
+        Object last = results.size() < 2 ? null : results.get(results.size() - 1);
+
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", first);
         map.put("lastSample", last);
@@ -593,6 +620,10 @@ final class Query7 {
 ```
 
 ```source_query_body id=8
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query8
 {
     public static object Harness(SqlConnection conn)
@@ -606,19 +637,23 @@ public static class Query8
 
 ```target_query_body id=8
 final class Query8 {
-    public static Query query() {
-        Query q = new Query();
-        q.fields().include("unitPrice");
-        return q.with(Sort.by(Sort.Direction.DESC, "unitPrice")).limit(1);
+    static class MaxResult {
+        private java.math.BigDecimal maxVal;
+        public MaxResult() {}
+        public java.math.BigDecimal getMaxVal() { return maxVal; }
+        public void setMaxVal(java.math.BigDecimal maxVal) { this.maxVal = maxVal; }
     }
 
-    static Map<String, Object> harness(MongoTemplate template) {
-        OrderLine res = template.findOne(query(), OrderLine.class);
-        BigDecimal max = (res != null) ? res.getUnitPrice() : null;
-        long count = (max != null) ? 1 : 0;
-        
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", query().getQueryObject(), "sort", query().getSortObject()));
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        org.springframework.data.mongodb.core.aggregation.TypedAggregation<OrderLine> agg = org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation(
+            OrderLine.class,
+            org.springframework.data.mongodb.core.aggregation.Aggregation.group().max("unitPrice").as("maxVal")
+        );
+        MaxResult result = template.aggregate(agg, OrderLine.class, MaxResult.class).getUniqueMappedResult();
+        java.math.BigDecimal max = result != null ? result.getMaxVal() : null;
+        long count = max != null ? 1 : 0;
+
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", max);
         map.put("lastSample", null);
@@ -628,6 +663,10 @@ final class Query8 {
 ```
 
 ```source_query_body id=9
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query9
 {
     public static object Harness(SqlConnection conn)
@@ -641,24 +680,26 @@ public static class Query9
 
 ```target_query_body id=9
 final class Query9 {
-    public static TypedAggregation<OrderLine> query() {
-        return Aggregation.newAggregation(
-            OrderLine.class,
-            Aggregation.project().andExpression("quantity * unitPrice").as("lineTotal"),
-            Aggregation.group().sum("lineTotal").as("total")
-        );
+    static class SumResult {
+        private java.math.BigDecimal sumVal;
+        public SumResult() {}
+        public java.math.BigDecimal getSumVal() { return sumVal; }
+        public void setSumVal(java.math.BigDecimal sumVal) { this.sumVal = sumVal; }
     }
 
-    static Map<String, Object> harness(MongoTemplate template) {
-        var agg = query();
-        TotalProjection result = template.aggregate(agg, OrderLine.class, TotalProjection.class).getUniqueMappedResult();
-        BigDecimal total = result != null ? result.total() : null;
-        long count = (total != null) ? 1 : 0;
-        
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoAggregation", Map.of("collection", template.getCollectionName(OrderLine.class), "pipeline", agg.toString()));
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        org.springframework.data.mongodb.core.aggregation.TypedAggregation<OrderLine> agg = org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation(
+            OrderLine.class,
+            org.springframework.data.mongodb.core.aggregation.Aggregation.project().andExpression("quantity * unitPrice").as("lineTotal"),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.group().sum("lineTotal").as("sumVal")
+        );
+        SumResult result = template.aggregate(agg, OrderLine.class, SumResult.class).getUniqueMappedResult();
+        java.math.BigDecimal sum = result != null ? result.getSumVal() : null;
+        long count = sum != null ? 1 : 0;
+
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
-        map.put("firstSample", total);
+        map.put("firstSample", sum);
         map.put("lastSample", null);
         return map;
     }
@@ -666,9 +707,14 @@ final class Query9 {
 ```
 
 ```source_query_body id=10
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+using System.Linq;
+
 public static class Query10
 {
-    static Order MapRow(Order o, OrderLine ol)
+    private static Order MapRow(Order o, OrderLine ol)
     {
         if (ol != null) o.OrderLines.Add(ol);
         return o;
@@ -681,34 +727,34 @@ public static class Query10
             FROM Sales.Orders o
             LEFT JOIN Sales.OrderLines ol ON o.OrderID = ol.OrderID
             WHERE o.OrderID = 530";
-        return HarnessSupport.RunRows<Order>(() =>
-        {
-            var rows = conn.Query<Order, OrderLine, Order>(sql, MapRow, splitOn: "OrderLineID");
-            return rows.GroupBy(o => o.OrderID).Select(g => {
-                var order = g.First();
-                order.OrderLines = g.SelectMany(o => o.OrderLines).ToList();
-                return order;
-            });
-        }, o => o.OrderID);
+        var rows = conn.Query<Order, OrderLine, Order>(sql, MapRow, splitOn: "OrderLineID");
+        var orders = rows.GroupBy(o => o.OrderID).Select(g => {
+            var order = g.First();
+            order.OrderLines = g.SelectMany(o => o.OrderLines).ToList();
+            return order;
+        }).ToList();
+        var count = orders.Count;
+        var first = orders.FirstOrDefault();
+        return new { count, firstSample = first, lastSample = (object?)null };
     }
 }
 ```
 
 ```target_query_body id=10
 final class Query10 {
-    public static Query query() {
-        return new Query(Criteria.where("orderId").is(530));
-    }
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        org.springframework.data.mongodb.core.query.Query query = new org.springframework.data.mongodb.core.query.Query(
+            org.springframework.data.mongodb.core.query.Criteria.where("orderId").is(530)
+        );
+        Order order = template.findOne(query, Order.class);
+        if (order != null) {
+            order.getOrderLines();
+        }
+        long count = order != null ? 1 : 0;
 
-    static Map<String, Object> harness(MongoTemplate template) {
-        Query q = query();
-        long count = template.count(q, Order.class);
-        Object first = template.findOne(q, Order.class);
-        
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(Order.class), "filter", q.getQueryObject()));
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
-        map.put("firstSample", first);
+        map.put("firstSample", order);
         map.put("lastSample", null);
         return map;
     }
@@ -716,33 +762,32 @@ final class Query10 {
 ```
 
 ```source_query_body id=11
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query11
 {
     public static object Harness(SqlConnection conn)
     {
         string sql = @"SELECT TOP 1000 * FROM Sales.Orders ORDER BY ExpectedDeliveryDate";
-        return HarnessSupport.RunRows(() => conn.Query<Order>(sql), o => o.OrderID);
+        return HarnessSupport.RunRows(() => conn.Query<Order>(sql), x => x.OrderID);
     }
 }
 ```
 
 ```target_query_body id=11
 final class Query11 {
-    public static Query query() {
-        return new Query()
-                .with(Sort.by(Sort.Direction.ASC, "expectedDeliveryDate"))
-                .limit(1000);
-    }
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        org.springframework.data.mongodb.core.query.Query query = new org.springframework.data.mongodb.core.query.Query()
+            .with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "expectedDeliveryDate"))
+            .limit(1000);
+        java.util.List<Order> results = template.find(query, Order.class);
+        long count = results.size();
+        Object first = results.isEmpty() ? null : results.get(0);
+        Object last = results.size() < 2 ? null : results.get(results.size() - 1);
 
-    static Map<String, Object> harness(MongoTemplate template) {
-        List<Order> list = template.find(query(), Order.class);
-        list.sort(Comparator.comparing(Order::getOrderId));
-        long count = list.size();
-        Object first = list.isEmpty() ? null : list.get(0);
-        Object last = list.size() > 1 ? list.get(list.size() - 1) : null;
-        
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(Order.class), "filter", query().getQueryObject(), "sort", query().getSortObject()));
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", first);
         map.put("lastSample", last);
@@ -752,32 +797,32 @@ final class Query11 {
 ```
 
 ```source_query_body id=12
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query12
 {
     public static object Harness(SqlConnection conn)
     {
         string sql = @"SELECT DISTINCT CustomerPurchaseOrderNumber FROM Sales.Orders";
-        return HarnessSupport.RunRows(() => conn.Query<string?>(sql), x => x);
+        return HarnessSupport.RunRows(() => conn.Query<string>(sql), x => x);
     }
 }
 ```
 
 ```target_query_body id=12
 final class Query12 {
-    static Map<String, Object> harness(MongoTemplate template) {
-        List<String> distinct = template.findDistinct(new Query(), "customerPurchaseOrderNumber", Order.class, String.class);
-        distinct.sort((a, b) -> {
-            if (a == null && b == null) return 0;
-            if (a == null) return -1;
-            if (b == null) return 1;
-            return a.compareTo(b);
-        });
-        long count = distinct.size();
-        Object first = distinct.isEmpty() ? null : distinct.get(0);
-        Object last = distinct.size() > 1 ? distinct.get(distinct.size() - 1) : null;
-        
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(Order.class), "distinct", "customerPurchaseOrderNumber"));
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        java.util.List<String> results = new java.util.ArrayList<>(
+            template.findDistinct(new org.springframework.data.mongodb.core.query.Query(), "customerPurchaseOrderNumber", Order.class, String.class)
+        );
+        results.sort(java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder()));
+        long count = results.size();
+        Object first = results.isEmpty() ? null : results.get(0);
+        Object last = results.size() < 2 ? null : results.get(results.size() - 1);
+
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", first);
         map.put("lastSample", last);
@@ -787,6 +832,10 @@ final class Query12 {
 ```
 
 ```source_query_body id=13
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query13
 {
     public static object Harness(SqlConnection conn)
@@ -803,24 +852,30 @@ public static class Query13
 
 ```target_query_body id=13
 final class Query13 {
-    public static Query query() {
-        return new Query(Criteria.where("customFields").regex("\"Title\"\\s*:\\s*\"Team Member\""))
-                .with(Sort.by(Sort.Direction.ASC, "personId"));
-    }
-
-    static Map<String, Object> harness(MongoTemplate template) {
-        Query q = query();
-        long count = template.count(q, Person.class);
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        org.springframework.data.mongodb.core.query.Query query = new org.springframework.data.mongodb.core.query.Query(
+            org.springframework.data.mongodb.core.query.Criteria.where("customFields").regex("\"Title\"\\s*:\\s*\"Team Member\"")
+        ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "personId"));
+        long count = template.count(query, Person.class);
         Object first = null;
         if (count > 0) {
-            first = template.findOne(query().limit(1), Person.class);
+            first = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("customFields").regex("\"Title\"\\s*:\\s*\"Team Member\"")
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "personId")).limit(1),
+                Person.class
+            );
         }
         Object last = null;
         if (count > 1) {
-            last = template.findOne(query().skip(count - 1).limit(1), Person.class);
+            last = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("customFields").regex("\"Title\"\\s*:\\s*\"Team Member\"")
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "personId")).limit(1),
+                Person.class
+            );
         }
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(Person.class), "filter", q.getQueryObject(), "sort", q.getSortObject()));
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", first);
         map.put("lastSample", last);
@@ -830,6 +885,10 @@ final class Query13 {
 ```
 
 ```source_query_body id=14
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query14
 {
     public static object Harness(SqlConnection conn)
@@ -849,24 +908,30 @@ public static class Query14
 
 ```target_query_body id=14
 final class Query14 {
-    public static Query query() {
-        return new Query(Criteria.where("otherLanguages").regex("\"Slovak\""))
-                .with(Sort.by(Sort.Direction.ASC, "personId"));
-    }
-
-    static Map<String, Object> harness(MongoTemplate template) {
-        Query q = query();
-        long count = template.count(q, Person.class);
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        org.springframework.data.mongodb.core.query.Query query = new org.springframework.data.mongodb.core.query.Query(
+            org.springframework.data.mongodb.core.query.Criteria.where("otherLanguages").regex("\"Slovak\"")
+        ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "personId"));
+        long count = template.count(query, Person.class);
         Object first = null;
         if (count > 0) {
-            first = template.findOne(query().limit(1), Person.class);
+            first = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("otherLanguages").regex("\"Slovak\"")
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "personId")).limit(1),
+                Person.class
+            );
         }
         Object last = null;
         if (count > 1) {
-            last = template.findOne(query().skip(count - 1).limit(1), Person.class);
+            last = template.findOne(
+                new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("otherLanguages").regex("\"Slovak\"")
+                ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "personId")).limit(1),
+                Person.class
+            );
         }
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(Person.class), "filter", q.getQueryObject(), "sort", q.getSortObject()));
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", first);
         map.put("lastSample", last);
@@ -876,6 +941,10 @@ final class Query14 {
 ```
 
 ```source_query_body id=15
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
+
 public static class Query15
 {
     public static object Harness(SqlConnection conn)
@@ -885,30 +954,45 @@ public static class Query15
             UNION
             SELECT SupplierID FROM Purchasing.Suppliers WHERE SupplierID BETWEEN 5 AND 10
             ORDER BY SupplierID";
-        return HarnessSupport.RunRows(() => conn.Query<int>(sql), x => x);
+        return HarnessSupport.RunRows(() => conn.Query<int>(sql), null);
     }
 }
 ```
 
 ```target_query_body id=15
 final class Query15 {
-    public static Query query() {
-        return new Query(new Criteria().orOperator(
-            Criteria.where("supplierId").lt(5),
-            Criteria.where("supplierId").gte(5).lte(10)
-        )).with(Sort.by(Sort.Direction.ASC, "supplierId"));
+    static class SupplierIdProjection {
+        private Integer supplierId;
+        public SupplierIdProjection() {}
+        public Integer getSupplierId() { return supplierId; }
+        public void setSupplierId(Integer supplierId) { this.supplierId = supplierId; }
     }
 
-    static Map<String, Object> harness(MongoTemplate template) {
-        Query q = query();
-        List<Supplier> suppliers = template.find(q, Supplier.class);
-        List<Integer> ids = suppliers.stream().map(Supplier::getSupplierId).toList();
+    static java.util.Map<String, Object> harness(org.springframework.data.mongodb.core.MongoTemplate template) {
+        org.springframework.data.mongodb.core.aggregation.TypedAggregation<Supplier> agg = org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation(
+            Supplier.class,
+            org.springframework.data.mongodb.core.aggregation.Aggregation.match(org.springframework.data.mongodb.core.query.Criteria.where("supplierId").lt(5)),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.unionWith(
+                "suppliers",
+                org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation(
+                    Supplier.class,
+                    org.springframework.data.mongodb.core.aggregation.Aggregation.match(org.springframework.data.mongodb.core.query.Criteria.where("supplierId").gte(5).lte(10))
+                )
+            ),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.group("supplierId"),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.project("supplierId").and("supplierId").previousOperation(),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.sort(org.springframework.data.domain.Sort.Direction.ASC, "supplierId")
+        );
+        java.util.List<SupplierIdProjection> results = template.aggregate(agg, Supplier.class, SupplierIdProjection.class).getMappedResults();
+        java.util.List<Integer> ids = new java.util.ArrayList<>();
+        for (SupplierIdProjection proj : results) {
+            ids.add(proj.getSupplierId());
+        }
         long count = ids.size();
         Object first = ids.isEmpty() ? null : ids.get(0);
-        Object last = ids.size() > 1 ? ids.get(ids.size() - 1) : null;
-        
-        Map<String, Object> map = new HashMap<>();
-        map.put("mongoQuery", Map.of("collection", template.getCollectionName(Supplier.class), "filter", q.getQueryObject(), "sort", q.getSortObject()));
+        Object last = ids.size() < 2 ? null : ids.get(ids.size() - 1);
+
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("count", count);
         map.put("firstSample", first);
         map.put("lastSample", last);

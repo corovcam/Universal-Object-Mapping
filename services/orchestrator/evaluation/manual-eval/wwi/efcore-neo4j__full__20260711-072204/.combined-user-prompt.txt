@@ -1,0 +1,543 @@
+Translate the following Source Code (schema/query) from .NET Entity Framework Core 10 to Java Spring Data Neo4j 8.0.0.
+
+Database Schema Context:
+Now I have all the information needed. Here is the schema comparison summary:
+
+---
+
+## Source Schema — Microsoft SQL Server (Entity Framework Core)
+
+### Tables relevant to queries:
+
+**Sales.OrderLines** (OrderLine entity)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| OrderLineID | int | NO | PK |
+| OrderID | int | NO | FK → Sales.Orders |
+| StockItemID | int | NO | FK → Warehouse.StockItems |
+| Description | nvarchar | NO | |
+| PackageTypeID | int | NO | (not mapped in code) |
+| Quantity | int | NO | |
+| UnitPrice | decimal | YES | |
+| TaxRate | decimal | NO | |
+| PickedQuantity | int | NO | |
+| PickingCompletedWhen | datetime2 | YES | |
+| LastEditedBy | int | NO | FK → Application.People |
+| LastEditedWhen | datetime2 | NO | |
+
+**Sales.Orders** (Order entity)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| OrderID | int | NO | PK |
+| CustomerID | int | NO | FK → Sales.Customers |
+| SalespersonPersonID | int | NO | FK → Application.People |
+| PickedByPersonID | int | YES | FK → Application.People |
+| ContactPersonID | int | NO | FK → Application.People |
+| BackorderOrderID | int | YES | FK → Sales.Orders (self-ref) |
+| OrderDate | date | NO | |
+| ExpectedDeliveryDate | date | NO | |
+| CustomerPurchaseOrderNumber | nvarchar | YES | |
+| IsUndersupplyBackordered | bit | NO | |
+| Comments | nvarchar | YES | |
+| DeliveryInstructions | nvarchar | YES | |
+| InternalComments | nvarchar | YES | |
+| PickingCompletedWhen | datetime2 | YES | |
+| LastEditedBy | int | NO | FK → Application.People |
+| LastEditedWhen | datetime2 | NO | |
+
+EF Core navigation: `Order.OrderLines` is `List<OrderLine>`, loaded via `.Include(o => o.OrderLines)`.
+
+**Application.People** (Person entity)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| PersonID | int | NO | PK |
+| FullName | nvarchar | NO | |
+| PreferredName | nvarchar | NO | |
+| EmailAddress | nvarchar | YES | |
+| CustomFields | nvarchar | YES | JSON string (stored as JSON column via EF Core `OwnsOne().ToJson()`) |
+| OtherLanguages | nvarchar | YES | JSON array of strings |
+| ... (many other columns) | | | |
+
+EF Core owns `CustomFields` as a JSON sub-document with properties: `OtherLanguages` (List\<string\>), `HireDate` (DateTime?), `Title` (string?).
+
+**Purchasing.Suppliers** (Supplier entity)
+| Column | Type | Nullable |
+|---|---|---|
+| SupplierID | int | NO (PK) |
+| SupplierName | nvarchar | NO |
+| SupplierReference | nvarchar | YES |
+| PaymentDays | int | NO |
+| PhoneNumber | nvarchar | NO |
+| FaxNumber | nvarchar | NO |
+| WebsiteURL | nvarchar | NO |
+| BankAccountName | nvarchar | YES |
+| BankAccountBranch | nvarchar | YES |
+| BankAccountCode | nvarchar | YES |
+| BankAccountNumber | nvarchar | YES |
+| BankInternationalCode | nvarchar | YES |
+
+**Sales.CustomerTransactions** (CustomerTransaction entity)
+| Column | Type | Nullable |
+|---|---|---|
+| CustomerTransactionID | int | NO (PK) |
+| CustomerID | int | NO (FK → Sales.Customers) |
+| TransactionDate | date | NO |
+| TransactionAmount | decimal | NO |
+| OutstandingBalance | decimal | NO |
+| IsFinalized | bit | YES |
+
+**Purchasing.PurchaseOrders** (PurchaseOrder entity)
+| Column | Type | Nullable |
+|---|---|---|
+| PurchaseOrderID | int | NO (PK) |
+| SupplierID | int | NO (FK → Purchasing.Suppliers) |
+| OrderDate | date | NO |
+| ExpectedDeliveryDate | date | YES |
+| SupplierReference | nvarchar | YES |
+| IsOrderFinalized | bit | NO |
+
+**Warehouse.StockItems** (StockItem entity)
+| Column | Type | Nullable |
+|---|---|---|
+| StockItemID | int | NO (PK) |
+| StockItemName | nvarchar | NO |
+| SupplierID | int | NO (FK → Purchasing.Suppliers) |
+| QuantityPerOuter | int | NO |
+| LeadTimeDays | int | NO |
+| IsChillerStock | bit | NO |
+| UnitPrice | decimal | NO |
+| RecommendedRetailPrice | decimal | YES |
+| TaxRate | decimal | NO |
+
+**Warehouse.StockItemStockGroups** (StockItemStockGroup entity, junction)
+| Column | Type | Nullable |
+|---|---|---|
+| StockItemStockGroupID | int | NO (PK) |
+| StockItemID | int | NO (FK → Warehouse.StockItems) |
+| StockGroupID | int | NO (FK → Warehouse.StockGroups) |
+
+---
+
+## Target Schema — Neo4j
+
+### Node Labels & Properties
+
+**OrderLine** (231,412 nodes)
+| Property | Neo4j Type | Notes |
+|---|---|---|
+| orderLineId | INTEGER NOT NULL | PK |
+| description | STRING NOT NULL | |
+| quantity | INTEGER NOT NULL | |
+| unitPrice | FLOAT NOT NULL | Always present (vs nullable decimal in SQL) |
+| taxRate | FLOAT NOT NULL | |
+| pickedQuantity | INTEGER NOT NULL | |
+| pickingCompletedWhen | STRING NOT NULL | datetime as string, e.g. "2013-01-02 11:00:00.0000000" |
+| lastEditedWhen | STRING NOT NULL | |
+
+**Order** (73,595 nodes)
+| Property | Neo4j Type | Notes |
+|---|---|---|
+| orderId | INTEGER NOT NULL | PK |
+| customerPurchaseOrderNumber | STRING NOT NULL | Always present |
+| expectedDeliveryDate | STRING NOT NULL | date as string, e.g. "2013-01-02" |
+| orderDate | STRING NOT NULL | |
+| isUndersupplyBackordered | INTEGER NOT NULL | 0 or 1 (not boolean) |
+| pickingCompletedWhen | STRING NOT NULL | |
+| lastEditedWhen | STRING NOT NULL | |
+
+Note: `Comments`, `DeliveryInstructions`, `InternalComments` are **not present** in Neo4j.
+
+**Person** (1,111 nodes)
+| Property | Neo4j Type | Notes |
+|---|---|---|
+| personId | INTEGER NOT NULL | PK |
+| fullName | STRING NOT NULL | |
+| preferredName | STRING NOT NULL | |
+| emailAddress | STRING NOT NULL | Always present |
+| customFields | STRING NOT NULL | JSON string, e.g. `"{ \"OtherLanguages\": ..., \"HireDate\":..., \"Title\":...\"}"` |
+| otherLanguages | STRING NOT NULL | JSON array string, e.g. `"[\"Polish\",\"Chinese\",\"Japanese\"]"` |
+| phoneNumber, faxNumber, searchName, logonName, userPreferences, validFrom, validTo | STRING | |
+| isEmployee, isSalesperson, isSystemUser, isPermittedToLogon, isExternalLogonProvider | INTEGER | 0/1 |
+
+**Supplier** (13 nodes)
+| Property | Neo4j Type |
+|---|---|
+| supplierId | INTEGER NOT NULL (PK) |
+| supplierName | STRING NOT NULL |
+| supplierReference | STRING NOT NULL |
+| paymentDays | INTEGER NOT NULL |
+| phoneNumber | STRING NOT NULL |
+| faxNumber | STRING NOT NULL |
+| websiteUrl | STRING NOT NULL |
+| bankAccountName, bankAccountBranch, bankAccountCode, bankAccountNumber, bankInternationalCode | STRING NOT NULL |
+| deliveryAddressLine1/2, deliveryPostalCode, postalAddressLine1/2, postalPostalCode, internalComments, validFrom, validTo | STRING NOT NULL |
+
+**CustomerTransaction** (97,147 nodes)
+| Property | Neo4j Type |
+|---|---|
+| customerTransactionId | INTEGER NOT NULL (PK) |
+| transactionDate | STRING NOT NULL |
+| transactionAmount | FLOAT NOT NULL |
+| outstandingBalance | FLOAT NOT NULL |
+| isFinalized | INTEGER NOT NULL (0/1) |
+| amountExcludingTax, taxAmount, finalizationDate, lastEditedWhen | STRING NOT NULL |
+
+**PurchaseOrder** (2,074 nodes)
+| Property | Neo4j Type |
+|---|---|
+| purchaseOrderId | INTEGER NOT NULL (PK) |
+| orderDate | STRING NOT NULL |
+| expectedDeliveryDate | STRING NOT NULL |
+| isOrderFinalized | INTEGER NOT NULL (0/1) |
+| supplierReference | STRING NOT NULL |
+| lastEditedWhen | STRING NOT NULL |
+
+Note: `Comments`, `InternalComments` are **not present** in Neo4j.
+
+**StockItem** (227 nodes)
+| Property | Neo4j Type |
+|---|---|
+| stockItemId | INTEGER NOT NULL (PK) |
+| stockItemName | STRING NOT NULL |
+| isChillerStock | INTEGER NOT NULL (0/1) |
+| leadTimeDays | INTEGER NOT NULL |
+| quantityPerOuter | INTEGER NOT NULL |
+| unitPrice | FLOAT NOT NULL |
+| recommendedRetailPrice | FLOAT NOT NULL |
+| taxRate | FLOAT NOT NULL |
+| brand, size, marketingComments, searchDetails, tags, customFields, typicalWeightPerUnit, validFrom, validTo | |
+
+**StockItemStockGroup** (442 nodes)
+| Property | Neo4j Type |
+|---|---|
+| stockItemStockGroupId | INTEGER NOT NULL (PK) |
+| lastEditedWhen | STRING NOT NULL |
+
+**StockGroup** (10 nodes)
+| Property: stockGroupId, stockGroupName, validFrom, validTo |
+
+### Relationships
+
+| Type | Direction | From | To | Count | Notes |
+|---|---|---|---|---|---|
+| ORDERS | → | OrderLine | Order | 7,538 | OrderLine is start, Order is end |
+| STOCK_ITEMS | → | OrderLine | StockItem | 442 | OrderLine is start |
+| STOCK_ITEMS | → | StockItemStockGroup | StockItem | 442 | junction |
+| STOCK_GROUPS | → | StockItemStockGroup | StockGroup | 442 | junction |
+| SUPPLIERS | → | PurchaseOrder | Supplier | 227 | |
+| SUPPLIERS | → | StockItem | Supplier | 227 | |
+| CUSTOMERS | → | CustomerTransaction | Customer | 663 | |
+| STOCK_ITEM_HOLDINGS | → | Person | StockItem | 227 | Has properties: binLocation, lastCostPrice, lastEditedWhen, lastStocktakeQuantity, quantityOnHand, reorderLevel, targetStockLevel |
+| PEOPLE | → | Order | Person | 10 | (various person roles via different FK paths) |
+
+---
+
+## Key Translation Implications
+
+1. **Foreign keys become relationships**: In EF Core, `OrderLine.OrderID` is a FK. In Neo4j, the `(ol:OrderLine)-[:ORDERS]->(o:Order)` relationship replaces it. Same for `StockItemID`, `CustomerID`, `SupplierID`, etc.
+
+2. **Navigation direction**: `Order.OrderLines` in EF Core (one-to-many) translates to `(o:Order)<-[:ORDERS]-(ol:OrderLine)` in Neo4j — the relationship points **from** OrderLine **to** Order.
+
+3. **Include/join → pattern comprehension**: `ctx.Orders.Include(o => o.OrderLines)` (eager loading) maps to a Cypher `MATCH (o:Order)<-[:ORDERS]-(ol:OrderLine)` pattern.
+
+4. **Bit → Integer**: SQL `BIT` columns (`IsUndersupplyBackordered`, `IsFinalized`, `IsOrderFinalized`, `IsChillerStock`) are stored as INTEGER (0/1) in Neo4j. The EF Core model uses `bool`; Spring Data Neo4j should use `Boolean` but query filtering must use `0`/`1` or rely on SDN's boolean conversion.
+
+5. **Dates/Times are strings**: SQL `DATE` → Neo4j STRING (`"2013-01-02"`). SQL `DATETIME2` → Neo4j STRING (`"2013-01-02 11:00:00.0000000"`). String comparison works for lexicographic ordering when format is consistent.
+
+6. **JSON columns**: `Person.CustomFields` is a JSON string in Neo4j (e.g., `"{ \"Title\": \"Team Member\" ...}"`). EF Core treats it as an owned entity via `OwnsOne().ToJson()`. In Spring Data Neo4j, string manipulation/parsing or a custom converter will be needed.
+
+7. **Nullable vs NOT NULL**: Several string properties that are nullable in SQL (e.g., `EmailAddress`, `WebsiteURL`) are STRING NOT NULL in Neo4j (they appear to store empty strings for missing values).
+
+8. **Missing columns**: `Order.Comments`, `Order.DeliveryInstructions`, `Order.InternalComments`, and `PurchaseOrder.Comments`, `PurchaseOrder.InternalComments` exist in SQL but are **not in the Neo4j node schema**. Queries that reference these columns would need adjustment or the properties must be added.
+
+9. **Decimal → Float**: SQL `DECIMAL` maps to Neo4j `FLOAT` (Double in Java). Precision differences may exist.
+
+10. **No indexes on properties**: Neo4j currently has only LOOKUP indexes (no property indexes). Performance of property-based WHERE clauses will rely on full scans unless indexes are created.
+---
+Source Code:
+<source_schema_code>
+[Table("OrderLines", Schema = "Sales")]
+public class OrderLine
+{
+  [Key]
+  public int OrderLineID { get; set; }
+  [ForeignKey(nameof(Order))]
+  public int OrderID { get; set; }
+  public int StockItemID { get; set; }
+  public required string Description { get; set; }
+  public int Quantity { get; set; }
+  public decimal? UnitPrice { get; set; }
+  public decimal TaxRate { get; set; }
+  public int PickedQuantity { get; set; }
+  public DateTime? PickingCompletedWhen { get; set; }
+  public int LastEditedBy { get; set; }
+  public DateTime LastEditedWhen { get; set; }
+}
+
+[Table("Orders", Schema = "Sales")]
+public class Order
+{
+  [Key]
+  public int OrderID { get; set; }
+  public int CustomerID { get; set; }
+  public int? BackorderOrderID { get; set; }
+  public DateTime OrderDate { get; set; }
+  public DateTime ExpectedDeliveryDate { get; set; }
+  public string? CustomerPurchaseOrderNumber { get; set; }
+  public bool IsUndersupplyBackordered { get; set; }
+  public string? Comments { get; set; }
+  public string? DeliveryInstructions { get; set; }
+  public string? InternalComments { get; set; }
+  public DateTime? PickingCompletedWhen { get; set; }
+  public DateTime LastEditedWhen { get; set; }
+  public List<OrderLine> OrderLines { get; set; } = [];
+}
+
+[Table("People", Schema = "Application")]
+public class Person
+{
+  [Key]
+  public int PersonID { get; set; }
+  public required string FullName { get; set; }
+  public required string PreferredName { get; set; }
+  public string? EmailAddress { get; set; }
+  public CustomFields? CustomFields { get; set; }
+  public List<string>? OtherLanguages { get; set; }
+}
+
+public class CustomFields
+{
+  public List<string>? OtherLanguages { get; set; }
+  public DateTime? HireDate { get; set; }
+  public string? Title { get; set; }
+}
+
+[Table("Suppliers", Schema = "Purchasing")]
+public class Supplier
+{
+  [Key]
+  public int SupplierID { get; set; }
+  public required string SupplierName { get; set; }
+  public string? SupplierReference { get; set; }
+  public int PaymentDays { get; set; }
+  public string? PhoneNumber { get; set; }
+  public string? FaxNumber { get; set; }
+  public string? WebsiteURL { get; set; }
+  public string? BankAccountName { get; set; }
+  public string? BankAccountBranch { get; set; }
+  public string? BankAccountCode { get; set; }
+  public string? BankAccountNumber { get; set; }
+  public string? BankInternationalCode { get; set; }
+}
+
+[Table("CustomerTransactions", Schema = "Sales")]
+public class CustomerTransaction
+{
+  [Key]
+  public int CustomerTransactionID { get; set; }
+  public int CustomerID { get; set; }
+  public DateTime TransactionDate { get; set; }
+  public decimal TransactionAmount { get; set; }
+  public decimal OutstandingBalance { get; set; }
+  public bool IsFinalized { get; set; }
+}
+
+[Table("PurchaseOrders", Schema = "Purchasing")]
+public class PurchaseOrder
+{
+  [Key]
+  public int PurchaseOrderID { get; set; }
+  public int SupplierID { get; set; }
+  public DateTime OrderDate { get; set; }
+  public DateTime ExpectedDeliveryDate { get; set; }
+  public string? SupplierReference { get; set; }
+  public bool IsOrderFinalized { get; set; }
+}
+
+[Table("StockItems", Schema = "Warehouse")]
+public class StockItem
+{
+  [Key]
+  public int StockItemID { get; set; }
+  public required string StockItemName { get; set; }
+  public int SupplierID { get; set; }
+  public int QuantityPerOuter { get; set; }
+  public int LeadTimeDays { get; set; }
+  public bool IsChillerStock { get; set; }
+  public decimal? UnitPrice { get; set; }
+  public decimal RecommendedRetailPrice { get; set; }
+}
+
+[Table("StockItemStockGroups", Schema = "Warehouse")]
+public class StockItemStockGroup
+{
+  [Key]
+  public int StockItemStockGroupID { get; set; }
+  public int StockItemID { get; set; }
+  public int StockGroupID { get; set; }
+}
+
+public class SupplierContactInfo
+{
+  public int SupplierID { get; set; }
+  public string? SupplierName { get; set; }
+  public string? PhoneNumber { get; set; }
+  public string? FaxNumber { get; set; }
+  public string? WebsiteURL { get; set; }
+}
+
+public class SupplierBankAccount
+{
+  public int SupplierID { get; set; }
+  public string? BankAccountName { get; set; }
+  public string? BankAccountBranch { get; set; }
+  public string? BankAccountCode { get; set; }
+  public string? BankAccountNumber { get; set; }
+  public string? BankInternationalCode { get; set; }
+}
+
+public class SupplierAccounts
+{
+  public SupplierContactInfo? ContactInfo { get; set; }
+  public SupplierBankAccount? BankAccount { get; set; }
+}
+
+public class PurchaseOrderInfo
+{
+  public int PurchaseOrderID { get; set; }
+  public string? SupplierName { get; set; }
+  public DateTime OrderDate { get; set; }
+}
+
+public class SandboxDbContext(DbContextOptions<SandboxDbContext> options) : DbContext(options)
+{
+  public DbSet<Order> Orders => Set<Order>();
+  public DbSet<OrderLine> OrderLines => Set<OrderLine>();
+  public DbSet<Person> People => Set<Person>();
+  public DbSet<Supplier> Suppliers => Set<Supplier>();
+  public DbSet<CustomerTransaction> CustomerTransactions => Set<CustomerTransaction>();
+  public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+  public DbSet<StockItem> StockItems => Set<StockItem>();
+  public DbSet<StockItemStockGroup> StockItemStockGroups => Set<StockItemStockGroup>();
+
+  protected override void OnModelCreating(ModelBuilder modelBuilder)
+  {
+    modelBuilder.Entity<Person>().OwnsOne(p => p.CustomFields, cb => { cb.ToJson(); });
+    base.OnModelCreating(modelBuilder);
+  }
+}
+</source_schema_code>
+<source_query_code>
+public static IQueryable<OrderLine> Query1(SandboxDbContext ctx)
+{
+  int orderId = 26866;
+  return ctx.OrderLines.Where(ol => ol.OrderID == orderId);
+}
+
+public static IQueryable<OrderLine> Query2(SandboxDbContext ctx)
+{
+  decimal unitPrice = 25m;
+  return ctx.OrderLines.Where(ol => ol.UnitPrice == unitPrice);
+}
+
+public static IQueryable<OrderLine> Query3(SandboxDbContext ctx)
+{
+  var from = new DateTime(2014, 12, 20);
+  var to = new DateTime(2014, 12, 31);
+  return ctx.OrderLines.Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);
+}
+
+public static IQueryable<OrderLine> Query4(SandboxDbContext ctx)
+{
+  var orderIds = new[] { 1, 10, 100, 1000, 10000 };
+  return ctx.OrderLines.Where(ol => orderIds.Contains(ol.OrderID));
+}
+
+public static IQueryable<OrderLine> Query5(SandboxDbContext ctx)
+{
+  string text = "C++";
+  return ctx.OrderLines.Where(ol => ol.Description.Contains(text));
+}
+
+public static IQueryable<OrderLine> Query6(SandboxDbContext ctx)
+{
+  int skip = 1000;
+  int take = 50;
+  return ctx.OrderLines.OrderBy(ol => ol.OrderLineID).Skip(skip).Take(take);
+}
+
+public static Dictionary<decimal, int> Query7(SandboxDbContext ctx)
+{
+  return ctx.OrderLines
+    .GroupBy(ol => ol.TaxRate)
+    .Select(g => new { TaxRate = g.Key, Count = g.Count() })
+    .OrderByDescending(x => x.Count)
+    .ToDictionary(x => x.TaxRate, x => x.Count);
+}
+
+public static decimal? Query8(SandboxDbContext ctx)
+{
+  return ctx.OrderLines.Max(ol => ol.UnitPrice);
+}
+
+public static decimal? Query9(SandboxDbContext ctx)
+{
+  return ctx.OrderLines.Sum(ol => ol.Quantity * ol.UnitPrice);
+}
+
+public static Order? Query10(SandboxDbContext ctx)
+{
+  return ctx.Orders.Include(o => o.OrderLines).SingleOrDefault(o => o.OrderID == 530);
+}
+
+public static IQueryable<Order> Query11(SandboxDbContext ctx)
+{
+  return ctx.Orders.OrderBy(o => o.ExpectedDeliveryDate).Take(1000);
+}
+
+public static IQueryable<string?> Query12(SandboxDbContext ctx)
+{
+  return ctx.Orders.Select(o => o.CustomerPurchaseOrderNumber).Distinct();
+}
+
+public static IQueryable<Person> Query13(SandboxDbContext ctx)
+{
+  return ctx.People.Where(p => p.CustomFields!.Title == "Team Member").OrderBy(p => p.PersonID);
+}
+
+public static IQueryable<Person> Query14(SandboxDbContext ctx)
+{
+  return ctx.People.Where(p => p.OtherLanguages!.Contains("Slovak")).OrderBy(p => p.PersonID);
+}
+
+public static List<int> Query15(SandboxDbContext ctx)
+{
+  var first = ctx.Suppliers.Where(s => s.SupplierID < 5).Select(s => s.SupplierID).ToList();
+  var last = ctx.Suppliers.Where(s => s.SupplierID >= 5 && s.SupplierID <= 10).Select(s => s.SupplierID).ToList();
+  return first.Union(last).OrderBy(s => s).ToList();
+}
+</source_query_code>
+
+Translate ONLY the entities, fields, and queries that appear above. Do not invent or carry over any entity or field that is not present in this source code.
+
+
+There are no tools available in this chat. Do NOT call the save_* tools; instead, output every
+piece the save tools would have collected, as fenced code blocks labeled EXACTLY like this (one
+schema pair + one source/target pair per query id — required ids: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
+
+```source_schema_body
+<the SOURCE-side entity/mapping classes>
+```
+```target_schema_body
+<the TARGET-side entity/mapping classes>
+```
+```source_query_body id=1
+<Query1's SOURCE-side harness fragment>
+```
+```target_query_body id=1
+<Query1's TARGET-side harness fragment>
+```
+... repeat the source/target pair for every required query id ...
+
+The fragment shapes/signatures are the ones the system prompt already specifies. Use only your own
+knowledge for framework API details (the research tools are unavailable). Do not omit any query id.

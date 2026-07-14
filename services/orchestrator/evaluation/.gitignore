@@ -11,4 +11,5 @@ __pycache__/
 out/
 predictions/
 aimock/
-manual-eval/wwi/**/*
+manual-eval/**/*.json
+manual-eval/**/*.jsonl
