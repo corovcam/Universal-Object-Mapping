@@ -549,7 +549,29 @@ traversals. Genuinely unrecoverable here:
   `lastEditedBy`) — Order has several untyped `-[:PEOPLE]->` edges mixing all roles, so no
   query can tell which person is which.
 
-For those, do not burn retries — translate the rest of the row faithfully and note the store
-limitation in the explanation. Also mind DIRECTION when one rel type serves two shapes:
+For those, do NOT return the field as NULL and do NOT burn retries — synchronize the
+projection instead (§12.6). Also mind DIRECTION when one rel type serves two shapes:
 `ORDERS` is both `(:OrderLine)-[:ORDERS]->(:Order)` and the backorder self-reference
 `(:Order)-[:ORDERS]->(:Order)` — constrain both endpoint labels.
+
+### 12.6 Genuinely unrecoverable fields → synchronize the projection on BOTH sides
+
+Equivalence compares the source harness rows against the target harness rows. When a source
+field is genuinely absent from the graph (§12.5's list), a target NULL where the source has a
+value is a guaranteed `Differences Found` — every loop, forever. The reliable fix is to narrow
+BOTH fragments to the shared field set:
+
+1. Add a projection record to the SOURCE schema body (e.g. `OrderLineProjection` without
+   `PackageTypeID`) and re-save the source fragment to select into it — same rows, same
+   filters, same ordering; only the SELECT list shrinks.
+2. Project exactly those fields in the target fragment (recovering FK ids via §12.4
+   traversals where the links exist).
+3. Keep names/casing aligned with the serializer's camelCase output on both sides.
+
+Decide this ONCE, up front: enumerate the target-absent fields from the schema inspection
+BEFORE writing query fragments, and apply the synchronized projection to every query that
+touches them. Runs that did this passed all 15/15 deterministically in one loop; runs that
+returned NULLs spent 2-3 revision loops and still failed strict equivalence.
+
+Do not over-trim: fields the store DOES have (or that §12.4 recovers) must stay in the
+projection — dropping them is a fidelity loss the judge is instructed to fail.

@@ -363,6 +363,76 @@ setup, logging, JSON/serialization configuration, and result-printing.
 Grade ONLY the UNDERLYING data mapping and query logic (entities, fields, types, relationships, and \
 each query's filter / projection / join / ordering / grouping / limit) against the source request."""
 
+# --- Reference-aware judging (2026-07-10) ---------------------------------------------------------
+# When a frozen, execution-verified reference exists for the (pair, variant) being graded
+# (evaluation/reference/<dataset>/<variant>/<pair>/ — see freeze_reference.py), the judges get it as
+# ground-truth context: the SAME harness contract the graded output uses, verified strictly
+# equivalent against the live stores. This anchors the judges to the harness that is actually
+# evaluated (the user's 2026-07-10 request) instead of asking them to imagine the target semantics
+# from the source alone. Reference-free grading remains the fallback (e.g. new variants like `xl`
+# that have no frozen reference yet).
+_REFERENCE_BLOCK = """
+
+<reference_translation>
+{reference}
+</reference_translation>
+
+The <reference_translation> above is a GROUND-TRUTH translation of the SAME source request, in the \
+SAME instrumented harness form, that was execution-verified strictly equivalent against the live \
+target store (every query's count/first-sample/last-sample matched the source). Use it as the \
+semantic anchor: the graded translation does NOT have to match it textually — a different but \
+equivalent target-API strategy is fine — but wherever the graded translation disagrees with the \
+reference on DOMAIN semantics (entities, fields, types, filters, ordering, grouping, traversals, \
+result shape), treat the reference as authoritative when scoring."""
+
+_REFERENCE_ROOT = _HERE.parent / "reference"
+_REFERENCE_CACHE: dict[tuple[str, str], str | None] = {}
+
+
+def _ref_slugs(pair: str) -> tuple[str | None, str | None]:
+    """Map ANY pair spelling to the frozen reference directory slugs.
+
+    The pair string appears in three forms depending on the source: example metadata
+    (``dotnet_dapper->java_spring_data_mongodb``), run outputs (``.NET Dapper -> Java Spring
+    Data MongoDB``), and session names (``dapper-mongo``) — keyword detection covers all.
+    """
+    if "->" not in pair:
+        return None, None
+    src, dst = (s.strip().lower() for s in pair.split("->", 1))
+    slug_src = ("net-dapper" if "dapper" in src else
+                "net-entity-framework-core" if "entity" in src or "efcore" in src else
+                "net-nhibernate" if "nhibernate" in src or "nhib" in src else None)
+    slug_dst = ("java-spring-data-mongodb" if "mongo" in dst else
+                "java-spring-data-neo4j" if "neo4j" in dst else None)
+    return slug_src, slug_dst
+
+
+def load_reference_context(pair: str | None, variant: str | None, dataset: str = "wwi") -> str | None:
+    """Frozen reference (schema + queries) for the (pair, variant) an example belongs to, or None.
+
+    The frozen layout is ``reference/<dataset>/<variant>/<pair_slug>/`` (see freeze_reference.py).
+    """
+    if not pair or not variant:
+        return None
+    key = (pair, variant)
+    if key in _REFERENCE_CACHE:
+        return _REFERENCE_CACHE[key]
+    slug_src, slug_dst = _ref_slugs(pair)
+    text: str | None = None
+    if slug_src and slug_dst:
+        ref_dir = _REFERENCE_ROOT / dataset / variant / f"{slug_src}__{slug_dst}"
+        parts = []
+        for artifact in ("schema", "queries"):
+            for ext in ("java", "cs"):
+                p = ref_dir / f"{artifact}.{ext}"
+                if p.exists():
+                    parts.append(f"// ---- reference {artifact} ----\n{p.read_text(encoding='utf-8')}")
+                    break
+        if parts:
+            text = "\n\n".join(parts)
+    _REFERENCE_CACHE[key] = text
+    return text
+
 TRANSLATION_EQUIVALENCE_PROMPT = """You are an expert grader of database object-mapping/ORM code \
 translations. You are given the SOURCE translation request (source ORM schema and/or queries) and \
 the model's TRANSLATED output (in the target framework).
@@ -588,6 +658,10 @@ def _build_evaluators(chain: list[tuple[str, Any, Any]], *, timeout_s: float = 1
 
     Built ONCE per invocation: the semaphore created here is therefore GLOBAL — shared by all four
     evaluators and every concurrently running experiment.
+
+    Reference-aware (2026-07-10): when the example's (pair, variant) metadata resolves to a frozen
+    execution-verified reference (see load_reference_context), it is appended to the judge prompt
+    as authoritative ground truth in the same harness form; otherwise grading stays reference-free.
     """
     sem = asyncio.Semaphore(max(1, concurrency))
 
@@ -595,10 +669,14 @@ def _build_evaluators(chain: list[tuple[str, Any, Any]], *, timeout_s: float = 1
         return _source_prompt(inputs), _translation_text(outputs)
 
     def _make(key: str, prompt: str):
-        async def _ev(inputs: dict, outputs: dict) -> dict:
+        async def _ev(inputs: dict, outputs: dict, example=None) -> dict:
             src, tgt = _grade(inputs, outputs)
-            return await _judge_call(chain, prompt.format(inputs=src, outputs=tgt),
-                                     key, timeout_s, sem)
+            full = prompt.format(inputs=src, outputs=tgt)
+            meta = getattr(example, "metadata", None) or {}
+            ref = load_reference_context(meta.get("pair"), meta.get("variant"))
+            if ref:
+                full += _REFERENCE_BLOCK.format(reference=ref)
+            return await _judge_call(chain, full, key, timeout_s, sem)
         _ev.__name__ = f"{key}_evaluator"
         return _ev
 

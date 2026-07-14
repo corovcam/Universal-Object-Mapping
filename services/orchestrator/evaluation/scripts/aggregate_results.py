@@ -47,6 +47,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+
+csv.field_size_limit(10**9)  # exported `outputs` blobs exceed the 128 KiB default
 import glob
 import json
 import math
@@ -151,9 +153,11 @@ def _outputs(row: dict) -> dict[str, Any]:
     if not raw:
         return {}
     try:
-        return json.loads(raw)
+        parsed = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
         return {}
+    # a pending/failed run exports the literal JSON `null` — parseable, but not a dict
+    return parsed if isinstance(parsed, dict) else {}
 
 
 # ------------------------------------------------------------------ pass@k

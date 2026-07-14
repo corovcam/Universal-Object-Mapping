@@ -43,12 +43,24 @@ def lang_for_pair(pair_slug: str) -> str:
     return "java"
 
 
-def find_reference(ref_root: Path, dataset: str, pair: str, artifact: str) -> Path | None:
+def find_reference(ref_root: Path, dataset: str, variant: str, pair: str,
+                   artifact: str) -> tuple[Path | None, str]:
+    """Resolve the reference for (variant, pair, artifact).
+
+    Per-variant harness-form references (reference/<dataset>/<variant>/<pair>/, frozen by
+    freeze_reference.py from an execution-verified run) are the canonical ones — the legacy
+    flat layout (reference/<dataset>/<pair>/) predates the harness contract and only matches
+    pre-harness predictions, so a fallback to it is flagged in the note column.
+    """
+    for ext in ("java", "cs"):
+        p = ref_root / dataset / variant / pair / f"{artifact}.{ext}"
+        if p.exists():
+            return p, ""
     for ext in ("java", "cs"):
         p = ref_root / dataset / pair / f"{artifact}.{ext}"
         if p.exists():
-            return p
-    return None
+            return p, "legacy reference (pre-harness contract) — similarity not comparable"
+    return None, ""
 
 
 def _codebleu(ref: str, hyp: str, lang: str) -> dict[str, float] | None:
@@ -76,6 +88,9 @@ def main() -> None:
     ap.add_argument("--pred-root", default="../predictions")
     ap.add_argument("--ref-root", default="../reference")
     ap.add_argument("--dataset", default="wwi")
+    ap.add_argument("--variant", default="full",
+                    help="experiment variant whose frozen references to score against "
+                         "(reference/<dataset>/<variant>/<pair>/ — see freeze_reference.py)")
     ap.add_argument("--out", default="./out")
     args = ap.parse_args()
 
@@ -100,6 +115,14 @@ def main() -> None:
                 return part
         return None
 
+    def _tag_of(run_dir: Path) -> str:
+        # The component directly under <dataset>/ is the run tag in the newer layout
+        # (<dataset>/<run_tag>/<pair>/...); in the older tag-less layout that component is
+        # the pair itself — report "" so old rows stay distinguishable.
+        rel = run_dir.relative_to(base)
+        first = rel.parts[0] if rel.parts else ""
+        return "" if "__" in first else first
+
     run_dirs = sorted({p for p in base.rglob("*")
                        if p.is_dir() and (any(p.glob("*.java")) or any(p.glob("*.cs")))})
     for run_dir in run_dirs:
@@ -111,9 +134,10 @@ def main() -> None:
             pred = next(iter(run_dir.glob(f"{artifact}.*")), None)
             if not pred:
                 continue
-            ref = find_reference(ref_root, args.dataset, pair, artifact)
+            ref, ref_note = find_reference(ref_root, args.dataset, args.variant, pair, artifact)
             if not ref:
                 rows.append({"pair": pair, "model": run_dir.parent.name, "run": run_dir.name,
+                             "run_tag": _tag_of(run_dir),
                              "artifact": artifact, "lang": lang, "codebleu": None, "ngram": None,
                              "syntax": None, "dataflow": None, "exact": None,
                              "token_overlap": None, "note": "no reference"})
@@ -123,20 +147,21 @@ def main() -> None:
             if cb is None:
                 codebleu_available = False
             rows.append({"pair": pair, "model": run_dir.parent.name, "run": run_dir.name,
+                         "run_tag": _tag_of(run_dir),
                          "artifact": artifact, "lang": lang,
                          "codebleu": cb["codebleu"] if cb else None,
                          "ngram": cb["ngram_match_score"] if cb else None,
                          "syntax": cb["syntax_match_score"] if cb else None,
                          "dataflow": cb["dataflow_match_score"] if cb else None,
                          "exact": normalized_exact_match(rt, ht),
-                         "token_overlap": round(token_overlap(rt, ht), 4), "note": ""})
+                         "token_overlap": round(token_overlap(rt, ht), 4), "note": ref_note})
 
     if not rows:
         print("no prediction/reference pairs found")
         return
 
-    fields = ["pair", "model", "run", "artifact", "lang", "codebleu", "ngram", "syntax",
-              "dataflow", "exact", "token_overlap", "note"]
+    fields = ["pair", "model", "run", "run_tag", "artifact", "lang", "codebleu", "ngram",
+              "syntax", "dataflow", "exact", "token_overlap", "note"]
     with (out_dir / "codebleu.csv").open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
