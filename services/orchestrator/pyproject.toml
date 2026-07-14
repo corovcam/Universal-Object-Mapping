@@ -46,6 +46,7 @@ dependencies = [
 opt = ["rich>=15.0.0"]
 eval = [
     "openevals>=0.2.0",
+    "evaluation",
 ]
 
 [dependency-groups]
@@ -59,9 +60,6 @@ dev = [
 ]
 docs = [
     "py2puml>=0.11.0",
-]
-eval = [
-    "langchain-claude-code-cli>=0.1.0",
 ]
 test = [
     "pytest>=9.0.3",
