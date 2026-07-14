@@ -171,3 +171,4 @@ bin/
 obj/
 tests/**/recorded*/
 evaluation/traces/
+out/
