@@ -18,3 +18,6 @@ mockups/
 nginx*.conf
 .vercel
 .context/
+.design-sync/
+.ds-sync/
+ds-bundle/
