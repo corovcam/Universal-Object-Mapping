@@ -1,5 +1,6 @@
 .PHONY: all format lint type_check dev debug test tests test_watch integration_tests docker_tests help extended_tests \
-	eval_dataset eval_dataset_dryrun eval_judge_check eval_small eval_full eval_sweep eval_overnight eval_codebleu
+	eval_dataset eval_dataset_dryrun eval_judge_check eval_small eval_full eval_sweep eval_overnight eval_codebleu \
+	eval_rejudge eval_node_tokens eval_deliverables
 
 # Default target executed when no arguments are given to make.
 all: help
@@ -114,6 +115,18 @@ eval_dataset_dryrun:
 eval_judge_check:
 	uv run python evaluation/scripts/run_langsmith_eval.py --dry-run --judge-model $(JUDGE_MODEL) --env $(EVAL_ENV)
 
+# Re-run ONLY the LLM-as-a-judge evaluators over already-finished experiments (no graph, no
+# Daytona, no stores) — reference-aware where frozen refs exist. REJUDGE_CSV is a glob of
+# exported experiment CSVs; add REJUDGE_FLAGS='--push' to write *_ref feedback back to LangSmith.
+# ⚠ shares the e-INFRA endpoint with live experiments — keep REJUDGE_CONCURRENCY low (default 2).
+eval_rejudge:
+	uv run python evaluation/scripts/rejudge_experiments.py --csv '$(REJUDGE_CSV)' \
+		--judge-concurrency $(REJUDGE_CONCURRENCY) --env $(EVAL_ENV) $(REJUDGE_FLAGS)
+
+REJUDGE_CSV ?= evaluation/traces/10-7-2026/uom-*.csv
+REJUDGE_CONCURRENCY ?= 2
+REJUDGE_FLAGS ?=
+
 # Fast gate: the small (<=5 query) variant across all pairs, default generate-model.
 eval_small:
 	EVAL_MODE=1 uv run python evaluation/scripts/run_langsmith_eval.py --variants small \
@@ -163,18 +176,43 @@ eval_full_experiment:
 			--pred-root evaluation/predictions $(RECORD_FLAG) --env $(EVAL_ENV) 2>&1 | tee $$log
 
 # Post-hoc CodeBLEU (structural similarity — SECONDARY to execution-equivalence pass@k) over the
-# predictions the runs wrote, in the eval venv (codebleu + tree-sitter pinned). Step 1 bootstraps a
-# frozen per-pair reference OFFLINE from the predictions tree (no LangSmith; it keeps any reference
-# that already exists, so hand-pin a pair by dropping files under evaluation/reference/<dataset>/
-# <pair>/). Step 2 scores every prediction against that reference -> evaluation/out/codebleu.csv.
+# predictions the runs wrote, in the eval venv (codebleu + tree-sitter pinned). Step 1 freezes the
+# per-VARIANT harness-form references OFFLINE from the first execution-verified (strict 15/15)
+# repetition of $(CODEBLEU_REF_TAG) per pair -> evaluation/reference/<dataset>/<variant>/<pair>/
+# (+ provenance.json naming the source run so scorers can exclude it from its own arm). Step 2
+# scores every prediction against those references -> evaluation/out/codebleu.csv.
 eval_codebleu:
-	uv run --project evaluation python evaluation/scripts/extract_predictions.py \
-		--from-predictions evaluation/predictions --root evaluation/reference --dataset $(CODEBLEU_DATASET)
+	uv run --project evaluation python evaluation/scripts/freeze_reference.py \
+		--tag $(CODEBLEU_REF_TAG) --variant $(CODEBLEU_VARIANT) --dataset $(CODEBLEU_DATASET) \
+		--expected $(CODEBLEU_EXPECTED)
 	uv run --project evaluation python evaluation/scripts/score_predictions.py \
 		--pred-root evaluation/predictions --ref-root evaluation/reference \
-		--dataset $(CODEBLEU_DATASET) --out evaluation/out
+		--dataset $(CODEBLEU_DATASET) --variant $(CODEBLEU_VARIANT) --out evaluation/out
 
 CODEBLEU_DATASET ?= wwi
+# Reference provenance: the run whose execution-verified (strict 15/15) repetitions are frozen
+# as the per-variant harness-form references (see freeze_reference.py). Re-freezing is
+# idempotent — the first perfect repetition per pair wins.
+CODEBLEU_REF_TAG ?= 20260709-150203
+CODEBLEU_VARIANT ?= full
+CODEBLEU_EXPECTED ?= 15
+
+# Per-node token/time attribution from LangSmith (loop_tokens feeds fig8's fair token bar
+# and the per-query heatmap). Read-only API calls; safe alongside live experiments.
+eval_node_tokens:
+	uv run python evaluation/scripts/harvest_node_tokens.py \
+		--traces $(NODE_TOKENS_TRACES) --out evaluation/out/node_tokens.csv --env $(EVAL_ENV)
+
+NODE_TOKENS_TRACES ?= evaluation/traces/10-7-2026
+
+# Assemble the thesis-attachment bundle (copies existing artifacts only; idempotent).
+# Add DELIVERABLES_FLAGS='--tag <xl-tag>' after further runs, or '--no-aimock' to slim it.
+eval_deliverables:
+	uv run python evaluation/scripts/build_deliverables.py --out $(DELIVERABLES_OUT) \
+		$(DELIVERABLES_FLAGS)
+
+DELIVERABLES_OUT ?= evaluation/out/deliverables
+DELIVERABLES_FLAGS ?=
 
 init_daytona_snaphosts:
 	./scripts/init_daytona_snapshots.sh

@@ -66,8 +66,10 @@ CAPTURE="$EXPORT_DIR/capture-antigravity-${MODEL_LABEL}.md"
 
 echo "== running: agy --print --model \"$MODEL\" (prompt: $(wc -c < "$PROMPT_FILE") bytes) — this spends Antigravity quota"
 START=$(date +%s)
-(cd "$EXPORT_DIR" && agy --print "$(cat "$PROMPT_FILE")" --model "$MODEL" \
-   --print-timeout 30m > "$CAPTURE")
+# echo "agy --model $MODEL --print-timeout 30m --print '$(cat "$PROMPT_FILE")'" > "$EXPORT_DIR/command.md"
+
+AGY_PROMPT="$(cat "$PROMPT_FILE")"
+(cd "$EXPORT_DIR" && agy --model "$MODEL" --print-timeout 30m --print "$AGY_PROMPT" > "$CAPTURE")
 WALL=$(( $(date +%s) - START ))
 echo "== captured $(wc -c < "$CAPTURE") bytes in ${WALL}s -> $CAPTURE"
 

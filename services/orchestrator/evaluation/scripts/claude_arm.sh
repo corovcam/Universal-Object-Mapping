@@ -54,7 +54,15 @@ cat "$EXPORT_DIR/user.txt" > "$PROMPT_FILE"
 printf '\n\n' >> "$PROMPT_FILE"
 cat "$EXPORT_DIR/adaptation.txt" >> "$PROMPT_FILE"
 
-CLAUDE_ARGS=(-p --append-system-prompt-file "$EXPORT_DIR/system.txt" --tools "" --effort "$EFFORT")
+# TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+# SETTINGS_FILE="/tmp/bare-settings.json"
+# CLAUDE_CODE_CREDENTIALS_FILE="$HOME/.claude/.credentials.json"
+# TOKEN=$(cat "$CLAUDE_CODE_CREDENTIALS_FILE" | jq -r '.claudeAiOauth.accessToken')
+# echo "{\"apiKeyHelper\": \"echo $TOKEN\"}" > "$SETTINGS_FILE"
+# chmod 600 "$SETTINGS_FILE"
+# CLAUDE_ARGS=(-p --bare --settings "$SETTINGS_FILE" --append-system-prompt-file "$EXPORT_DIR/system.txt" --tools "" --effort "$EFFORT" --permission-mode "auto" --dangerously-skip-permissions --no-chrome)
+
+CLAUDE_ARGS=(-p --safe-mode --append-system-prompt-file "$EXPORT_DIR/system.txt" --tools "" --effort "$EFFORT" --permission-mode "auto" --dangerously-skip-permissions --no-chrome)
 [[ -n "$MODEL" ]] && CLAUDE_ARGS+=(--model "$MODEL")
 
 # Per-model capture name: the comparison matrix runs several models against ONE shared export,
@@ -64,9 +72,41 @@ CAPTURE="$EXPORT_DIR/capture-claude_code-${MODEL_LABEL}.md"
 
 echo "== running: claude ${CLAUDE_ARGS[*]} (prompt: $(wc -c < "$PROMPT_FILE") bytes) — this spends Claude tokens"
 START=$(date +%s)
-(cd "$EXPORT_DIR" && claude "${CLAUDE_ARGS[@]}" < "$PROMPT_FILE" > "$CAPTURE")
+(cd "$EXPORT_DIR" && ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude "${CLAUDE_ARGS[@]}" < "$PROMPT_FILE" > "$CAPTURE")
 WALL=$(( $(date +%s) - START ))
 echo "== captured $(wc -c < "$CAPTURE") bytes in ${WALL}s -> $CAPTURE"
+
+# rm "$SETTINGS_FILE"
+
+# ---- 2b. persist REAL API usage from the Claude Code session transcript (claude -p prints no
+# usage, but the transcript under ~/.claude/projects/<munged CWD>/ records the API-reported
+# input/cache/output token counts per message id — the 20260709 arm run had to reconstruct these
+# forensically; now they are captured at run time). Best-effort: never fails the arm.
+USAGE_JSON="$EXPORT_DIR/usage-claude_code-${MODEL_LABEL}.json"
+PROJ_DIR="$HOME/.claude/projects/$(echo "$EXPORT_DIR" | sed 's#[/._]#-#g')"
+TRANSCRIPT="$(ls -t "$PROJ_DIR"/*.jsonl 2>/dev/null | head -1 || true)"
+if [[ -n "$TRANSCRIPT" ]]; then
+  # Keep the FULL conversation next to the capture for reproduction/audit (the transcript dir
+  # under ~/.claude is private and machine-local; the copy travels with the experiment).
+  cp "$TRANSCRIPT" "$EXPORT_DIR/conversation-claude_code-${MODEL_LABEL}.jsonl" \
+    && echo "== conversation -> $EXPORT_DIR/conversation-claude_code-${MODEL_LABEL}.jsonl"
+  jq -s --arg wall "$WALL" '
+    [ .[] | select(.message.usage != null)
+      | {id: .message.id, model: .message.model, u: .message.usage} ]
+    | unique_by(.id)
+    | {wall_clock_generation_s: ($wall|tonumber),
+       requests: length,
+       model: (.[0].model // null),
+       input_tokens: (map(.u.input_tokens) | add),
+       cache_creation_input_tokens: (map(.u.cache_creation_input_tokens // 0) | add),
+       cache_read_input_tokens: (map(.u.cache_read_input_tokens // 0) | add),
+       output_tokens: (map(.u.output_tokens) | add)}' \
+    "$TRANSCRIPT" > "$USAGE_JSON" 2>/dev/null \
+    && echo "== usage -> $USAGE_JSON: $(cat "$USAGE_JSON" | tr -d '\n')" \
+    || echo "== [warn] could not parse usage from $TRANSCRIPT"
+else
+  echo "== [warn] no Claude Code transcript found under $PROJ_DIR — usage not persisted"
+fi
 
 # ---- 3. score with the pipeline's own gauntlet
 uv run python evaluation/scripts/score_external.py \

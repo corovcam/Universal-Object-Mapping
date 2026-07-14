@@ -2,7 +2,7 @@
 # external_arms_matrix.sh — run the FULL external-harness comparison matrix (user-triggered; spends
 # Claude tokens + Antigravity quota):
 #
-#   claude_code arm : claude-opus-4-8, claude-fable-5, claude-sonnet-5      (all --effort high)
+#   claude_code arm : claude-opus-4-8, claude-sonnet-5      (all --effort high)
 #   antigravity arm : "Gemini 3.5 Flash (High)", "Gemini 3.1 Pro (High)"   (via agy CLI)
 #   × pairs         : all 6 (or pass a subset)
 #
@@ -25,7 +25,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 PAIRS="${PAIRS:-dapper-mongodb dapper-neo4j efcore-mongodb efcore-neo4j nhibernate-mongodb nhibernate-neo4j}"
 VARIANT="${VARIANT:-full}"
 
-CLAUDE_MODELS=(claude-opus-4-8 claude-fable-5 claude-sonnet-5)
+CLAUDE_MODELS=(claude-sonnet-5)
 AGY_MODELS=("Gemini 3.5 Flash (High)" "Gemini 3.1 Pro (High)")
 
 FAILED=()
