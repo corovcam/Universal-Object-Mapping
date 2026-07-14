@@ -15,6 +15,7 @@ services:
       # - PROXY_API_KEY=${DAYTONA_PROXY_API_KEY}
       # - SSH_GATEWAY_API_KEY=${DAYTONA_SSH_GATEWAY_API_KEY}
       # - HEALTH_CHECK_API_KEY=${DAYTONA_HEALTH_CHECK_API_KEY}
+      - DEFAULT_SNAPSHOT=${DAYTONA_DEFAULT_SNAPSHOT:-corovcam/uom-default-snapshot:1.0.0}
     networks:
       - uom
 
@@ -67,6 +68,14 @@ services:
   otel-collector: !reset null
 
 networks:
+  # Pin daytona-network off 172.20.0.0/16. The Daytona runner hardcodes its
+  # inner DinD sandbox bridge ("runner-bridge") to 172.20.0.0/16; if the outer
+  # daytona-network auto-allocates the same /16, the runner can't route to
+  # sandboxes and CREATE_SANDBOX fails with "timeout waiting for daemon to start".
+  daytona-network:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
   uom:
     external: true
     name: uom

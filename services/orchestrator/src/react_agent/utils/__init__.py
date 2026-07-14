@@ -5,6 +5,7 @@ from react_agent.utils.preprocessing import (
     get_neo4j_standalone_mapping,
 )
 from react_agent.utils.utils import (
+    compact_build_log,
     create_example_for_prompt,
     get_database_mapping_json,
     get_message_text,
@@ -15,6 +16,7 @@ from react_agent.utils.utils import (
 )
 
 __all__ = [
+    "compact_build_log",
     "get_database_mapping_json",
     "get_message_text",
     "get_model",

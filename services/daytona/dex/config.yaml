@@ -1,5 +1,5 @@
 # config.yaml
-issuer: https://daytona.uom.dyn.cloud.e-infra.cz/dex
+issuer: http://localhost:5356/dex
 storage:
   type: sqlite3
   config:
@@ -12,10 +12,11 @@ web:
 staticClients:
   - id: daytona
     redirectURIs:
-      - 'https://daytona.uom.dyn.cloud.e-infra.cz'
-      - 'https://daytona.uom.dyn.cloud.e-infra.cz/api/oauth2-redirect.html'
-      - 'https://proxy.daytona.uom.dyn.cloud.e-infra.cz/callback'
+      - 'http://localhost:3000'
+      - 'http://localhost:3000/api/oauth2-redirect.html'
       - 'http://localhost:3009/callback'
+      - 'http://localhost:4000/callback'
+      - 'http://localhost:3000/dashboard'
     name: 'Daytona'
     public: true
 enablePasswordDB: true

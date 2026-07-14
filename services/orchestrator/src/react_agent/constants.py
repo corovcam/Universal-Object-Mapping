@@ -1,6 +1,8 @@
 """Constants and enumerations for the React Agent Orchestrator service."""
 from enum import Enum
 
+from typing_extensions import Literal
+
 
 class AvailableModel(str, Enum):
     """Available models from Ollama and EINFRA for UI dropdown selection."""
@@ -16,13 +18,12 @@ class AvailableModel(str, Enum):
     OLLAMA_MISTRAL_SMALL_3_2 = "ollama/mistral-small3.2:latest"
     OLLAMA_QWEN3_EMBEDDING = "ollama/qwen3-embedding:latest"
 
-    # EINFRA Models (OpenAI compatible)
+    # Proxy aliases
     EINFRA_MINI = "einfra/mini"
     EINFRA_CODER = "einfra/coder"
     EINFRA_AGENTIC = "einfra/agentic"
     EINFRA_THINKER = "einfra/thinker"
-    EINFRA_QWEN3_CODER = "einfra/qwen3-coder"
-    EINFRA_QWEN3_CODER_30B = "einfra/qwen3-coder-30b"
+    
     EINFRA_GPT_OSS_120B = "einfra/gpt-oss-120b"
     EINFRA_QWEN3_RERANKER_4B = "einfra/qwen3-reranker-4b"
     EINFRA_QWEN3_EMBEDDING_4B = "einfra/qwen3-embedding-4b"
@@ -33,16 +34,12 @@ class AvailableModel(str, Enum):
     EINFRA_NOMIC_EMBED_V1_5 = "einfra/nomic-embed-text-v1.5"
     EINFRA_DEEPSEEK_V4_PRO = "einfra/deepseek-v4-pro"
     EINFRA_DEEPSEEK_V4_PRO_THINKING = "einfra/deepseek-v4-pro-thinking"
-    
-    EINFRA_MISTRAL_LARGE = "einfra/mistral-large"
-    EINFRA_DEEPSEEK_V3_2_THINKING = "einfra/deepseek-v3.2-thinking"
-    EINFRA_KIMI_K2_5 = "einfra/kimi-k2.5"
-    EINFRA_KIMI_K2_6 = "einfra/kimi-k2.6"
+    EINFRA_MISTRAL_MEDIUM_3_5 = "einfra/mistral-medium-3.5"
+    EINFRA_KIMI_K2_7 = "einfra/kimi-k2.7"
     EINFRA_QWEN3_5 = "einfra/qwen3.5"
-    EINFRA_QWEN3_CODER_NEXT = "einfra/qwen3-coder-next"
     EINFRA_QWEN3_5_122B = "einfra/qwen3.5-122b"
-    EINFRA_GLM_5 = "einfra/glm-5"
-    EINFRA_GLM_5_1 = "einfra/glm-5.1"
+    EINFRA_GLM_5_2 = "einfra/glm-5.2"
+    EINFRA_GEMMA4 = "einfra/gemma4"
 
 
 class TranslationType(str, Enum):
@@ -147,27 +144,40 @@ FRAMEWORK_TO_LANGUAGE_TYPE = {
 }
 """Mapping of each framework type to its corresponding programming language type for code generation and validation logic."""
 
-FRAMEWORK_TO_SNIPPET_FILES = {
-    FrameworkEnum.DOTNET_EFCORE: (
-        "EFCoreSchemaValidationEntrypoint.cs",
-        "EFCoreQueryEntrypoint.cs",
-    ),
-    FrameworkEnum.DOTNET_DAPPER: (
-        "DapperSchemaValidationEntrypoint.cs",
-        "DapperQueryEntrypoint.cs",
-    ),
-    FrameworkEnum.DOTNET_NHIBERNATE: (
-        "NHibernateSchemaValidationEntrypoint.cs",
-        "NHibernateQueryEntrypoint.cs",
-    ),
-    FrameworkEnum.JAVA_SPRING_DATA_MONGODB: (
-        "MongoSchemaValidationEntrypoint.java",
-        "MongoQueryEntrypoint.java",
-    ),
-    FrameworkEnum.JAVA_SPRING_DATA_NEO4J: (
-        "Neo4jSchemaValidationEntrypoint.java",
-        "Neo4jQueryEntrypoint.java",
-    ),
+FRAMEWORK_TO_SNIPPET_FILES: dict[
+    FrameworkEnum, 
+    dict[Literal["schema_validation", "schema_validation_entry_type_name", "query_validation", "query_validation_entry_type_name"], str]
+] = {
+    FrameworkEnum.DOTNET_EFCORE: {
+        "schema_validation": "EFCoreSchemaValidationEntrypoint.cs",
+        "schema_validation_entry_type_name": "EFCoreSchemaValidationEntrypoint",
+        "query_validation": "EFCoreQueryEntrypoint.cs",
+        "query_validation_entry_type_name": "EFCoreQueryEntrypoint",
+    },
+    FrameworkEnum.DOTNET_DAPPER: {
+        "schema_validation": "DapperSchemaValidationEntrypoint.cs",
+        "schema_validation_entry_type_name": "DapperSchemaValidationEntrypoint",
+        "query_validation": "DapperQueryEntrypoint.cs",
+        "query_validation_entry_type_name": "DapperQueryEntrypoint",
+    },
+    FrameworkEnum.DOTNET_NHIBERNATE: {
+        "schema_validation": "NHibernateSchemaValidationEntrypoint.cs",
+        "schema_validation_entry_type_name": "NHibernateSchemaValidationEntrypoint",
+        "query_validation": "NHibernateQueryEntrypoint.cs",
+        "query_validation_entry_type_name": "NHibernateQueryEntrypoint",
+    },
+    FrameworkEnum.JAVA_SPRING_DATA_MONGODB: {
+        "schema_validation": "MongoSchemaValidationEntrypoint.java",
+        "schema_validation_entry_type_name": "MongoSchemaValidationEntrypoint",
+        "query_validation": "MongoQueryEntrypoint.java",
+        "query_validation_entry_type_name": "MongoQueryEntrypoint",
+    },
+    FrameworkEnum.JAVA_SPRING_DATA_NEO4J: {
+        "schema_validation": "Neo4jSchemaValidationEntrypoint.java",
+        "schema_validation_entry_type_name": "Neo4jSchemaValidationEntrypoint",
+        "query_validation": "Neo4jQueryEntrypoint.java",
+        "query_validation_entry_type_name": "Neo4jQueryEntrypoint",
+    },
 }
 """Mapping of framework types to their corresponding schema and query snippet file names."""
 
@@ -191,6 +201,12 @@ correctly extract schema or query code from the user's initial prompt."""
 MAX_TRANSLATION_LOOPS = 3
 """The maximum number of retry loops the graph will allow for compiling/validating
 the translated code in the sandboxes before finally failing."""
+
+MAX_STRUCTURED_OUTPUT_RETRIES = 3
+"""The maximum number of times a single structured-output generation will be retried in-place
+(feeding the validation error back to the model) when the provider-native response fails schema
+or `@model_validator` checks, before escalating to model fallback. See
+`StructuredOutputRetryMiddleware`."""
 
 
 GENERAL_SANDBOX_README = """# Universal Object Mapping - Sandbox Environment

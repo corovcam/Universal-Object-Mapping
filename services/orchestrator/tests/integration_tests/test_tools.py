@@ -13,7 +13,7 @@ from langchain_core.tools import StructuredTool
 from langgraph.types import Command
 
 from react_agent.constants import JavaFramework, TranslationType
-from react_agent.custom_tools.docs_search import fetch_web_docs, load_docs_mcp_tools
+from react_agent.custom_tools.docs_search import load_docs_mcp_tools
 from react_agent.custom_tools.java_validator import validate_java_code
 
 pytestmark = [pytest.mark.anyio, pytest.mark.asyncio]
@@ -132,54 +132,16 @@ class TestJavaValidator:
 # ── Documentation Search ────────────────────────────────────────────────────
 
 
-class TestFetchWebDocs:
-    """Tests for fetch_web_docs tool (HTTP fallback, no Tavily key needed)."""
-
-    @pytest.mark.integration
-    async def test_http_fallback_efcore(self):
-        """Fetch docs for EF Core via HTTP fallback (no Tavily key)."""
-        # Ensure Tavily is not used
-        original = os.environ.pop("TAVILY_API_KEY", None)
-        try:
-            result = await fetch_web_docs.ainvoke(
-                {
-                    "query": "Entity Framework Core DbContext",
-                    "framework_version": "EF Core 9",
-                }
-            )
-            assert isinstance(result, str)
-            assert len(result) > 100, "Expected substantial documentation content"
-        finally:
-            if original is not None:
-                os.environ["TAVILY_API_KEY"] = original
-
-    @pytest.mark.integration
-    async def test_http_fallback_spring(self):
-        """Fetch docs for Spring Data via HTTP fallback."""
-        original = os.environ.pop("TAVILY_API_KEY", None)
-        try:
-            result = await fetch_web_docs.ainvoke(
-                {"query": "Spring Data MongoDB repository", "framework_version": ""}
-            )
-            assert isinstance(result, str)
-            # May get "No documentation found" if the URLs don't resolve,
-            # but should not raise an exception
-        finally:
-            if original is not None:
-                os.environ["TAVILY_API_KEY"] = original
-
-
 class TestLoadDocsMcpTools:
     """Tests for loading MCP documentation tools."""
 
     @pytest.mark.integration
     async def test_loads_at_least_fallback(self):
-        """Always loads at least the fetch_web_docs fallback tool."""
+        """Always loads at least the fallback tool."""
         async with load_docs_mcp_tools() as tools:
             assert len(tools) >= 1
             tool_names = [t.name for t in tools]
         expected_names = {
-            "fetch_web_docs",
             "microsoft_docs_search",
             "microsoft_code_sample_search",
             "microsoft_docs_fetch",

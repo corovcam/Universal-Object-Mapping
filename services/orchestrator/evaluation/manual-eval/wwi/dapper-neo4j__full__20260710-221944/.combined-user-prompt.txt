@@ -1,0 +1,448 @@
+Translate the following Source Code (schema/query) from .NET Dapper to Java Spring Data Neo4j 8.0.0.
+
+Database Schema Context:
+Now I have all the information needed. Here is the comprehensive schema summary.
+
+---
+
+## SOURCE: Microsoft SQL Server (WideWorldImporters)
+
+### Relevant Tables & Columns
+
+**Sales.OrderLines** (231K+ rows)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| OrderLineID | int | NO | PK |
+| OrderID | int | NO | FK→Orders |
+| StockItemID | int | NO | FK→StockItems |
+| Description | nvarchar(100) | NO | |
+| PackageTypeID | int | NO | (not mapped to Neo4j) |
+| Quantity | int | NO | |
+| UnitPrice | decimal(18,2) | YES | |
+| TaxRate | decimal(18,3) | NO | |
+| PickedQuantity | int | NO | |
+| PickingCompletedWhen | datetime2 | YES | |
+| LastEditedBy | int | NO | FK→People |
+| LastEditedWhen | datetime2 | NO | |
+
+**Sales.Orders** (73K+ rows)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| OrderID | int | NO | PK |
+| CustomerID | int | NO | FK→Customers |
+| SalespersonPersonID | int | NO | FK→People |
+| PickedByPersonID | int | YES | FK→People |
+| ContactPersonID | int | NO | FK→People |
+| BackorderOrderID | int | YES | Self-referencing FK |
+| OrderDate | date | NO | |
+| ExpectedDeliveryDate | date | NO | |
+| CustomerPurchaseOrderNumber | nvarchar(20) | YES | |
+| IsUndersupplyBackordered | bit | NO | |
+| Comments | nvarchar(max) | YES | **NOT in Neo4j Order** |
+| DeliveryInstructions | nvarchar(max) | YES | **NOT in Neo4j Order** |
+| InternalComments | nvarchar(max) | YES | **NOT in Neo4j Order** |
+| PickingCompletedWhen | datetime2 | YES | |
+| LastEditedBy | int | NO | FK→People |
+| LastEditedWhen | datetime2 | NO | |
+
+**Application.People** (1,111 rows)
+| Column | Type | Nullable |
+|---|---|---|
+| PersonID | int | NO |
+| FullName | nvarchar(50) | NO |
+| PreferredName | nvarchar(50) | NO |
+| EmailAddress | nvarchar(256) | YES |
+| CustomFields | nvarchar(max) | YES (JSON string) |
+| OtherLanguages | nvarchar(max) | YES (JSON array string) |
+| ... (15 more columns) | | |
+
+**Purchasing.Suppliers** (13 rows)
+| Column | Type | Nullable |
+|---|---|---|
+| SupplierID | int | NO |
+| SupplierName | nvarchar(100) | NO |
+| SupplierReference | nvarchar(20) | YES |
+| PaymentDays | int | NO |
+| PhoneNumber | nvarchar(20) | NO |
+| FaxNumber | nvarchar(20) | NO |
+| WebsiteURL | nvarchar(256) | NO |
+| BankAccountName | nvarchar(50) | YES |
+| BankAccountBranch | nvarchar(50) | YES |
+| BankAccountCode | nvarchar(20) | YES |
+| BankAccountNumber | nvarchar(20) | YES |
+| BankInternationalCode | nvarchar(20) | YES |
+| ... (26 more columns) | | |
+
+**Purchasing.PurchaseOrders** (2,074 rows)
+| Column | Type | Nullable |
+|---|---|---|
+| PurchaseOrderID | int | NO |
+| SupplierID | int | NO | FK→Suppliers |
+| OrderDate | date | NO | |
+| ExpectedDeliveryDate | date | YES | |
+| SupplierReference | nvarchar(20) | YES | |
+| IsOrderFinalized | bit | NO | |
+| Comments | nvarchar(max) | YES | **NOT in Neo4j PurchaseOrder** |
+| InternalComments | nvarchar(max) | YES | **NOT in Neo4j PurchaseOrder** |
+| ... | | |
+
+**Sales.Customers** (663 rows) — has CustomerID, CustomerName, BillToCustomerID (self-ref), plus many address/contact fields.
+
+**Sales.CustomerTransactions** (97K+ rows)
+| Column | Type | Nullable |
+|---|---|---|
+| CustomerTransactionID | int | NO |
+| CustomerID | int | NO | FK→Customers |
+| TransactionDate | date | NO | |
+| TransactionAmount | decimal | NO | |
+| OutstandingBalance | decimal | NO | |
+| IsFinalized | bit | YES | |
+
+**Warehouse.StockItems** (227 rows)
+| Column | Type | Nullable |
+|---|---|---|
+| StockItemID | int | NO |
+| StockItemName | nvarchar(100) | NO |
+| SupplierID | int | NO | FK→Suppliers |
+| QuantityPerOuter | int | NO | |
+| LeadTimeDays | int | NO | |
+| IsChillerStock | bit | NO | |
+| UnitPrice | decimal | NO | |
+| RecommendedRetailPrice | decimal | YES | |
+
+**Warehouse.StockGroups** (10 rows) — StockGroupID, StockGroupName
+
+**Warehouse.StockItemStockGroups** (442 rows) — StockItemStockGroupID, StockItemID, StockGroupID
+
+**Warehouse.StockItemHoldings** (227 rows) — StockItemID, QuantityOnHand, BinLocation, LastCostPrice, ReorderLevel, etc.
+
+---
+
+## TARGET: Neo4j
+
+### Node Labels and Properties
+
+| Label | Count | Key Properties |
+|---|---|---|
+| **OrderLine** | 231,412 | orderLineId (INTEGER), description (STRING), quantity (INTEGER), unitPrice (FLOAT), taxRate (FLOAT), pickedQuantity (INTEGER), pickingCompletedWhen (STRING), lastEditedWhen (STRING) |
+| **Order** | 73,595 | orderId (INTEGER), orderDate (STRING), expectedDeliveryDate (STRING), customerPurchaseOrderNumber (STRING), isUndersupplyBackordered (INTEGER 0/1), pickingCompletedWhen (STRING), lastEditedWhen (STRING) — **MISSING: comments, deliveryInstructions, internalComments** |
+| **Person** | 1,111 | personId (INTEGER), fullName (STRING), preferredName (STRING), emailAddress (STRING), customFields (STRING/JSON), otherLanguages (STRING/JSON array), phoneNumber, faxNumber, isEmployee (INTEGER 0/1), isSalesperson (INTEGER 0/1), etc. |
+| **Supplier** | 13 | supplierId (INTEGER), supplierName (STRING), supplierReference (STRING), paymentDays (INTEGER), phoneNumber, faxNumber, websiteUrl, bankAccountName, bankAccountBranch, bankAccountCode, bankAccountNumber, bankInternationalCode |
+| **PurchaseOrder** | 2,074 | purchaseOrderId (INTEGER), orderDate (STRING), expectedDeliveryDate (STRING), supplierReference (STRING), isOrderFinalized (INTEGER 0/1), lastEditedWhen (STRING) — **MISSING: comments, internalComments** |
+| **Customer** | 663 | customerId (INTEGER), customerName (STRING), plus address/contact fields |
+| **CustomerTransaction** | 97,147 | customerTransactionId (INTEGER), transactionDate (STRING), transactionAmount (FLOAT), outstandingBalance (FLOAT), isFinalized (INTEGER 0/1), taxAmount, amountExcludingTax, finalizationDate, lastEditedWhen |
+| **StockItem** | 227 | stockItemId (INTEGER), stockItemName (STRING), quantityPerOuter (INTEGER), leadTimeDays (INTEGER), isChillerStock (INTEGER 0/1), unitPrice (FLOAT), recommendedRetailPrice (FLOAT), brand, size, tags, taxRate, typicalWeightPerUnit, customFields, etc. |
+| **StockGroup** | 10 | stockGroupId, stockGroupName |
+| **StockItemStockGroup** | 442 | stockItemStockGroupId, lastEditedWhen |
+
+### Relationships
+
+| Type | Direction | Count |
+|---|---|---|
+| **ORDERS** | `(OrderLine)-[:ORDERS]->(Order)` | 7,538 |
+| **CUSTOMERS** | `(Order)-[:CUSTOMERS]->(Customer)` | (subsumed) |
+| **CUSTOMERS** | `(CustomerTransaction)-[:CUSTOMERS]->(Customer)` | 663 |
+| **PEOPLE** | `(Order)-[:PEOPLE]->(Person)` | 10 |
+| **STOCK_ITEMS** | `(OrderLine)-[:STOCK_ITEMS]->(StockItem)` | 442 |
+| **SUPPLIERS** | `(PurchaseOrder)-[:SUPPLIERS]->(Supplier)` | 227 |
+| **SUPPLIERS** | `(StockItem)-[:SUPPLIERS]->(Supplier)` | (subsumed) |
+| **STOCK_GROUPS** | `(StockItemStockGroup)-[:STOCK_GROUPS]->(StockGroup)` | 442 |
+| **STOCK_ITEMS** | `(StockItemStockGroup)-[:STOCK_ITEMS]->(StockItem)` | (subsumed) |
+| **STOCK_ITEM_HOLDINGS** | `(Person)-[:STOCK_ITEM_HOLDINGS]->(StockItem)` w/ properties: binLocation, lastCostPrice, lastEditedWhen, lastStocktakeQuantity, quantityOnHand, reorderLevel, targetStockLevel | 227 |
+
+### Critical Data Type Mappings (SQL → Neo4j)
+
+- `BIT` → `INTEGER` (0 or 1, **not Boolean**)
+- `DECIMAL` → `FLOAT` (Double)
+- `INT`/`INTEGER` → `INTEGER` (Long)
+- `DATE`/`DATETIME2`/`TIMESTAMP` → `STRING` (e.g., `"2013-01-02T11:00:00Z"` or `"2013-01-01 00:00:00.0000000"`)
+- `NVARCHAR` → `STRING`
+- NULL values: Neo4j properties are simply absent when null (Neo4j doesn't store null properties)
+
+### Key Relationship/Difference Summary
+
+1. **FK columns become relationships** — `OrderLine.OrderID`, `OrderLine.StockItemID`, `OrderLine.LastEditedBy`, `Order.CustomerID`, `Order.LastEditedBy`, `Order.SalespersonPersonID`, etc., are all replaced by graph relationships. The ID foreign key columns do not exist as properties in Neo4j.
+
+2. **Missing properties in Neo4j Order node**: `comments`, `deliveryInstructions`, `internalComments` exist in SQL Orders table but are **absent** from Neo4j Order nodes.
+
+3. **Missing properties in Neo4j PurchaseOrder node**: `comments`, `internalComments` exist in SQL PurchaseOrders but are absent from Neo4j.
+
+4. **PEOPLE relationship is overloaded** — A single `PEOPLE` relationship type from Order→Person represents all four SQL FK roles (SalespersonPersonID, ContactPersonID, PickedByPersonID, LastEditedBy) with no distinguishing property.
+
+5. **Order.OrderLines on C# class** — The C# `Order` class has `List<OrderLine> OrderLines` but the Neo4j Order node has no such collection property. Instead, traversal from Order via `(OrderLine)-[:ORDERS]->(Order)` (inbound) gets the OrderLines.
+
+6. **CustomerTransaction.CustomerID** — In SQL it's a column; in Neo4j it's the `(CustomerTransaction)-[:CUSTOMERS]->(Customer)` relationship.
+
+7. **PurchaseOrder.SupplierID** — In SQL it's a column; in Neo4j it's `(PurchaseOrder)-[:SUPPLIERS]->(Supplier)`.
+
+8. **C# Supplier split vs Neo4j unified** — The C# code splits Supplier into `Supplier`, `SupplierContactInfo`, `SupplierBankAccount` classes, but Neo4j has all fields in a single `Supplier` node.
+
+9. **JSON fields** — `CustomFields` and `OtherLanguages` are stored as plain JSON strings in Neo4j (not parsed into maps/arrays), so Cypher queries would need string matching or APOC JSON functions rather than property traversal. `CustomFields` is an object `{"Title": "Team Member", ...}` and `OtherLanguages` is an array `["Slovak", ...]`.
+---
+Source Code:
+<source_schema_code>
+public class OrderLine
+{
+    public int OrderLineID { get; set; }
+    public int OrderID { get; set; }
+    public int StockItemID { get; set; }
+    public required string Description { get; set; }
+    public int Quantity { get; set; }
+    public decimal? UnitPrice { get; set; }
+    public decimal TaxRate { get; set; }
+    public int PickedQuantity { get; set; }
+    public DateTime? PickingCompletedWhen { get; set; }
+    public int LastEditedBy { get; set; }
+    public DateTime LastEditedWhen { get; set; }
+}
+public class Order
+{
+    public int OrderID { get; set; }
+    public int CustomerID { get; set; }
+    public int? BackorderOrderID { get; set; }
+    public DateTime OrderDate { get; set; }
+    public DateTime ExpectedDeliveryDate { get; set; }
+    public string? CustomerPurchaseOrderNumber { get; set; }
+    public bool IsUndersupplyBackordered { get; set; }
+    public string? Comments { get; set; }
+    public string? DeliveryInstructions { get; set; }
+    public string? InternalComments { get; set; }
+    public DateTime? PickingCompletedWhen { get; set; }
+    public DateTime LastEditedWhen { get; set; }
+    public List<OrderLine> OrderLines { get; set; } = [];
+}
+public class Person
+{
+    public int PersonID { get; set; }
+    public required string FullName { get; set; }
+    public required string PreferredName { get; set; }
+    public string? EmailAddress { get; set; }
+    public string? CustomFields { get; set; }
+    public string? OtherLanguages { get; set; }
+}
+public class Supplier
+{
+    public int SupplierID { get; set; }
+    public required string SupplierName { get; set; }
+    public string? SupplierReference { get; set; }
+    public int PaymentDays { get; set; }
+    public string? PhoneNumber { get; set; }
+    public string? FaxNumber { get; set; }
+    public string? WebsiteURL { get; set; }
+    public string? BankAccountName { get; set; }
+    public string? BankAccountBranch { get; set; }
+    public string? BankAccountCode { get; set; }
+    public string? BankAccountNumber { get; set; }
+    public string? BankInternationalCode { get; set; }
+}
+public class CustomerTransaction
+{
+    public int CustomerTransactionID { get; set; }
+    public int CustomerID { get; set; }
+    public DateTime TransactionDate { get; set; }
+    public decimal TransactionAmount { get; set; }
+    public decimal OutstandingBalance { get; set; }
+    public bool IsFinalized { get; set; }
+}
+public class PurchaseOrder
+{
+    public int PurchaseOrderID { get; set; }
+    public int SupplierID { get; set; }
+    public DateTime OrderDate { get; set; }
+    public DateTime ExpectedDeliveryDate { get; set; }
+    public string? SupplierReference { get; set; }
+    public bool IsOrderFinalized { get; set; }
+}
+public class StockItem
+{
+    public int StockItemID { get; set; }
+    public required string StockItemName { get; set; }
+    public int SupplierID { get; set; }
+    public int QuantityPerOuter { get; set; }
+    public int LeadTimeDays { get; set; }
+    public bool IsChillerStock { get; set; }
+    public decimal? UnitPrice { get; set; }
+    public decimal RecommendedRetailPrice { get; set; }
+}
+public class StockItemStockGroup
+{
+    public int StockItemStockGroupID { get; set; }
+    public int StockItemID { get; set; }
+    public int StockGroupID { get; set; }
+}
+public class SupplierContactInfo
+{
+    public int SupplierID { get; set; }
+    public string? SupplierName { get; set; }
+    public string? PhoneNumber { get; set; }
+    public string? FaxNumber { get; set; }
+    public string? WebsiteURL { get; set; }
+}
+public class SupplierBankAccount
+{
+    public int SupplierID { get; set; }
+    public string? BankAccountName { get; set; }
+    public string? BankAccountBranch { get; set; }
+    public string? BankAccountCode { get; set; }
+    public string? BankAccountNumber { get; set; }
+    public string? BankInternationalCode { get; set; }
+}
+public class SupplierAccounts
+{
+    public SupplierContactInfo? ContactInfo { get; set; }
+    public SupplierBankAccount? BankAccount { get; set; }
+}
+public class PurchaseOrderInfo
+{
+    public int PurchaseOrderID { get; set; }
+    public string? SupplierName { get; set; }
+    public DateTime OrderDate { get; set; }
+}
+</source_schema_code>
+<source_query_code>
+public static IEnumerable<OrderLine> Query1(SqlConnection conn)
+{
+    string sql = @"SELECT * FROM Sales.OrderLines WHERE OrderID = @OrderID";
+    return conn.Query<OrderLine>(sql, new { OrderID = 26866 });
+}
+
+public static IEnumerable<OrderLine> Query2(SqlConnection conn)
+{
+    string sql = @"SELECT * FROM Sales.OrderLines WHERE UnitPrice = @UnitPrice";
+    return conn.Query<OrderLine>(sql, new { UnitPrice = 25m });
+}
+
+public static IEnumerable<OrderLine> Query3(SqlConnection conn)
+{
+    var from = new DateTime(2014, 12, 20);
+    var to = new DateTime(2014, 12, 31);
+    string sql = @"SELECT * FROM Sales.OrderLines WHERE PickingCompletedWhen >= @From AND PickingCompletedWhen <= @To";
+    return conn.Query<OrderLine>(sql, new { From = from, To = to });
+}
+
+public static IEnumerable<OrderLine> Query4(SqlConnection conn)
+{
+    var orderIds = new[] { 1, 10, 100, 1000, 10000 };
+    string sql = @"SELECT * FROM Sales.OrderLines WHERE OrderID IN @Ids";
+    return conn.Query<OrderLine>(sql, new { Ids = orderIds });
+}
+
+public static IEnumerable<OrderLine> Query5(SqlConnection conn)
+{
+    string sql = @"SELECT * FROM Sales.OrderLines WHERE Description LIKE @Pattern";
+    return conn.Query<OrderLine>(sql, new { Pattern = "%C++%" });
+}
+
+public static IEnumerable<OrderLine> Query6(SqlConnection conn)
+{
+    string sql = @"SELECT * FROM Sales.OrderLines ORDER BY OrderLineID OFFSET @Skip ROWS FETCH NEXT @Take ROWS ONLY";
+    return conn.Query<OrderLine>(sql, new { Skip = 1000, Take = 50 });
+}
+
+public static IEnumerable<(decimal TaxRate, int Count)> Query7(SqlConnection conn)
+{
+    string sql = @"SELECT TaxRate, COUNT(*) AS Count FROM Sales.OrderLines GROUP BY TaxRate ORDER BY Count DESC";
+    return conn.Query<(decimal TaxRate, int Count)>(sql);
+}
+
+public static decimal? Query8(SqlConnection conn)
+{
+    string sql = @"SELECT MAX(UnitPrice) FROM Sales.OrderLines";
+    return conn.ExecuteScalar<decimal?>(sql);
+}
+
+public static decimal? Query9(SqlConnection conn)
+{
+    string sql = @"SELECT SUM(Quantity * UnitPrice) FROM Sales.OrderLines";
+    return conn.ExecuteScalar<decimal?>(sql);
+}
+
+static Order Query10mapRow(Order o, OrderLine ol)
+{
+    if (ol != null) o.OrderLines.Add(ol);
+    return o;
+}
+public static Order? Query10(SqlConnection conn)
+{
+    string sql = @"
+        SELECT o.*, ol.*
+        FROM Sales.Orders o
+        LEFT JOIN Sales.OrderLines ol ON o.OrderID = ol.OrderID
+        WHERE o.OrderID = 530";
+    var rows = conn.Query<Order, OrderLine, Order>(sql, Query10mapRow, splitOn: "OrderLineID");
+    return rows.GroupBy(o => o.OrderID).Select(g => {
+        var order = g.First();
+        order.OrderLines = g.SelectMany(o => o.OrderLines).ToList();
+        return order;
+    }).SingleOrDefault();
+}
+
+public static IEnumerable<Order> Query11(SqlConnection conn)
+{
+    string sql = @"SELECT TOP 1000 * FROM Sales.Orders ORDER BY ExpectedDeliveryDate";
+    return conn.Query<Order>(sql);
+}
+
+public static IEnumerable<string?> Query12(SqlConnection conn)
+{
+    string sql = @"SELECT DISTINCT CustomerPurchaseOrderNumber FROM Sales.Orders";
+    return conn.Query<string?>(sql);
+}
+
+public static IEnumerable<Person> Query13(SqlConnection conn)
+{
+    string sql = @"
+        SELECT PersonID, FullName, PreferredName, EmailAddress, CustomFields, OtherLanguages
+        FROM Application.People
+        WHERE JSON_VALUE(CustomFields, '$.Title') = @Title
+        ORDER BY PersonID";
+    return conn.Query<Person>(sql, new { Title = "Team Member" });
+}
+
+public static IEnumerable<Person> Query14(SqlConnection conn)
+{
+    string sql = @"
+        SELECT PersonID, FullName, PreferredName, EmailAddress, CustomFields, OtherLanguages
+        FROM Application.People
+        WHERE EXISTS (
+            SELECT 1 FROM OPENJSON(OtherLanguages)
+            WHERE value = @Language
+        )
+        ORDER BY PersonID";
+    return conn.Query<Person>(sql, new { Language = "Slovak" });
+}
+
+public static IEnumerable<int> Query15(SqlConnection conn)
+{
+    string sql = @"
+        SELECT SupplierID FROM Purchasing.Suppliers WHERE SupplierID < 5
+        UNION
+        SELECT SupplierID FROM Purchasing.Suppliers WHERE SupplierID BETWEEN 5 AND 10
+        ORDER BY SupplierID";
+    return conn.Query<int>(sql);
+}
+</source_query_code>
+
+Translate ONLY the entities, fields, and queries that appear above. Do not invent or carry over any entity or field that is not present in this source code.
+
+
+There are no tools available in this chat. Do NOT call the save_* tools; instead, output every
+piece the save tools would have collected, as fenced code blocks labeled EXACTLY like this (one
+schema pair + one source/target pair per query id — required ids: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
+
+```source_schema_body
+<the SOURCE-side entity/mapping classes>
+```
+```target_schema_body
+<the TARGET-side entity/mapping classes>
+```
+```source_query_body id=1
+<Query1's SOURCE-side harness fragment>
+```
+```target_query_body id=1
+<Query1's TARGET-side harness fragment>
+```
+... repeat the source/target pair for every required query id ...
+
+The fragment shapes/signatures are the ones the system prompt already specifies. Use only your own
+knowledge for framework API details (the research tools are unavailable). Do not omit any query id.

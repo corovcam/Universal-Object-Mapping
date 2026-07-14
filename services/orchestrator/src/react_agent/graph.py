@@ -6,62 +6,100 @@
 import asyncio
 import json
 import logging
-import os
-from typing import Any, Awaitable, Callable, Literal, Union, cast
+import re
+from datetime import UTC, datetime
+from typing import Any, Awaitable, Callable, Literal, Sequence, Union, cast
 
 import logfire
 import orjson
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
+    AgentMiddleware,
     ClearToolUsesEdit,
     ContextEditingMiddleware,
     ModelFallbackMiddleware,
     ModelRetryMiddleware,
     ToolRetryMiddleware,
 )
-from langchain.agents.structured_output import ProviderStrategy
+from langchain.agents.middleware.types import ModelRequest, ModelResponse
+from langchain.agents.structured_output import (
+    ProviderStrategy,
+    StructuredOutputValidationError,
+)
 from langchain.messages import AIMessage
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import (
+    AnyMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_core.runnables import RunnableConfig
+from langchain_daytona import DaytonaSandbox
 from langgraph.cache.memory import InMemoryCache
+from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
-from langgraph.types import CachePolicy, Command, RetryPolicy, interrupt
-from pydantic import BaseModel, Field, model_validator
+from langgraph.types import (
+    CachePolicy,
+    Command,
+    RetryPolicy,
+    default_retry_on,
+    interrupt,
+)
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from react_agent.constants import (
     FRAMEWORK_TO_LANGUAGE_TYPE,
     MAX_EXTRACTION_LOOPS,
+    MAX_STRUCTURED_OUTPUT_RETRIES,
     MAX_TRANSLATION_LOOPS,
     AvailableModel,
     DotnetFramework,
     FrameworkEnum,
     JavaFramework,
+    SandboxType,
     SourceFramework,
     TargetFramework,
     TranslationType,
 )
 from react_agent.context import Context
+from react_agent.custom_tools.docs_search import load_docs_mcp_tools
 from react_agent.custom_tools.dotnet_validator import validate_dotnet_code
+from react_agent.custom_tools.draft_validator import build_validate_draft_tool
 from react_agent.custom_tools.java_validator import validate_java_code
 from react_agent.custom_tools.mcp_database import load_mongodb_tools, load_toolbox_tools
 from react_agent.custom_tools.query_validator import (
     check_query_equivalence,
 )
+from react_agent.custom_tools.sandbox_tools import ValidationSandbox
 from react_agent.prompts import (
     SYSTEM_PROMPT_EXTRACTION,
+    SYSTEM_PROMPT_FINALIZE,
     SYSTEM_PROMPT_SCHEMA_INSPECTOR,
     build_system_prompt,
+    build_translation_user_message,
+    eval_cache_bust_header,
 )
 from react_agent.state import (
     InputState,
     OutputState,
     State,
 )
-from react_agent.tools import TOOLS
+from react_agent.tools import TOOLS, search
+from react_agent.translation_draft import (
+    TranslationConvergenceMiddleware,
+    TranslationDraftMiddleware,
+    build_save_query_tool,
+    build_save_schema_tool,
+    build_save_translation_tool,
+    expected_query_ids_from_source,
+    missing_fragment_pieces,
+    required_draft_fields,
+)
 from react_agent.utils import (
     create_example_for_prompt,
     get_database_mapping_json,
@@ -72,7 +110,18 @@ from react_agent.utils import (
 from react_agent.utils.deterministic_checks import (
     _latest_validation_outcome,
 )
-from react_agent.utils.utils import override_pydantic_model_schema
+from react_agent.utils.harness_assembler import (
+    FRAGMENT_SIGNATURES,
+    SCHEMA_FRAGMENT_HINTS,
+    assemble_query_harness,
+    assemble_validation_code,
+)
+from react_agent.utils.utils import (
+    compact_build_log,
+    get_message_text,
+    get_snippet_content,
+    override_pydantic_model_schema,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +236,7 @@ class BaseTranslationOutput(BaseModel):
             BaseTranslationOutput: The validated and normalized model instance.
 
         Raises:
-            ValueError: If the entrypoint type name is missing from the harness/schema code.
+            ValueError: If any entrypoint type name is missing from its harness/schema code.
         """
         # First, join any list fields into strings
         if isinstance(self.translated_schema_code, list):
@@ -233,12 +282,252 @@ class BaseTranslationOutput(BaseModel):
                 and isinstance(entry_name, str)
                 and entry_name not in code
             ):
-                errors.append(
-                    ValueError(f"{entry_field} must be declared in {code_field}.")
-                )
+                errors.append(f"{entry_field} must be declared in {code_field}.")
         if errors:
-            raise ExceptionGroup("Validation entry type name checks failed", errors)
+            # Raise a single ValueError (not an ExceptionGroup) so pydantic wraps it into a
+            # ValidationError whose string carries every message. ExceptionGroup's str only
+            # reports a sub-exception count, so the actionable detail was being lost when the
+            # error was surfaced to the model for self-correction (see
+            # StructuredOutputRetryMiddleware).
+            raise ValueError("\n".join(errors))
         return self
+
+
+def _format_structured_output_error(exc: StructuredOutputValidationError) -> str:
+    """Render a concise, model-actionable description of a structured-output failure.
+
+    Prefers the underlying pydantic `ValidationError` (extracting just the `loc` + `msg` of each
+    error, without echoing the model's potentially huge/truncated input) and otherwise falls back
+    to the raw source error string (e.g. JSON decode failures from output truncation).
+
+    Args:
+        exc (StructuredOutputValidationError): The error raised by the provider strategy when the
+            native structured response failed to parse or validate.
+
+    Returns:
+        str: A newline-separated, human/LLM-readable summary of what went wrong.
+    """
+    source: BaseException = getattr(exc, "source", None) or exc
+    cause = getattr(source, "__cause__", None)
+    if isinstance(cause, ValidationError):
+        lines = []
+        for err in cause.errors(include_url=False, include_input=False):
+            loc = ".".join(str(part) for part in err.get("loc", ()))
+            msg = err.get("msg", "")
+            lines.append(f"{loc}: {msg}" if loc else msg)
+        if lines:
+            return "\n".join(lines)
+    return str(source)
+
+
+#: Content-block types that carry a reasoning model's *thinking* trace. These must NOT be sent back
+#: to the provider on later turns: they break LangChain's string-delta merge (so the AIMessage
+#: content stays a list of dicts), and litellm then drops them, leaving `content` as a list of bare
+#: strings — which OpenAI-compatible servers (sglang/vLLM) reject with a 400 (content list elements
+#: must be objects with a `type`, or content must be a plain string).
+_REASONING_BLOCK_TYPES = frozenset(
+    {"thinking", "reasoning", "reasoning_content", "redacted_thinking"}
+)
+
+
+def _flatten_message_content(message: AnyMessage) -> AnyMessage:
+    """Collapse a reasoning model's list-form AIMessage content into a plain text string.
+
+    A streamed reasoning turn accumulates into ``content`` as a list mixing bare text deltas
+    (e.g. ``""``, ``"\\n\\n"``) with ``{"type": "thinking", ...}`` dicts. Re-sending that list on
+    the next turn 400s (see ``_REASONING_BLOCK_TYPES``). We rebuild a single string from the text
+    parts (bare strings + ``{"type": "text"}`` blocks) and drop the thinking blocks. Tool calls live
+    on ``message.tool_calls``, not in ``content``, so an emptied-out content with tool calls stays
+    valid. Only ``AIMessage`` list content is touched; everything else is returned unchanged.
+
+    Args:
+        message (BaseMessage): A message from the outgoing request.
+
+    Returns:
+        BaseMessage: The original message, or a copy whose list content is flattened to a string.
+    """
+    if not isinstance(message, AIMessage) or not isinstance(message.content, list):
+        return message
+    text_parts: list[str] = []
+    for block in message.content:
+        if isinstance(block, str):
+            text_parts.append(block)
+        elif isinstance(block, dict):
+            btype = block.get("type")
+            if btype == "text":
+                text_parts.append(block.get("text", ""))
+            elif btype in _REASONING_BLOCK_TYPES:
+                continue  # never replay thinking back to the provider
+            # any other block type (e.g. tool_use) is represented on .tool_calls; drop from content
+    return message.model_copy(update={"content": "".join(text_parts)})
+
+
+def _sanitize_request_messages(messages: list[AnyMessage]) -> list[AnyMessage]:
+    """Apply :func:`_flatten_message_content` to every message in an outgoing request."""
+    return [_flatten_message_content(m) for m in messages]
+
+
+class ReasoningContentSanitizerMiddleware(AgentMiddleware):
+    """Flatten reasoning model list-content messages before each provider call.
+
+    Reasoning models (qwen3.5 / the EINFRA thinker, served via sglang/vLLM through litellm) return
+    an AIMessage whose ``content`` is a list of text deltas + ``thinking`` blocks. Sent back
+    verbatim on the next agent turn, litellm strips the thinking blocks and leaves a list of bare
+    strings, which the server rejects with a 400. This middleware rewrites the request's messages so
+    those AIMessages carry a plain text string instead — keeping reasoning ON without poisoning the
+    history.
+
+    It is placed LAST in each agent's middleware list (innermost, closest to the model) so it runs
+    after message-transforming middleware (summarization, context editing) and re-applies on every
+    ``ModelFallbackMiddleware`` retry — otherwise a fallback model would just hit the same 400.
+    """
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
+    ) -> ModelResponse:
+        """Flatten list-form reasoning content in the request, then delegate to the handler."""
+        if request.tools is None or len(request.tools) == 0:
+            return await handler(
+                request.override(messages=_sanitize_request_messages(request.messages), tools=None) # type: ignore
+            )
+        return await handler(
+            request.override(messages=_sanitize_request_messages(request.messages))
+        )
+
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        """Sync counterpart of :meth:`awrap_model_call`."""
+        if request.tools is None or len(request.tools) == 0:
+            return handler(
+                request.override(messages=_sanitize_request_messages(request.messages), tools=None) # type: ignore
+            )
+        return handler(
+            request.override(messages=_sanitize_request_messages(request.messages))
+        )
+
+
+class StructuredOutputRetryMiddleware(AgentMiddleware):
+    """Retry provider-native structured output on the SAME model, feeding the error back.
+
+    `ProviderStrategy` is faster and more reliable than `ToolStrategy` for strict structured
+    output, but (unlike `ToolStrategy.handle_errors`) it offers no retry hook: when the generated
+    JSON fails schema or `@model_validator` checks the agent raises
+    `StructuredOutputValidationError` and gives up. Plain `ModelRetryMiddleware` would re-call the
+    model with the *identical* prompt; this middleware instead appends a concise description of the
+    failure and re-invokes, so the model can self-correct — mirroring `ToolStrategy`'s error loop
+    while keeping native strict structured output.
+
+    Only `StructuredOutputValidationError` is retried, and always against the *same* model:
+    validation failures mean the model got the schema wrong, not that the model is unavailable, so
+    escalating to a (typically weaker) fallback rarely helps and burns the token/latency budget. To
+    guarantee that, on exhaustion this middleware returns a normal `ModelResponse` carrying an
+    `ERROR_PREFIX` message instead of raising — a raised exception would be caught by the
+    surrounding `ModelFallbackMiddleware` and bounced to the fallback models. Genuine failures
+    (transient API errors, outages) raise other exception types, which propagate untouched to
+    `ModelFallbackMiddleware` as intended.
+    """
+
+    #: Prefix marking a surfaced structured-output failure in the message stream. Downstream
+    #: handling (and the UI) key on this to recognise a generation failure.
+    ERROR_PREFIX = "[Structured Output Error]"
+
+    def __init__(self, *, max_retries: int = MAX_STRUCTURED_OUTPUT_RETRIES) -> None:
+        """Initialize the middleware.
+
+        Args:
+            max_retries (int): Maximum number of *additional* attempts after the initial call.
+        """
+        super().__init__()
+        self.max_retries = max_retries
+        self.tools = []
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
+    ) -> ModelResponse:
+        """Invoke the model, retrying structured-output failures (same model) with error feedback.
+
+        Args:
+            request (ModelRequest): The model request (messages, model, response format, ...).
+            handler (Callable): Executes the model + structured-output parsing; may be called
+                multiple times.
+
+        Returns:
+            ModelResponse: The first successful response, or — once retries are exhausted — a
+            response whose single message is a surfaced ``ERROR_PREFIX`` error (never raised, so
+            fallback models are not triggered for validation failures).
+        """
+        last_exc: StructuredOutputValidationError | None = None
+        for attempt in range(self.max_retries + 1):
+            if attempt == 0 or last_exc is None:
+                current_request = request
+            else:
+                # Rebuild from the original messages + a single latest-error note rather than
+                # accumulating feedback (and the bulky invalid output) every round, which would
+                # grow context and make output truncation on capped models more likely.
+                feedback = HumanMessage(
+                    content=(
+                        "Your previous response failed structured output validation:\n"
+                        f"{_format_structured_output_error(last_exc)}\n\n"
+                        "Regenerate the complete structured output, fixing exactly these issues. "
+                        "Return all required fields."
+                    )
+                )
+                current_request = request.override(
+                    messages=[*request.messages, feedback]
+                )
+            try:
+                return await handler(current_request)
+            except StructuredOutputValidationError as exc:
+                last_exc = exc
+                logger.warning(
+                    "Structured output validation failed (attempt %d/%d): %s",
+                    attempt + 1,
+                    self.max_retries + 1,
+                    _format_structured_output_error(exc),
+                )
+        assert last_exc is not None
+        attempts = self.max_retries + 1
+        logger.error(
+            "Structured output validation failed after %d attempts; surfacing error to the user.",
+            attempts,
+        )
+        return ModelResponse(
+            result=[
+                AIMessage(
+                    content=(
+                        f"{self.ERROR_PREFIX} The model could not produce a valid structured "
+                        f"response after {attempts} attempts. Validation errors:\n"
+                        f"{_format_structured_output_error(last_exc)}"
+                    )
+                )
+            ]
+        )
+
+
+def _retry_on_excluding_structured_output(exc: Exception) -> bool:
+    """Node retry predicate that never re-runs the whole node on a structured-output failure.
+
+    `StructuredOutputRetryMiddleware` already retries the model (with feedback) and surfaces a
+    failure message rather than raising, so a `StructuredOutputValidationError` reaching the node
+    boundary should not trigger an expensive full-node re-run. Everything else defers to LangGraph's
+    default retry behavior (transient connection/5xx errors, etc.).
+
+    Args:
+        exc (Exception): The exception raised by the node.
+
+    Returns:
+        bool: Whether LangGraph should retry the node.
+    """
+    if isinstance(exc, StructuredOutputValidationError):
+        return False
+    return default_retry_on(exc)
 
 
 async def _create_translation_output_model(state: State) -> type[BaseModel]:
@@ -384,6 +673,33 @@ def is_input_extracted(state: State | ExtractionOutput) -> bool:
     )
 
 
+# Deterministic keyword → framework inference over the raw user text. Cross-checks (and, on
+# contradiction, overrides) the LLM extraction: qwen3.5 was observed decode-collapsing and then
+# returning null code with HALLUCINATED frameworks ("EFCore→MongoDB" for a Dapper→Neo4j input),
+# which the old flow merged into state and looped on until the recursion limit.
+_FRAMEWORK_KEYWORDS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bdapper\b", re.IGNORECASE), FrameworkEnum.DOTNET_DAPPER.value),
+    (re.compile(r"\b(?:ef ?core|entity\s*framework)\b", re.IGNORECASE), FrameworkEnum.DOTNET_EFCORE.value),
+    (re.compile(r"\bnhibernate\b", re.IGNORECASE), FrameworkEnum.DOTNET_NHIBERNATE.value),
+    (re.compile(r"\bmongo(?:db)?\b", re.IGNORECASE), FrameworkEnum.JAVA_SPRING_DATA_MONGODB.value),
+    (re.compile(r"\bneo4j\b", re.IGNORECASE), FrameworkEnum.JAVA_SPRING_DATA_NEO4J.value),
+]
+
+
+def _infer_frameworks_from_text(text: str) -> tuple[str | None, str | None]:
+    """Infer (source, destination) framework values from the user text, by first mention order."""
+    hits: list[tuple[int, str]] = []
+    for pattern, framework in _FRAMEWORK_KEYWORDS:
+        m = pattern.search(text)
+        if m:
+            hits.append((m.start(), framework))
+    hits.sort()
+    ordered = [fw for _, fw in hits]
+    source = next((fw for fw in ordered if fw in {f.value for f in SourceFramework}), None)
+    destination = next((fw for fw in ordered if fw in {f.value for f in TargetFramework}), None)
+    return source, destination
+
+
 async def extract_input(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ):
@@ -403,17 +719,18 @@ async def extract_input(
         dict[str, Any] | Command: State updates with extracted parameters or a Command to
         terminate the graph on failure.
     """
+
     # model = await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_CODER_30B)
     # structured_llm = model.with_structured_output(ExtractionOutput)
 
-    system_prompt = SYSTEM_PROMPT_EXTRACTION.format(
+    system_prompt = eval_cache_bust_header(runtime, config) + SYSTEM_PROMPT_EXTRACTION.format(
         origin_frameworks=[f.value for f in SourceFramework],
         destination_frameworks=[f.value for f in TargetFramework],
     )
 
     extraction_agent = create_agent(
         await get_model(
-            config, runtime, AvailableModel.EINFRA_QWEN3_CODER_NEXT, temperature=0
+            config, runtime, AvailableModel.EINFRA_QWEN3_5_122B, temperature=0
         ),
         system_prompt=system_prompt,
         response_format=ProviderStrategy(ExtractionOutput, strict=True),
@@ -423,7 +740,7 @@ async def extract_input(
                 await get_model(
                     config,
                     runtime,
-                    AvailableModel.EINFRA_MINI,
+                    AvailableModel.EINFRA_GPT_OSS_120B,
                     temperature=0,
                     reasoning=False,
                 ),
@@ -436,6 +753,8 @@ async def extract_input(
                 ),
                 await get_model(config, runtime),
             ),
+            # Innermost (last): flatten reasoning list-content so re-sent turns don't 400.
+            ReasoningContentSanitizerMiddleware(),
         ],
         # debug=True if os.getenv("DEVELOPMENT") else False,
     )
@@ -484,7 +803,25 @@ Conversation:
             },
             goto=END,
         )
-    
+
+    # Sanity cross-check against the raw user text (F5): a decode-collapsed model can return a
+    # structurally valid response with hallucinated frameworks and null code. When the text
+    # names the frameworks explicitly, the deterministic inference wins over the LLM's claim.
+    user_text = str(state.messages[-1].content) if state.messages else ""
+    inferred_source, inferred_destination = _infer_frameworks_from_text(user_text)
+    if inferred_source and extraction.source_target.value != inferred_source:
+        logger.warning(
+            "extract_input: overriding hallucinated source_target %r with text-inferred %r",
+            extraction.source_target, inferred_source,
+        )
+        extraction.source_target = FrameworkEnum(inferred_source)
+    if inferred_destination and extraction.destination_target.value != inferred_destination:
+        logger.warning(
+            "extract_input: overriding hallucinated destination_target %r with text-inferred %r",
+            extraction.destination_target, inferred_destination,
+        )
+        extraction.destination_target = FrameworkEnum(inferred_destination)
+
     # Verification gate: ensure the extracted output contains the absolute minimum requirements
     # (framework targets and source code) to actually perform a translation.
     if is_input_extracted(extraction):
@@ -511,12 +848,22 @@ Conversation:
             )
         msg = [*response["messages"], AIMessage(content="Extraction agent could not extract inputs.")]
     
+    # Merge only NON-NULL extracted fields: a garbage pass (nulled code) must not clobber
+    # previously extracted values, and null merges were what kept the retry loop spinning on
+    # identical inputs.
+    extracted_fields = {
+        k: v
+        for k, v in extraction.model_dump(
+            warnings="error", exclude_unset=True, exclude={"error"}
+        ).items()
+        if v is not None
+    }
     updates = {
         "messages": [
             *msg
         ],
         "extraction_loop_count": state.extraction_loop_count + 1,
-        **extraction.model_dump(warnings="error", exclude_unset=True, exclude={"error"}),
+        **extracted_fields,
     }
     return updates
 
@@ -565,18 +912,18 @@ async def schema_inspection(
                 config,
                 runtime,
                 AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING,
-                temperature=0,
             ),
             tools=db_tools,
-            system_prompt=SYSTEM_PROMPT_SCHEMA_INSPECTOR,
+            system_prompt=eval_cache_bust_header(runtime, config)
+            + SYSTEM_PROMPT_SCHEMA_INSPECTOR.format(system_time=datetime.now(tz=UTC).isoformat()),
             middleware=[
                 ModelRetryMiddleware(),
                 ModelFallbackMiddleware(
                     await get_model(
-                        config, runtime, AvailableModel.EINFRA_AGENTIC, temperature=0
+                        config, runtime, AvailableModel.EINFRA_KIMI_K2_7
                     ),
                     await get_model(
-                        config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0
+                        config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO
                     ),
                     await get_model(config, runtime),
                     # await get_model(
@@ -601,6 +948,8 @@ async def schema_inspection(
                     ]
                 ),
                 # SummarizationMiddleware(model, trigger=("fraction", 0.8)),
+                # Innermost (last): flatten reasoning list-content so re-sent turns don't 400.
+                ReasoningContentSanitizerMiddleware(),
             ],
             # debug=True if os.getenv("DEVELOPMENT") else False,
         )
@@ -673,7 +1022,7 @@ async def translation_agent(
 
     all_tools = TOOLS
 
-    system_prompt = await build_system_prompt(state)
+    system_prompt = eval_cache_bust_header(runtime, config) + await build_system_prompt(state)
 
     # Create the ReAct agent
     agent = create_agent(
@@ -687,12 +1036,12 @@ async def translation_agent(
                 await get_model(
                     config,
                     runtime,
-                    AvailableModel.EINFRA_THINKER,
+                    AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING,
                     temperature=0,
                     reasoning=False,
                 ),
                 await get_model(
-                    config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0
+                    config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO, temperature=0
                 ),
             ),
             ToolRetryMiddleware(),
@@ -710,6 +1059,8 @@ async def translation_agent(
                 ]
             ),
             # SummarizationMiddleware(model, trigger=("fraction", 0.8)),
+            # Innermost (last): flatten reasoning list-content so re-sent turns don't 400.
+            ReasoningContentSanitizerMiddleware(),
         ],
         # debug=True if os.getenv("DEVELOPMENT") else False,
     )
@@ -775,15 +1126,207 @@ Source Code:
     return updates
 
 
+# Verdict/control tokens that must never sit in the model's *generation* context: with a low
+# temperature the model can latch onto them and copy the literal string into a code field (the
+# observed `"translated_schema_code": "REJECTED"` degenerate-output failure). We neutralize them in
+# the distilled feedback so the failure detail is preserved without the attractor token.
+_CONTROL_TOKEN_RE = re.compile(
+    r"\[?\b(?:REJECTED|REJECT|ACCEPTED|ACCEPT|Validation Failed|Structured Output Error)\b\]?",
+    re.IGNORECASE,
+)
+
+
+def _quarantine_control_tokens(text: str) -> str:
+    """Replace bare verdict/control tokens with a neutral description so they can't be copied."""
+    return _CONTROL_TOKEN_RE.sub("(prior verdict)", text)
+
+
+def _distill_translation_feedback(state: State) -> str:
+    """Build a plain-text feedback note for a *regeneration* attempt.
+
+    On the first attempt (`translation_loop_count <= 0`) there is no feedback. On a retry we must
+    NOT replay `state.translation_messages` directly: those carry `AIMessage`s with `tool_calls`
+    for tools (validators, save_*) that are re-bound on each fresh agent, and replaying orphaned
+    tool_calls is rejected by strict sglang/OpenAI-compatible backends. Instead we distill the
+    salient failure signal — the evaluator explanation, the most recent tool outputs, and the
+    query-equivalence diffs — into a single human-readable note.
+
+    Args:
+        state (State): The current graph state.
+
+    Returns:
+        str: A feedback note, or "" if this is the first attempt.
+    """
+    if state.translation_loop_count <= 0:
+        return ""
+
+    diffs = state.query_equivalence_deep_diffs or {}
+    accepted = sorted(set(state.accepted_query_ids or []))
+    failing = sorted(set(diffs.keys()) - set(accepted))
+    fragments = state.translation_query_fragments or {}
+
+    parts: list[str] = [
+        "Your previous translation attempt was rejected. Fix the issues below, then save again."
+    ]
+
+    # Selective-retry guidance (fragment contract): only the failing queries need new saves —
+    # the previous fragments are pre-loaded into your draft state.
+    if accepted and fragments:
+        parts.append(
+            f"\nALREADY ACCEPTED (kept from the previous attempt — do NOT re-save): {accepted}."
+        )
+    if failing and fragments:
+        parts.append(
+            f"\nQUERIES TO FIX (re-save each with save_query_translation): {failing}."
+        )
+
+    if state.explanation_message:
+        parts.append(
+            f"\nEvaluation / failure detail:\n{_quarantine_control_tokens(state.explanation_message)}"
+        )
+
+    # Pull the text content of the last few ToolMessages (compiler/run output) without replaying
+    # any AIMessage tool_calls.
+    recent_tool_texts: list[str] = []
+    for msg in reversed(list(state.translation_messages)):
+        if isinstance(msg, ToolMessage) and msg.content:
+            recent_tool_texts.append(str(msg.content))
+        if len(recent_tool_texts) >= 4:
+            break
+    if recent_tool_texts:
+        parts.append(
+            "\nRecent tool output (most recent last):\n"
+            + _quarantine_control_tokens("\n---\n".join(reversed(recent_tool_texts)))
+        )
+
+    # Focus the diffs (and the previous fragment code) on the failing queries only — replaying
+    # all 15 diffs every loop is what blew the retry context up before.
+    focus_diffs = {qid: diffs[qid] for qid in failing} if failing else diffs
+    if focus_diffs:
+        parts.append(
+            "\nQuery equivalence diffs (source vs target must match):\n"
+            + orjson.dumps(focus_diffs, option=orjson.OPT_INDENT_2).decode("utf-8")
+        )
+    for qid in failing:
+        sides = fragments.get(qid.removeprefix("query")) or {}
+        target_frag = sides.get("target")
+        if target_frag:
+            parts.append(
+                f"\nYour previous TARGET fragment for {qid} (revise this):\n```\n"
+                + _truncate(target_frag, 1500)
+                + "\n```"
+            )
+    return "\n".join(parts)
+
+
+def _expected_query_ids(state: State) -> tuple[int, ...]:
+    """Extract the query ids the translation must cover from the source query code."""
+    return expected_query_ids_from_source(state.source_query_code)
+
+
+_CSHARP_HINTS = ("{ get; set; }", "IQueryable<", "using var ", "void Main(", "namespace ", "SqlConnection")
+_JAVA_HINTS = ("MongoTemplate", "Neo4jTemplate", "Map<String, Object>", "void main(", "@Document", "@Node", "package ")
+
+
+def _classify_fence_language(code: str) -> str | None:
+    """Best-effort C#-vs-Java classification of a code fence (for content harvesting)."""
+    cs = sum(1 for h in _CSHARP_HINTS if h in code)
+    jv = sum(1 for h in _JAVA_HINTS if h in code)
+    if cs > jv and cs > 0:
+        return "csharp"
+    if jv > cs and jv > 0:
+        return "java"
+    return None
+
+
+def _harvest_bodies_from_messages(messages: Sequence[BaseMessage]) -> dict[str, str]:
+    """Recover monolithic draft bodies from the agent's own final prose (F2 recovery path).
+
+    Observed failure: after a rejection, the agent emits the full corrected harness as plain
+    fenced content instead of calling save_translation — previously the run died with the answer
+    sitting in the last message. Scan the trailing AI messages for code fences and classify the
+    largest C# fence as the source body and the largest Java fence as the target body.
+    """
+    best: dict[str, str] = {}
+    for msg in reversed(list(messages)[-6:]):
+        if not isinstance(msg, AIMessage):
+            continue
+        text = get_message_text(msg)
+        for fence in _extract_code_fences(text):
+            lang = _classify_fence_language(fence)
+            if lang == "csharp" and len(fence) > len(best.get("source_validation_body", "")):
+                best["source_validation_body"] = fence.strip()
+            elif lang == "java" and len(fence) > len(best.get("target_validation_body", "")):
+                best["target_validation_body"] = fence.strip()
+    # Only trust substantial fences — a 200-char snippet is not a harness body.
+    return {k: v for k, v in best.items() if len(v) > 800}
+
+
+async def _forced_tool_call(
+    model: Any, tool_: Any, messages: list[BaseMessage], tool_name: str
+) -> dict[str, Any] | None:
+    """Force one tool call, robust to the e-INFRA sglang `tool_choice` lottery.
+
+    The previous implementation used `tool_choice="any"`, which some sglang replicas reject with a
+    400 (`Input should be 'auto', 'required' or 'none'`) — the error was swallowed and the whole
+    run died. Try the OpenAI-standard "required" (twice: the failure is per-replica roulette),
+    then fall back to "auto" plus an explicit instruction.
+    """
+    for attempt, tool_choice in enumerate(("required", "required", "auto")):
+        try:
+            if tool_choice == "auto":
+                bound = model.bind_tools([tool_])
+                msgs = [
+                    *messages,
+                    HumanMessage(
+                        content=(
+                            f"You MUST call the `{tool_name}` tool now with the completed "
+                            "arguments. Do not answer in prose."
+                        )
+                    ),
+                ]
+            else:
+                bound = model.bind_tools([tool_], tool_choice=tool_choice)
+                msgs = messages
+            resp = await bound.ainvoke(msgs)
+            invalid = getattr(resp, "invalid_tool_calls", None) or []
+            if invalid:
+                logger.warning(
+                    "_forced_tool_call(%s): attempt %d returned %d invalid tool calls",
+                    tool_name, attempt + 1, len(invalid),
+                )
+            for call in getattr(resp, "tool_calls", None) or []:
+                if call.get("name") == tool_name and call.get("args"):
+                    return call["args"]
+            logger.warning(
+                "_forced_tool_call(%s): attempt %d (tool_choice=%s) returned no matching tool call",
+                tool_name, attempt + 1, tool_choice,
+            )
+        except Exception:
+            logger.warning(
+                "_forced_tool_call(%s): attempt %d (tool_choice=%s) raised",
+                tool_name, attempt + 1, tool_choice,
+                exc_info=True,
+            )
+    return None
+
+
 async def generate_translation_node(
     state: State, config: RunnableConfig, runtime: Runtime[Context]
 ) -> dict[str, Any]:
-    """Deterministically generate the translation using structured LLM output via a React Agent without tools.
+    """Generate the translation with a tool-using ReAct agent that saves artifacts to state.
 
-    This node acts as the core "Generation" step in the iterative translation loop.
-    It takes the extracted source code, the schema context, and the previous translation
-    attempts/feedback (if any) and generates the translated code and execution harnesses
-    using a strongly-typed Pydantic model (`TranslationOutput`).
+    This node is the core "Generation" step of the iterative translation loop. Rather than asking
+    the model for one giant strict-JSON structured blob (which the new e-INFRA sglang models do not
+    honor), it runs a ReAct agent with *every* tool at its disposal — research (docs/web), database
+    inspection (MCP), sandbox execution + validators, and a set of gated `save_*` tools. The agent
+    persists each translation artifact individually by calling the corresponding `save_*` tool
+    *during* its run; those writes land on `TranslationDraftState` channels (declared by
+    `TranslationDraftMiddleware`) and are harvested back into the graph `State` here.
+
+    No structured output is requested. If the agent finishes without saving every required artifact,
+    the node surfaces a `[Structured Output Error]`-marked message so `route_post_translation`
+    diverts to `human_intervention_node` instead of pushing empty code into validation.
 
     Args:
         state (State): The current state of the graph.
@@ -791,78 +1334,426 @@ async def generate_translation_node(
         runtime (Runtime[Context]): The execution runtime containing context.
 
     Returns:
-        dict[str, Any]: State updates containing the generated translation outputs.
+        dict[str, Any]: State updates with the harvested translation artifacts (or a surfaced
+        failure).
     """
-    TranslationOutput = await _create_translation_output_model(state)
+    translation_type = state.translation_type or TranslationType.BOTH
 
-    model = await get_model(config, runtime, temperature=0)
-
-    system_prompt = await build_system_prompt(state)
-
-    message = f"""Translate the following Source Code ({"schema/query" if state.translation_type and state.translation_type.value == TranslationType.BOTH else (state.translation_type.value if state.translation_type else "schema")}) from {state.source_target.value if state.source_target else "Unknown"}{f" {state.source_target_version}" if state.source_target_version else ""} to {state.destination_target.value if state.destination_target else "Unknown"}{f" {state.destination_target_version}" if state.destination_target_version else ""}.
-{f"\nDatabase Schema Context:\n{state.schema_context}\n" if state.schema_context else ""}---
-Source Code:
-{f"<source_schema_code>\n{state.source_schema_code}\n</source_schema_code>" if state.source_schema_code else ""}{f"\n<source_query_code>\n{state.source_query_code}\n</source_query_code>" if state.source_query_code else ""}
-"""
-
-    agent = create_agent(
-        model,
-        response_format=ProviderStrategy(TranslationOutput, strict=True),
-        system_prompt=system_prompt,
-        middleware=[
-            ModelRetryMiddleware(),
-            ModelFallbackMiddleware(
-                await get_model(
-                    config, runtime, AvailableModel.EINFRA_THINKER, temperature=0
-                ),
-                await get_model(
-                    config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B, temperature=0
-                ),
-            ),
-            ToolRetryMiddleware(),
-        ],
+    is_schema = translation_type == TranslationType.SCHEMA
+    source_fw = state.source_target
+    target_fw = state.destination_target
+    assert source_fw is not None and target_fw is not None, (
+        "source_target/destination_target must be set before translation generation."
     )
 
-    # Invoke the agent
-    response = await agent.ainvoke(
-        {
-            "messages": [*state.translation_messages]
-            if len(state.translation_messages) > 0
-            else [HumanMessage(content=message)]
-        }
+    # Entrypoint class names are deterministic (from the snippet mapping), so they are no longer the
+    # model's responsibility — we bake them into the save-tool guidance and the assembled output.
+    source_entry = (await get_snippet_content(source_fw, is_schema=is_schema))["entry_type_name"]
+    target_entry = (await get_snippet_content(target_fw, is_schema=is_schema))["entry_type_name"]
+
+    _override = runtime.context.translation_model_override
+    translation_model = (
+        AvailableModel(_override) if _override else AvailableModel.EINFRA_KIMI_K2_7
     )
+    model = await get_model(
+        config,
+        runtime,
+        model_name_override=translation_model,
+    )
+
+    system_prompt = eval_cache_bust_header(runtime, config) + await build_system_prompt(state)
+
+    message = build_translation_user_message(state)
+
+    # The fragment contract (per-query saves + generated entrypoint) applies to the agentic
+    # .NET→Java query flow. The single-pass baseline and SCHEMA-only translations keep the
+    # monolithic save_translation contract.
+    expected_ids = _expected_query_ids(state)
+    fragment_mode = (
+        not state.single_pass
+        and not is_schema
+        and source_fw.value in {f.value for f in DotnetFramework}
+        and target_fw.value in {f.value for f in JavaFramework}
+    )
+
+    save_tool = build_save_translation_tool(translation_type, source_entry, target_entry)
+    # Both the source (.NET) and target (Java) framework skills (imports/APIs + how to read the
+    # source / author its harness fragment) are injected IN FULL into the system prompt by
+    # `build_system_prompt` — they are not optional, and the on-demand `read_skill_reference` tool
+    # they used to sit behind was routinely skipped by the model.
+
+    # Research-only tool surface: documentation (MCP) + web search, plus the state-writing save
+    # tools and (fragment mode) the budgeted in-agent validate_draft preflight. Database
+    # inspection MCP is deliberately excluded here — the DB schema was already inspected by
+    # `schema_inspection` (carried in `state.schema_context`), and re-exposing those tools tempts
+    # the agent into long inspection loops that exhaust its step budget before it saves.
+    # Fresh prompt every attempt; on retries append distilled text feedback rather than
+    # replaying translation_messages (which carry orphaned tool_calls).
+    input_messages: list[BaseMessage] = [HumanMessage(content=message)]
+    feedback = _distill_translation_feedback(state)
+    if feedback:
+        input_messages.append(HumanMessage(content=feedback))
+
+    if state.single_pass:
+        # Baseline (evaluation) arm: skip the ReAct research agent and docs MCP entirely. The
+        # single-shot generation is the system prompt + human prompt straight into the model with
+        # only the save tool — performed by the shared forced-call path below, which an empty
+        # response triggers (every required field becomes "missing" → exactly one direct
+        # save_translation call). This is the apples-to-apples lower bound for the agentic loop.
+        response: dict[str, Any] = {}
+    else:
+        async with (
+            load_docs_mcp_tools() as docs_tools,
+        ):
+            if fragment_mode:
+                schema_save_tool = build_save_schema_tool(
+                    SCHEMA_FRAGMENT_HINTS[source_fw], SCHEMA_FRAGMENT_HINTS[target_fw]
+                )
+                query_save_tool = build_save_query_tool(
+                    expected_ids,
+                    FRAGMENT_SIGNATURES[source_fw],
+                    FRAGMENT_SIGNATURES[target_fw],
+                )
+                save_tools: list[Any] = [schema_save_tool, query_save_tool]
+                # The preflight compiles/runs in the real sandboxes, so it needs the OUTER
+                # graph's context/state/config — the inner agent's ToolRuntime has none of them.
+                draft_validate_tool = build_validate_draft_tool(
+                    source_fw,
+                    target_fw,
+                    expected_ids,
+                    graph_state=state,
+                    graph_context=runtime.context,
+                    graph_config=config,
+                    stream_writer=runtime.stream_writer,
+                )
+                if draft_validate_tool is not None:
+                    save_tools.append(draft_validate_tool)
+            else:
+                save_tools = [save_tool]
+            research_tools = [search, *docs_tools, *save_tools]
+            agent = create_agent(
+                model,
+                tools=research_tools,
+                system_prompt=system_prompt,
+                store=runtime.store,
+                middleware=[
+                    # Declares TranslationDraftState so the save tools'
+                    # Command(update=...) writes are valid and survive into the agent's state.
+                    TranslationDraftMiddleware(),
+                    # Convergence guard: nudges a no-tool-call stop back to the save tools and
+                    # shrinks the tool surface to save-only once the research budget is spent
+                    # (the 2026-07-01 doom-loop / rumination failure modes).
+                    TranslationConvergenceMiddleware(
+                        expected_query_ids=expected_ids,
+                        monolithic=not fragment_mode,
+                    ),
+                    # Context relief WITHOUT summarization. The 2026-07-08 traces showed
+                    # SummarizationMiddleware firing mid-research and degrading to the literal
+                    # placeholder "Previous conversation was too long to summarize." (its 4000-token
+                    # trim window, start_on="human", finds no human message behind the huge search/
+                    # reasoning turns) — and its keep-window then DISCARDED the original task
+                    # message, so the agent lost the source code and correctly refused to fabricate
+                    # (all three neo4j pairs died this way). ClearToolUsesEdit instead stubs the
+                    # OLDEST research ToolMessage contents in place: the task HumanMessage is
+                    # untouchable, AI/Tool pairing is preserved, and the save/validate results the
+                    # convergence loop depends on are excluded.
+                    ContextEditingMiddleware(
+                        edits=[
+                            ClearToolUsesEdit(
+                                trigger=50_000,
+                                clear_at_least=8_000,
+                                keep=4,
+                                exclude_tools=(
+                                    "save_translation",
+                                    "save_schema_translation",
+                                    "save_query_translation",
+                                    "validate_draft",
+                                ),
+                            )
+                        ],
+                    ),
+                    ModelFallbackMiddleware(
+                        await get_model(
+                            config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING
+                        ),
+                        await get_model(
+                            config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO
+                        ),
+                    ),
+                    ToolRetryMiddleware(),
+                    # Innermost (last): flatten reasoning list-content so re-sent turns don't 400.
+                    # Critical here — this agent runs the reasoning models (thinker / qwen3.5).
+                    ReasoningContentSanitizerMiddleware(),
+                ],
+            )
+
+            # Selective retry: pre-seed the agent state with the fragments from the previous
+            # loop so already-correct queries survive and the feedback can say "fix only these".
+            agent_input: dict[str, Any] = {"messages": input_messages}
+            if fragment_mode and state.translation_query_fragments:
+                agent_input["draft_queries"] = state.translation_query_fragments
+            if fragment_mode and state.translation_schema_bodies:
+                agent_input["draft_source_schema"] = state.translation_schema_bodies.get(
+                    "source", ""
+                )
+                agent_input["draft_target_schema"] = state.translation_schema_bodies.get(
+                    "target", ""
+                )
+
+            try:
+                # Scale the step budget with the workload: a model that saves one fragment per
+                # turn burns ~2 super-steps per query, so the 40-query bundled variant (xl)
+                # exhausts a flat 100 before research/validation. 100 is kept as the floor so
+                # the small/batch variants behave exactly as before.
+                recursion_limit = max(100, 3 * len(expected_ids) + 40)
+                response = await agent.ainvoke(
+                    agent_input, {"recursion_limit": recursion_limit}
+                )  # type: ignore
+            except GraphRecursionError:
+                # The inner ReAct loop ran out of steps (2026-07-03 traces: 14/18 runs died
+                # this way and produced NOTHING). Degrade to the forced-completion path below
+                # instead of failing the whole pipeline run: with an empty response every
+                # missing fragment is force-saved by one small direct call each.
+                logger.warning(
+                    "generate_translation_node: inner agent hit its recursion limit; "
+                    "falling back to forced fragment completion."
+                )
+                # Keep the pre-seeded draft channels (fragments accepted/saved in earlier
+                # loops) so the forced path only fills the genuinely missing pieces.
+                response = {k: v for k, v in agent_input.items() if k != "messages"}
 
     updates: dict[str, Any] = {
         "translation_loop_count": state.translation_loop_count + 1,
     }
 
-    if "structured_response" not in response:
-        logger.error("LLM did not return TranslationOutput properly.")
-        messages = [
-            *response["messages"],
-            AIMessage(
-                content="Failed to generate translation. LLM did not return structured response in expected format."
-            ),
+    forced_model = await get_model(
+        config,
+        runtime,
+        model_name_override=translation_model,
+        temperature=0,
+    )
+
+    if fragment_mode:
+        # ---- Fragment contract: harvest schema + per-query fragments from the agent state.
+        schema_bodies = {
+            "source": response.get("draft_source_schema") or "",
+            "target": response.get("draft_target_schema") or "",
+        }
+        fragments: dict[str, dict[str, str]] = dict(response.get("draft_queries") or {})
+
+        # Forced completion of missing pieces, one small call per piece (F2). Small outputs are
+        # exactly what makes the forced path reliable — the monolithic forced call was the thing
+        # that kept truncating/400-ing.
+        if not schema_bodies["source"] or not schema_bodies["target"]:
+            logger.warning("generate_translation_node: schema fragment missing; forcing save_schema_translation")
+            schema_save_tool = build_save_schema_tool(
+                SCHEMA_FRAGMENT_HINTS[source_fw], SCHEMA_FRAGMENT_HINTS[target_fw]
+            )
+            args = await _forced_tool_call(
+                forced_model, schema_save_tool, [SystemMessage(content=system_prompt), *input_messages],
+                "save_schema_translation",
+            )
+            if args:
+                schema_bodies["source"] = args.get("source_schema_body") or schema_bodies["source"]
+                schema_bodies["target"] = args.get("target_schema_body") or schema_bodies["target"]
+
+        absent_ids = [
+            qid
+            for qid in expected_ids
+            if not (fragments.get(str(qid)) or {}).get("source")
+            or not (fragments.get(str(qid)) or {}).get("target")
         ]
-        raise Exception("\n".join([str(msg.content) for msg in messages]))
-        # updates["messages"] = messages
-        # updates["translation_messages"] = messages
-        # return updates
+        # Cap forced per-query completions: a handful is a recovery, dozens means the agent run
+        # fundamentally failed and the outer retry loop should take over instead.
+        _MAX_FORCED_QUERY_CALLS = 5
+        if absent_ids and len(absent_ids) <= _MAX_FORCED_QUERY_CALLS:
+            query_save_tool = build_save_query_tool(
+                expected_ids, FRAGMENT_SIGNATURES[source_fw], FRAGMENT_SIGNATURES[target_fw]
+            )
+            for qid in absent_ids:
+                logger.warning(
+                    "generate_translation_node: query %d fragment missing; forcing save_query_translation",
+                    qid,
+                )
+                args = await _forced_tool_call(
+                    forced_model,
+                    query_save_tool,
+                    [
+                        SystemMessage(content=system_prompt),
+                        *input_messages,
+                        HumanMessage(
+                            content=(
+                                f"Provide ONLY the fragment for Query{qid} now via "
+                                "save_query_translation (both sides)."
+                            )
+                        ),
+                    ],
+                    "save_query_translation",
+                )
+                if args and args.get("source_query_body") and args.get("target_query_body"):
+                    fragments[str(qid)] = {
+                        "source": args["source_query_body"],
+                        "target": args["target_query_body"],
+                    }
 
-    output = response["structured_response"]
-    updates.update(output.model_dump(warnings="error", exclude_unset=True))
+        missing = missing_fragment_pieces(
+            {
+                "draft_source_schema": schema_bodies["source"],
+                "draft_target_schema": schema_bodies["target"],
+                "draft_queries": fragments,
+            },
+            expected_ids,
+        )
+        if missing:
+            logger.error(
+                "generate_translation_node: fragment draft incomplete after forced completion: %s",
+                missing,
+            )
+            detail = (
+                f"{StructuredOutputRetryMiddleware.ERROR_PREFIX} The translation agent finished "
+                f"without saving: {'; '.join(missing)}. Save the schema fragment and one fragment "
+                "per required query id before finishing."
+            )
+            failure_message = AIMessage(content=detail)
+            updates["messages"] = [failure_message]
+            updates["translation_messages"] = [failure_message]
+            updates["explanation_message"] = detail
+            # Persist whatever WAS saved so the next loop can pre-seed instead of starting over.
+            if any(schema_bodies.values()):
+                updates["translation_schema_bodies"] = schema_bodies
+            if fragments:
+                updates["translation_query_fragments"] = fragments
+            return updates
 
-    msg = [*response["messages"][:-1],
-           AIMessage(content=f"""Translation generated successfully. Here's the translated code:
-                    
-```json
-{orjson.dumps(output.model_dump(mode="json", exclude_unset=False), option=orjson.OPT_INDENT_2).decode('utf-8')}
-```
-""")]
-    updates["messages"] = msg
-    updates["translation_messages"] = msg
+        source_code, source_entry_name = await assemble_query_harness(
+            source_fw,
+            schema_bodies["source"],
+            {qid: fragments[str(qid)]["source"] for qid in expected_ids},
+        )
+        target_code, target_entry_name = await assemble_query_harness(
+            target_fw,
+            schema_bodies["target"],
+            {qid: fragments[str(qid)]["target"] for qid in expected_ids},
+        )
+        updates["translation_schema_bodies"] = schema_bodies
+        updates["translation_query_fragments"] = fragments
+        saved_summary: dict[str, Any] = {
+            "contract": "per-query fragments",
+            "queries_saved": sorted(int(k) for k in fragments),
+            "source_validation_entry_type_name": source_entry_name,
+            "target_validation_entry_type_name": target_entry_name,
+        }
+    else:
+        # ---- Monolithic contract (single-pass baseline / SCHEMA translations / non-.NET→Java).
+        required = required_draft_fields(translation_type)
+        draft = {f: response.get(f) for f in required if response.get(f)}
+        missing = [f for f in required if not draft.get(f)]
+
+        if missing and not state.single_pass:
+            # F2 recovery #1 (free): the agent may have emitted the full harness bodies as plain
+            # fenced content instead of calling save_translation — harvest them.
+            harvested = _harvest_bodies_from_messages(response.get("messages") or [])
+            recovered = {f: harvested[f] for f in missing if f in harvested}
+            if recovered:
+                logger.warning(
+                    "generate_translation_node: recovered %s from the agent's final message content",
+                    list(recovered),
+                )
+                draft.update(recovered)
+                missing = [f for f in required if not draft.get(f)]
+
+        if missing:
+            # F2 recovery #2: one forced save_translation call. `_forced_tool_call` handles the
+            # e-INFRA tool_choice quirks ("any" 400s on some replicas) with fallbacks.
+            if state.single_pass:
+                logger.info("generate_translation_node: single-pass baseline — one forced save_translation call")
+            else:
+                logger.warning(
+                    "generate_translation_node: agent finished without %s; forcing save_translation",
+                    missing,
+                )
+            args = await _forced_tool_call(
+                forced_model,
+                save_tool,
+                [SystemMessage(content=system_prompt), *input_messages],
+                "save_translation",
+            )
+            if args:
+                draft.update({f: args.get(f) for f in required if args.get(f)})
+            missing = [f for f in required if not draft.get(f)]
+
+        if missing:
+            # The agent finished without persisting every required field. Surface the failure as a
+            # normal assistant message so it renders in chat and `route_post_translation` diverts to
+            # human intervention (it keys on the ERROR_PREFIX marker).
+            logger.error(
+                "generate_translation_node: missing required draft fields after run: %s",
+                missing,
+            )
+            detail = (
+                f"{StructuredOutputRetryMiddleware.ERROR_PREFIX} The translation agent finished without "
+                f"providing the required field(s): {', '.join(missing)}. Call save_translation once "
+                f"with every required field filled before finishing."
+            )
+            failure_message = AIMessage(content=detail)
+            updates["messages"] = [failure_message]
+            updates["translation_messages"] = [failure_message]
+            updates["explanation_message"] = detail
+            return updates
+
+        # NOTE: generation no longer produces the clean, user-facing translated_schema_code /
+        # translated_query_code. Those are derived post-acceptance by `finalize_translation_node` from
+        # the VALIDATED harness, so the published answer is always a projection of code that compiled,
+        # ran, and passed equivalence (and is stable enough to serve as a CodeBleu baseline).
+
+        # Deterministically assemble the runnable validation code: inject the canonical, byte-stable
+        # prelude (imports + serializer + runtime support + template factory) around the model-authored
+        # body. Entry-type names come from the snippet mapping, not the model.
+        source_code, source_entry_name = await assemble_validation_code(
+            source_fw, draft["source_validation_body"] or "", is_schema=is_schema
+        )
+        target_code, target_entry_name = await assemble_validation_code(
+            target_fw, draft["target_validation_body"] or "", is_schema=is_schema
+        )
+        saved_summary = {
+            "contract": "monolithic bodies",
+            "source_validation_entry_type_name": source_entry_name,
+            "target_validation_entry_type_name": target_entry_name,
+            "source_validation_body_chars": len(draft["source_validation_body"] or ""),
+            "target_validation_body_chars": len(draft["target_validation_body"] or ""),
+        }
+
+    if is_schema:
+        updates["source_validation_schema_code"] = source_code
+        updates["target_validation_schema_code"] = target_code
+    else:
+        updates["source_validation_harness_code"] = source_code
+        updates["target_validation_harness_code"] = target_code
+    updates["source_validation_entry_type_name"] = source_entry_name
+    updates["target_validation_entry_type_name"] = target_entry_name
+
+    summary_message = AIMessage(
+        content=(
+            "Translation generated successfully. Assembled runnable validation harnesses from the "
+            "model-authored bodies + canonical prelude. Draft:\n```json\n"
+            + orjson.dumps(
+                {k: v for k, v in saved_summary.items() if v is not None},
+                option=orjson.OPT_INDENT_2,
+            ).decode("utf-8")
+            + "\n```"
+        )
+    )
+    updates["messages"] = [summary_message]
+    updates["translation_messages"] = [summary_message]
 
     return updates
+
+
+def _truncate(value: Any, limit: int = 2000) -> Any:
+    """Truncate long string values for inclusion in a chat summary message."""
+    if isinstance(value, str) and len(value) > limit:
+        return value[:limit] + " …[truncated]"
+    return value
 
 
 class HumanInterventionResponse(BaseModel):
@@ -877,7 +1768,9 @@ class HumanInterventionResponse(BaseModel):
     feedback: str
 
 
-async def human_intervention_node(state: State):
+async def human_intervention_node(
+    state: State,
+) -> Command[Literal["generate_translation_node", "finalize_translation_node"]]:
     """Pause the graph execution to request human-in-the-loop (HITL) feedback.
 
     This node interrupts the state machine, surfacing the current translation code and validation
@@ -892,12 +1785,17 @@ async def human_intervention_node(state: State):
         dict[str, Any] | Command: State updates appending the user's feedback to messages,
         or a Command to end the graph if accepted.
     """
+    # The clean translated_*_code is only produced post-acceptance by finalize_translation_node, so
+    # at this (pre-finalize) point it is still None. Surface what actually exists for review: the
+    # validated/assembled harness + schema code and the evaluation explanation.
     response = interrupt(
         {
             "instruction": "Review the current state, generated translation and validation results. Decide if the translation is correct or if another translation attempt is needed and provide feedback on what needs to be improved in the next attempt.",
             "state": {
-                "translated_query_code": state.translated_query_code,
-                "translated_schema_code": state.translated_schema_code,
+                "source_validation_schema_code": state.source_validation_schema_code,
+                "target_validation_schema_code": state.target_validation_schema_code,
+                "source_validation_harness_code": state.source_validation_harness_code,
+                "target_validation_harness_code": state.target_validation_harness_code,
                 "explanation_message": state.explanation_message,
                 "query_equivalence_deep_diffs": state.query_equivalence_deep_diffs,
             },
@@ -905,6 +1803,9 @@ async def human_intervention_node(state: State):
     )
     output = HumanInterventionResponse.model_validate(response)
 
+    # Both branches route explicitly via Command(goto=...). There is no static outgoing edge for this
+    # node (see graph wiring) — a static edge would co-fire with these Commands and, on accept, wrongly
+    # re-run generation alongside finalize.
     if output.decision == "reject":
         if output.feedback:
             feedback_message = HumanMessage(
@@ -914,10 +1815,13 @@ async def human_intervention_node(state: State):
             feedback_message = HumanMessage(
                 content="User rejected the translation without providing feedback."
             )
-        return {
-            "messages": feedback_message,
-            "translation_messages": feedback_message,
-        }
+        return Command(
+            update={
+                "messages": feedback_message,
+                "translation_messages": feedback_message,
+            },
+            goto="generate_translation_node",
+        )
     else:
         feedback_message = HumanMessage(content="Translation was accepted.")
         return Command(
@@ -925,7 +1829,7 @@ async def human_intervention_node(state: State):
                 "messages": feedback_message,
                 "translation_messages": feedback_message,
             },
-            goto=END,
+            goto="finalize_translation_node",
         )
 
 
@@ -1001,10 +1905,7 @@ def prep_query_validation(state: State) -> dict[str, Any]:
     assert state.source_target is not None and state.destination_target is not None
 
     # Source validation
-    if state.source_target in [
-        FrameworkEnum.DOTNET_EFCORE,
-        FrameworkEnum.DOTNET_DAPPER,
-    ]:
+    if state.source_target in DotnetFramework:
         tool_calls.append(
             {
                 "name": "validate_dotnet_code",
@@ -1016,10 +1917,7 @@ def prep_query_validation(state: State) -> dict[str, Any]:
                 "type": "tool_call",
             }
         )
-    elif state.source_target in [
-        FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
-        FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
-    ]:
+    elif state.source_target in JavaFramework:
         tool_calls.append(
             {
                 "name": "validate_java_code",
@@ -1035,10 +1933,7 @@ def prep_query_validation(state: State) -> dict[str, Any]:
         )
 
     # Target validation
-    if state.destination_target in [
-        FrameworkEnum.DOTNET_EFCORE,
-        FrameworkEnum.DOTNET_DAPPER,
-    ]:
+    if state.destination_target in DotnetFramework:
         tool_calls.append(
             {
                 "name": "validate_dotnet_code",
@@ -1050,10 +1945,7 @@ def prep_query_validation(state: State) -> dict[str, Any]:
                 "type": "tool_call",
             }
         )
-    elif state.destination_target in [
-        FrameworkEnum.JAVA_SPRING_DATA_MONGODB,
-        FrameworkEnum.JAVA_SPRING_DATA_NEO4J,
-    ]:
+    elif state.destination_target in JavaFramework:
         tool_calls.append(
             {
                 "name": "validate_java_code",
@@ -1255,18 +2147,80 @@ def route_post_query_validation(
     return "evaluation_node"
 
 
+class QueryVerdict(BaseModel):
+    """Per-query judge verdict for the undecided queries (non-Equivalent statuses).
+
+    Attributes:
+        query_id: The query key exactly as it appears in the equivalence results (e.g. "query7").
+        verdict: "pass" when the translation is semantically acceptable despite the reported
+            diff (e.g. an intended relational→document shape change); "fail" otherwise.
+        reason: One-sentence justification.
+    """
+
+    query_id: str = Field(description='Query key, e.g. "query7".')
+    verdict: Literal["pass", "fail"] = Field(
+        description="pass = acceptable translation despite the diff; fail = must be fixed."
+    )
+    reason: str = Field(description="One-sentence justification.", min_length=1)
+
+
 class EvaluationOutput(BaseModel):
     """Pydantic model representing the LLM evaluation outcome for translation acceptance.
 
     Attributes:
         decision: The logical decision, either ACCEPT to complete the process or REJECT to loop back for correction.
         explanation: Detailed textual reasoning explaining the decision, citing specific equivalence or compiler errors.
+        query_verdicts: Per-query pass/fail calls for every query listed as UNDECIDED in the
+            prompt (empty when there are none, e.g. schema-only translations or compile failures).
     """
 
     decision: Literal["ACCEPT", "REJECT"] = Field(
         description="Decision whether to accept or reject the translation."
     )
     explanation: str = Field(description="Explanation for the decision.", min_length=1)
+    query_verdicts: list[QueryVerdict] = Field(
+        description=(
+            "A verdict for EVERY query listed as UNDECIDED in the prompt. Empty list when no "
+            "queries were listed."
+        ),
+    )
+
+
+def _partition_query_statuses(
+    diffs: dict[str, Any],
+    previously_accepted: set[str],
+    previously_judge: set[str],
+) -> tuple[set[str], set[str], list[str], list[str]]:
+    """Split the fresh per-query equivalence statuses into the evaluation-node decision sets.
+
+    Judge acceptance is sticky: an accepted shape change keeps reporting "Differences Found"
+    every loop by construction, so re-judging it only burns tokens and risks flip-flops.
+    DETERMINISTIC acceptance is not sticky: a query that verified in an earlier loop but no
+    longer does was broken by a later revision (run 20260709-150203 nhib-neo4j shipped a
+    loop-2 id-leak on query13/14 as "accepted") — it re-enters the undecided set.
+
+    Args:
+        diffs: Fresh per-query equivalence results (`{query_id: {"status": ...}}`).
+        previously_accepted: `accepted_query_ids` from the previous loop.
+        previously_judge: `judge_accepted_query_ids` from the previous loop.
+
+    Returns:
+        tuple: ``(det_pass, sticky_judge, regressed, undecided)`` — deterministically
+        equivalent now; judge-accepted earlier (stays accepted); accepted deterministically
+        earlier but no longer verifying (flagged to the judge as regressions); all queries
+        needing a judge verdict this loop (includes the regressed ones).
+    """
+    det_pass = {
+        qid
+        for qid, entry in diffs.items()
+        if isinstance(entry, dict) and dict(entry).get("status") == "Equivalent"
+    }
+    sticky_judge = previously_judge & set(diffs.keys())
+    regressed = sorted(
+        (previously_accepted & set(diffs.keys())) - previously_judge - det_pass
+    )
+    undecided = sorted(set(diffs.keys()) - det_pass - sticky_judge)
+    return det_pass, sticky_judge, regressed, undecided
 
 
 async def evaluation_node(
@@ -1287,30 +2241,72 @@ async def evaluation_node(
     Returns:
         dict[str, Any]: State updates containing the evaluation decision and explanation.
     """
-    model = await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_6)
+    model = await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING)
 
-    last_msgs = [str(msg) for msg in state.translation_messages[-4:]]
+    # compact_build_log: a raw validation ToolMessage once inflated this prompt to 1.5 MB of
+    # dotnet-restore noise (nhib-neo4j, run 20260708-234928). The validators compact at source
+    # now; this guards any other oversized message that lands in the window.
+    last_msgs = [compact_build_log(str(msg)) for msg in state.translation_messages[-4:]]
 
-    prompt = f"""Evaluate the following validation results for a schema/query translation.
+    # ---- Deterministic per-query pre-pass. The (now trustworthy) equivalence statuses decide
+    # most queries without burning judge tokens; the judge only rules on the undecided ones
+    # (Differences Found — is the shape change acceptable? — and Execution Errors).
+    diffs = state.query_equivalence_deep_diffs or {}
+    previously_accepted = set(state.accepted_query_ids or [])
+    previously_judge = set(state.judge_accepted_query_ids or [])
+    det_pass, sticky_judge, regressed, undecided = _partition_query_statuses(
+        diffs, previously_accepted, previously_judge
+    )
+
+    undecided_section = ""
+    if undecided:
+        undecided_details = {qid: diffs[qid] for qid in undecided}
+        regressed_note = (
+            f"\nREGRESSED queries {regressed}: these verified as Equivalent in an earlier loop "
+            'and stopped verifying after the latest revision — vote "fail" unless the current '
+            "diff is genuinely acceptable, and name what regressed.\n"
+            if regressed
+            else ""
+        )
+        undecided_section = f"""
+Already accepted (do NOT re-judge, do NOT mention): {sorted(det_pass | sticky_judge)}.
+{regressed_note}
+UNDECIDED queries — give a per-query verdict for EACH of {undecided} in `query_verdicts`:
+- "pass" if the reported difference is an acceptable consequence of the paradigm translation
+  (e.g. intended relational→document/graph shape change) and the target query is semantically
+  faithful to the source.
+- "fail" if the target must be fixed. A target-side execution error is always "fail".
+- A target-side null where the source has a value is NOT an acceptable paradigm consequence
+  when the value is reachable in the target store (e.g. recoverable via relationship
+  traversal) — vote "fail" so the translation recovers it or synchronizes the projection.
+
+<undecided_query_diffs>
+{orjson.dumps(undecided_details, option=orjson.OPT_INDENT_2).decode("utf-8")}
+</undecided_query_diffs>
+"""
+
+    prompt = eval_cache_bust_header(runtime, config) + f"""Evaluate the following validation results for a schema/query translation.
 Based on the validation output and DeepDiff equivalence results, decide if the translation is ACCEPTABLE or if it should be REJECTED and retried.
 
 <validation_results>
 {"\n".join(last_msgs)}
 </validation_results>
-
+{undecided_section}
 Is the translation logically equivalent and syntactically valid? Provide your reasoning and output ACCEPT or REJECT.
 """
     agent = create_agent(
         model,
         response_format=ProviderStrategy(EvaluationOutput, strict=True),
+        tools=None,
         middleware=[
             ModelRetryMiddleware(),
             ModelFallbackMiddleware(
-                await get_model(config, runtime, AvailableModel.EINFRA_THINKER),
-                await get_model(config, runtime, AvailableModel.OLLAMA_QWEN3_6_27B),
+                await get_model(config, runtime, AvailableModel.EINFRA_KIMI_K2_7),
+                await get_model(config, runtime, AvailableModel.EINFRA_DEEPSEEK_V4_PRO),
                 await get_model(config, runtime)
             ),
-            ToolRetryMiddleware(),
+            # Innermost (last): flatten reasoning list-content so re-sent turns don't 400.
+            ReasoningContentSanitizerMiddleware(),
         ],
     )
 
@@ -1332,47 +2328,303 @@ Is the translation logically equivalent and syntactically valid? Provide your re
     assert state.translation_type is not None and state.destination_target is not None
     output: EvaluationOutput = response["structured_response"]
     messages = cast(list[BaseMessage], response.get("messages"))[:-1] if response and response.get("messages") else []
-    if (output.decision == "ACCEPT"):
-        markdown_lang = FRAMEWORK_TO_LANGUAGE_TYPE[state.destination_target].value
+
+    # ---- Combine: deterministic passes + judge passes → accepted set; compute the decision
+    # from the per-query outcome when equivalence data exists (the judge's overall decision is
+    # advisory there); fall back to the judge's decision when it doesn't (compile failures,
+    # schema-only translations).
+    judge_pass = {
+        v.query_id for v in output.query_verdicts if v.verdict == "pass" and v.query_id in diffs
+    }
+    judge_fail_reasons = {
+        v.query_id: v.reason for v in output.query_verdicts if v.verdict == "fail"
+    }
+    accepted = sorted(det_pass | sticky_judge | judge_pass)
+    judge_accepted = sorted((sticky_judge | judge_pass) - det_pass)
+    verdicts: dict[str, str] = {}
+    for qid in diffs.keys():
+        if qid in det_pass:
+            verdicts[qid] = "pass (deterministic: Equivalent)"
+        elif qid in judge_pass:
+            verdicts[qid] = "pass (judge)"
+        elif qid in sticky_judge:
+            verdicts[qid] = "pass (judge, earlier loop)"
+        else:
+            verdicts[qid] = f"fail: {judge_fail_reasons.get(qid, 'not passed by the judge')}"
+    failing = sorted(set(diffs.keys()) - set(accepted))
+
+    if diffs:
+        decision = "ACCEPT" if not failing else "REJECT"
+        summary = (
+            f"Per-query outcome: {len(accepted)}/{len(diffs)} accepted"
+            + (f"; failing: {failing}" if failing else "")
+            + f". {output.explanation}"
+        )
+    else:
+        decision = output.decision
+        summary = output.explanation
+
+    if decision == "ACCEPT":
+        # The clean, user-facing translated code is produced next by `finalize_translation_node`
+        # (derived from the now-validated harness). Here we only surface the judge's verdict; the
+        # final code markdown is emitted downstream so it is always a projection of validated code.
         messages = messages + [
-            AIMessage(content=f"""The translation is accepted. Here is the final translated code:
+            AIMessage(content=f"""The translation was accepted by automated evaluation. Finalizing the translated code…
 
-Translated schema:
-```{markdown_lang}
-{state.translated_schema_code if state.translation_type in [TranslationType.SCHEMA, TranslationType.BOTH] else ""}
-```
-
-{f"Translated query:\n```{markdown_lang}\n{state.translated_query_code}\n```\n" if state.translation_type in [TranslationType.QUERY, TranslationType.BOTH] else ""}
 Evaluation:
-{output.explanation}
+{summary}
 """)
         ]
     else:
         messages = messages + [
-            AIMessage(content=f"[{output.decision}] {output.explanation}"),
+            AIMessage(content=f"[{decision}] {summary}"),
         ]
-        
+
     return {
-        "explanation_message": output.explanation,
+        "explanation_message": summary,
+        "accepted_query_ids": accepted,
+        "judge_accepted_query_ids": judge_accepted,
+        "query_verdicts": verdicts or None,
         "messages": messages,
         "translation_messages": messages,
     }
 
 
+# Matches a fenced code block, capturing its body. The opening fence may carry an optional language
+# tag (```java / ```csharp / ```cs / bare ```). Used to parse the finalize model's prose output.
+_CODE_FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\s*\n(.*?)```", re.DOTALL)
+
+
+def _extract_code_fences(text: str) -> list[str]:
+    """Extract the bodies of fenced code blocks from a markdown/prose string, in order.
+
+    The finalize model emits its answer as fenced code blocks rather than a tool-call/strict-JSON
+    object: the e-INFRA sglang models collapse multi-line code in tool-call JSON to its first line
+    (an unescaped-newline truncation), whereas fenced prose preserves the full multi-line code. This
+    is the proven-reliable transport for getting code-sized output from these models.
+
+    Args:
+        text: The model's textual response.
+
+    Returns:
+        list[str]: The stripped contents of each fenced code block, in document order.
+    """
+    return [block.strip() for block in _CODE_FENCE_RE.findall(text) if block.strip()]
+
+
+async def finalize_translation_node(
+    state: State, config: RunnableConfig, runtime: Runtime[Context]
+) -> dict[str, Any]:
+    """Derive the clean, user-facing translated code from the VALIDATED harness, post-acceptance.
+
+    Generation no longer emits ``translated_schema_code`` / ``translated_query_code``. This node runs
+    only after a translation is accepted (LLM-judge ACCEPT for QUERY/BOTH, compile-pass for
+    SCHEMA-only, or human accept) and projects the already-validated harness/schema code into clean
+    production code. Because the input is frozen-after-validation, this is a constrained extraction
+    (not a re-translation): the published answer is always a projection of code that compiled, ran,
+    and passed equivalence, and is structurally stable enough to serve as a CodeBleu baseline.
+
+    The result is written to ``translated_schema_code`` / ``translated_query_code`` and rendered as a
+    markdown message into BOTH ``messages`` (frontend) and ``translation_messages`` (internal loop).
+
+    Args:
+        state (State): The current state of the graph.
+        config (RunnableConfig): Configuration parameters for the run.
+        runtime (Runtime[Context]): The execution runtime containing context.
+
+    Returns:
+        dict[str, Any]: State updates with the finalized production code and a markdown summary.
+    """
+    translation_type = state.translation_type or TranslationType.BOTH
+    assert state.destination_target is not None and state.source_target is not None
+
+    # Source of truth = the validated code. For SCHEMA-only that is the schema-validation code; for
+    # QUERY/BOTH it is the full query-execution harness (which carries both entities and queries).
+    if translation_type == TranslationType.SCHEMA:
+        target_validated = state.target_validation_schema_code or ""
+        source_validated = state.source_validation_schema_code or ""
+    else:
+        target_validated = state.target_validation_harness_code or ""
+        source_validated = state.source_validation_harness_code or ""
+
+    markdown_lang = FRAMEWORK_TO_LANGUAGE_TYPE[state.destination_target].value
+
+    # ---- Deterministic path (fragment contract): the accepted draft already IS the clean code.
+    # The target schema body and the per-query target fragments were validated verbatim inside the
+    # harness, so the final answer is a pure re-arrangement — no LLM, no opportunity to hallucinate
+    # imports/APIs, byte-stable for CodeBLEU. The LLM projection below remains only for the
+    # monolithic contract (baseline arm / schema-only), whose bodies embed protocol code.
+    fragments = state.translation_query_fragments or {}
+    schema_bodies = state.translation_schema_bodies or {}
+    if (
+        translation_type != TranslationType.SCHEMA
+        and fragments
+        and schema_bodies.get("target")
+    ):
+        schema_code = schema_bodies["target"].strip()
+        query_code = "\n\n".join(
+            fragments[k]["target"].strip()
+            for k in sorted(fragments, key=lambda s: int(s))
+            if fragments[k].get("target")
+        )
+        logger.info(
+            "finalize_translation_node: deterministic finalize from %d validated fragments",
+            len(fragments),
+        )
+        updates: dict[str, Any] = {}
+        sections = ["The translation is finalized. Here is the final translated code:\n"]
+        if translation_type == TranslationType.BOTH and schema_code:
+            updates["translated_schema_code"] = schema_code
+            sections.append(f"Translated schema:\n```{markdown_lang}\n{schema_code}\n```\n")
+        if query_code:
+            updates["translated_query_code"] = query_code
+            sections.append(f"Translated query:\n```{markdown_lang}\n{query_code}\n```\n")
+        final_message = AIMessage(content="\n".join(sections))
+        updates["messages"] = [final_message]
+        updates["translation_messages"] = [final_message]
+        return updates
+
+    if translation_type == TranslationType.SCHEMA:
+        type_specific = "Produce ONLY the clean target entity/model classes. There are no queries to finalize."
+        fence_instruction = (
+            f"Return EXACTLY ONE fenced ```{markdown_lang} code block and nothing else (no prose, no "
+            "second block): the clean entity/model class definitions."
+        )
+        expected_blocks = 1
+    elif translation_type == TranslationType.QUERY:
+        type_specific = "Produce ONLY the clean target query class. Do not emit entity/model class definitions."
+        fence_instruction = (
+            f"Return EXACTLY ONE fenced ```{markdown_lang} code block and nothing else (no prose, no "
+            "second block): the clean query class with one method per source query."
+        )
+        expected_blocks = 1
+    else:
+        type_specific = "Produce BOTH the entity/model classes and the query class."
+        fence_instruction = (
+            f"Return EXACTLY TWO fenced ```{markdown_lang} code blocks and nothing else (no prose "
+            f"between or around them): the FIRST block is the entity/model classes, the SECOND block "
+            "is the query class with one method per source query."
+        )
+        expected_blocks = 2
+
+    # Build the human message by f-string (NOT str.format): the validated code contains many braces
+    # that would break format-string substitution.
+    human = f"""Finalize the accepted translation from {state.source_target.value} to {state.destination_target.value} (type: {translation_type.value}).
+{type_specific}
+
+{fence_instruction}
+
+--- VALIDATED TARGET HARNESS ({state.destination_target.value}) — SOURCE OF TRUTH, copy semantics verbatim ---
+{target_validated}
+
+--- ORIGINAL SOURCE CODE (reference for naming/ordering only; do NOT pull semantics from here) ---
+{f"<source_schema_code>\n{state.source_schema_code}\n</source_schema_code>" if state.source_schema_code else ""}{f"\n<source_query_code>\n{state.source_query_code}\n</source_query_code>" if state.source_query_code else ""}
+"""
+
+    # Pin a SINGLE model (no fallback) for finalization. This node's output is the CodeBleu baseline
+    # input — a silent fallback to a different model would emit differently-structured code and
+    # confound AST/data-flow comparison across runs (a metric delta could be a model swap, not a
+    # translation change).
+    #
+    # Transport = PROSE with fenced code blocks (parsed below), NOT a tool call / strict-JSON: the
+    # e-INFRA sglang models collapse multi-line code in tool-call JSON to its first line (verified
+    # live — both fields came back as just `package uom.services;`), whereas fenced prose returns the
+    # full multi-line code reliably (verified: complete clean schema+query in ~14s). The socket
+    # timeout is raised above the hardcoded 120s default because finalizing a full schema+queries can
+    # legitimately stream for longer.
+    finalize_model_name = AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING
+    model = await get_model(
+        config,
+        runtime,
+        model_name_override=finalize_model_name,
+        temperature=0,
+    )
+    try:
+        model.request_timeout = 300  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+    updates: dict[str, Any] = {}
+    schema_code: str | None = None
+    query_code: str | None = None
+    try:
+        response = await model.ainvoke(
+            [
+                SystemMessage(
+                    content=eval_cache_bust_header(runtime, config) + SYSTEM_PROMPT_FINALIZE
+                ),
+                HumanMessage(content=human),
+            ]
+        )
+        text = response.content if isinstance(response.content, str) else ""
+        blocks = _extract_code_fences(text)
+        if translation_type == TranslationType.QUERY:
+            query_code = blocks[0] if blocks else None
+        elif translation_type == TranslationType.SCHEMA:
+            schema_code = blocks[0] if blocks else None
+        else:
+            schema_code = blocks[0] if len(blocks) >= 1 else None
+            query_code = blocks[1] if len(blocks) >= 2 else None
+        if len(blocks) < expected_blocks:
+            logger.warning(
+                "finalize_translation_node: expected %d code block(s), parsed %d.",
+                expected_blocks,
+                len(blocks),
+            )
+    except Exception:
+        logger.exception("finalize_translation_node: finalize call failed")
+
+    logger.info(
+        "finalize_translation_node: finalized with model=%s (schema=%s, query=%s)",
+        finalize_model_name.value if hasattr(finalize_model_name, "value") else finalize_model_name,
+        bool(schema_code),
+        bool(query_code),
+    )
+
+    # If the model produced none of the expected fields, the translation is still accepted and
+    # validated — surface the validated harness so nothing is lost and the user can review. This is
+    # an explicit, logged degradation (NOT a silent substitution into the CodeBleu baseline fields).
+    if not schema_code and not query_code:
+        logger.warning("finalize_translation_node: no finalized code produced; surfacing validated harness.")
+        fallback = AIMessage(
+            content=(
+                "The translation was accepted, but automatic finalization of the clean production "
+                "code did not complete. The validated, runnable code is below:\n\n"
+                f"```{markdown_lang}\n{target_validated}\n```"
+            )
+        )
+        return {"messages": [fallback], "translation_messages": [fallback]}
+
+    sections = ["The translation is finalized. Here is the final translated code:\n"]
+    if schema_code:
+        updates["translated_schema_code"] = schema_code
+        sections.append(f"Translated schema:\n```{markdown_lang}\n{schema_code}\n```\n")
+    if query_code:
+        updates["translated_query_code"] = query_code
+        sections.append(f"Translated query:\n```{markdown_lang}\n{query_code}\n```\n")
+
+    final_message = AIMessage(content="\n".join(sections))
+    updates["messages"] = [final_message]
+    updates["translation_messages"] = [final_message]
+    return updates
+
+
 def route_post_evaluation(
     state: State,
-) -> Literal["generate_translation_node", "human_intervention_node", "__end__"]:
+) -> Literal["generate_translation_node", "human_intervention_node", "finalize_translation_node", "__end__"]:
     """Determine the next state transition after evaluation.
 
     If the evaluation was rejected or failed, it routes back to `generate_translation_node`
     to retry. If the maximum translation loop count is reached, it routes to
-    `human_intervention_node` instead. If accepted, it routes to `__end__`.
+    `human_intervention_node` instead. If accepted, it routes to `finalize_translation_node`,
+    which derives the clean, user-facing translated code from the validated harness before ending.
 
     Args:
         state (State): The current state of the graph.
 
     Returns:
-        Literal["generate_translation_node", "human_intervention_node", "__end__"]: The next node.
+        Literal["generate_translation_node", "human_intervention_node", "finalize_translation_node"]:
+        The next node.
     """
     last_msg = (
         state.translation_messages[-1].content if state.translation_messages else ""
@@ -1383,13 +2635,17 @@ def route_post_evaluation(
         or "[Evaluation Error]" in last_msg
         or "[Structured Output Error]" in last_msg
     ):
+        # Baseline arm: one shot, no self-repair loop and no human hand-off — terminate so the
+        # experiment records the single-pass failure (validation results stay in state).
+        if state.single_pass:
+            return "__end__"
         # We check the translation_loop_count to prevent infinite loops of failing compilation.
         # If [Structured Output Error] occured in this last evaluation stage, we don't want to run expensive translation again, we let the user decide.
         # If it exceeds the maximum (typically 3), we route to 'human_intervention_node' to let the user fix the issue manually.
         if state.translation_loop_count >= MAX_TRANSLATION_LOOPS or "[Structured Output Error]" in last_msg:
             return "human_intervention_node"
         return "generate_translation_node"
-    return "__end__"
+    return "finalize_translation_node"
 
 
 def should_extract_input(state: State) -> Literal["schema_inspection", "extract_input", "__end__"]:
@@ -1416,18 +2672,45 @@ def should_extract_input(state: State) -> Literal["schema_inspection", "extract_
 
 def route_post_translation(
     state: State,
-) -> Literal["prep_schema_validation", "prep_query_validation"]:
+) -> Literal[
+    "prep_schema_validation",
+    "prep_query_validation",
+    "generate_translation_node",
+    "human_intervention_node",
+    "__end__",
+]:
     """Determine the next validation state transition after code generation.
 
-    Routes to `prep_schema_validation` if the translation type is SCHEMA. For QUERY or BOTH
-    translation types, it routes to `prep_query_validation`.
+    If generation could not produce a valid structured output (surfaced by
+    `generate_translation_node` as a `[Structured Output Error]` message), RETRIES
+    `generate_translation_node` while translation-loop budget remains — the node persisted any
+    partial fragments, so the retry is pre-seeded and only the missing pieces are regenerated
+    (this is the "outer retry loop takes over" the forced-completion cap was designed around;
+    the 2026-07-08 neo4j runs died at loop 1 because this route unconditionally diverted to
+    human intervention instead). Only when the budget is exhausted does it route to
+    `human_intervention_node`. Otherwise routes to `prep_schema_validation` for SCHEMA
+    translations, or to `prep_query_validation` for QUERY/BOTH.
 
     Args:
         state (State): The current state of the graph.
 
     Returns:
-        Literal["prep_schema_validation", "prep_query_validation"]: The next node.
+        Literal["prep_schema_validation", "prep_query_validation", "human_intervention_node", "__end__"]:
+        The next node.
     """
+    last_msg = (
+        str(state.translation_messages[-1].content)
+        if state.translation_messages
+        else ""
+    )
+    if StructuredOutputRetryMiddleware.ERROR_PREFIX in last_msg:
+        # Baseline arm: a failed single-shot generation terminates rather than interrupting for a
+        # human (which would block batch experiment runs).
+        if state.single_pass:
+            return "__end__"
+        if state.translation_loop_count < MAX_TRANSLATION_LOOPS:
+            return "generate_translation_node"
+        return "human_intervention_node"
     if state.translation_type == TranslationType.SCHEMA:
         return "prep_schema_validation"
     return "prep_query_validation"
@@ -1439,6 +2722,7 @@ def route_post_schema_validation(
     "prep_query_validation",
     "generate_translation_node",
     "human_intervention_node",
+    "finalize_translation_node",
     "__end__",
 ]:
     """Determine the next state transition after schema validation.
@@ -1446,25 +2730,29 @@ def route_post_schema_validation(
     If schema compilation failed, it routes back to `generate_translation_node` (or
     `human_intervention_node` if max retries exceeded) without proceeding further.
     If it passed and the translation type is BOTH, it routes to `prep_query_validation`.
-    Otherwise, it terminates execution (`__end__`).
+    Otherwise (SCHEMA-only success), it routes to `finalize_translation_node` to derive the clean
+    translated schema from the validated harness before ending.
 
     Args:
         state (State): The current state of the graph.
 
     Returns:
-        Literal["prep_query_validation", "generate_translation_node", "human_intervention_node", "__end__"]: The next node.
+        Literal["prep_query_validation", "generate_translation_node", "human_intervention_node", "finalize_translation_node", "__end__"]: The next node.
     """
     last_msg = (
         state.translation_messages[-1].content if state.translation_messages else ""
     )
     if "Failed]" in last_msg:
+        # Baseline arm: no self-repair loop, no human hand-off — terminate on schema compile failure.
+        if state.single_pass:
+            return "__end__"
         if state.translation_loop_count >= MAX_TRANSLATION_LOOPS:
             return "human_intervention_node"
         return "generate_translation_node"
 
     if state.translation_type == TranslationType.BOTH:
         return "prep_query_validation"
-    return "__end__"
+    return "finalize_translation_node"
 
 
 # Observability
@@ -1549,6 +2837,14 @@ retry_policy = RetryPolicy(
     max_attempts=3,
 )
 
+# Same as `retry_policy` but never re-runs the whole node on a structured-output validation
+# failure: `StructuredOutputRetryMiddleware` already retried the model in place and surfaced a
+# user-facing error, so a full-node re-run (3x the model/fallback fan-out) would only add cost.
+generation_retry_policy = RetryPolicy(
+    max_attempts=3,
+    retry_on=_retry_on_excluding_structured_output,
+)
+
 builder.add_node(
     extract_input,  # type: ignore
     cache_policy=CachePolicy(),
@@ -1562,7 +2858,7 @@ builder.add_node(
 builder.add_node(
     generate_translation_node,  # type: ignore
     cache_policy=CachePolicy(),
-    retry_policy=retry_policy,
+    retry_policy=generation_retry_policy,
 )
 builder.add_node(
     human_intervention_node,  # type: ignore
@@ -1594,6 +2890,10 @@ builder.add_node(
     evaluation_node,  # type: ignore
     retry_policy=retry_policy,
 )
+builder.add_node(
+    finalize_translation_node,  # type: ignore
+    retry_policy=retry_policy,
+)
 
 builder.add_conditional_edges(START, should_extract_input)
 builder.add_conditional_edges("extract_input", should_extract_input)
@@ -1609,7 +2909,9 @@ builder.add_edge("prep_query_equivalence", "check_query_equivalence_node")
 builder.add_edge("check_query_equivalence_node", "evaluation_node")
 
 builder.add_conditional_edges("evaluation_node", route_post_evaluation)
-builder.add_edge("human_intervention_node", "generate_translation_node")
+# human_intervention_node routes dynamically via Command(goto=...): generate_translation_node on
+# reject, finalize_translation_node on accept. No static edge here — it would co-fire with the
+# Command and, on accept, wrongly re-run generation in parallel with finalize.
 
 graph = builder.compile(
     name="Universal Object Mapping Translator",

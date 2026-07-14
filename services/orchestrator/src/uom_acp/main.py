@@ -39,7 +39,7 @@ async def _serve_uom_deep_agent() -> None:
 
     for m in [
         AvailableModel.EINFRA_DEEPSEEK_V4_PRO_THINKING,
-        AvailableModel.EINFRA_KIMI_K2_6,
+        AvailableModel.EINFRA_KIMI_K2_7,
     ]:
         model = await load_chat_model(
             m.value,

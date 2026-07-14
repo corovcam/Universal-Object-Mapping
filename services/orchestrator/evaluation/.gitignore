@@ -1,0 +1,15 @@
+# eval venv + build artifacts + regenerable outputs.
+# predictions/ and out/ are derived; reference/ is the frozen CodeBLEU baseline; aimock/ is recorded
+# LLM traffic (re-recordable). traces/ (downloaded LangSmith data, re-fetchable via
+# fetch_experiments.py) is left committable so the canonical traces/final-experiments/ set can be
+# checked in if desired; the big daily dumps stay untracked by choice.
+.venv/
+.venv-eval/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+out/
+predictions/
+aimock/
+manual-eval/**/*.json
+manual-eval/**/*.jsonl

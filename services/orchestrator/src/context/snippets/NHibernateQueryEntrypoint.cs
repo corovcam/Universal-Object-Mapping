@@ -12,6 +12,7 @@ using NHibernate.Driver;
 using NHibernate.Mapping.ByCode;
 using NHibernate.Mapping.ByCode.Conformist;
 using NHibernate.Dialect;
+using NHibernate.Transform;
 
 namespace nhibernate_sandbox;
 

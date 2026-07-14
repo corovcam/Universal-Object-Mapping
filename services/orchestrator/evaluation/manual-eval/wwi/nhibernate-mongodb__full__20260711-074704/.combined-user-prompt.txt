@@ -1,0 +1,487 @@
+Translate the following Source Code (schema/query) from .NET NHibernate to Java Spring Data MongoDB 5.0.
+
+Database Schema Context:
+I now have complete information for both schemas. Here is the comprehensive summary:
+
+---
+
+## SOURCE SCHEMA: Microsoft SQL Server (`WideWorldImporters`)
+
+### `Sales.OrderLines` (12 columns)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| OrderLineID | int | NO | PK, Identity |
+| OrderID | int | NO | FK → Sales.Orders |
+| StockItemID | int | NO |
+| Description | nvarchar(100) | NO |
+| PackageTypeID | int | NO |
+| Quantity | int | NO |
+| UnitPrice | decimal(18,2) | YES |
+| TaxRate | decimal(18,3) | NO |
+| PickedQuantity | int | NO |
+| PickingCompletedWhen | datetime2 | YES |
+| LastEditedBy | int | NO |
+| LastEditedWhen | datetime2 | NO |
+
+### `Sales.Orders` (16 columns)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| OrderID | int | NO | PK, Identity |
+| CustomerID | int | NO | FK → Sales.Customers |
+| SalespersonPersonID | int | NO |
+| PickedByPersonID | int | YES |
+| ContactPersonID | int | NO |
+| BackorderOrderID | int | YES |
+| OrderDate | date | NO |
+| ExpectedDeliveryDate | date | NO |
+| CustomerPurchaseOrderNumber | nvarchar(20) | YES |
+| IsUndersupplyBackordered | bit | NO |
+| Comments | nvarchar(max) | YES |
+| DeliveryInstructions | nvarchar(max) | YES |
+| InternalComments | nvarchar(max) | YES |
+| PickingCompletedWhen | datetime2 | YES |
+| LastEditedBy | int | NO |
+| LastEditedWhen | datetime2 | NO |
+
+NHibernate relationship: Bag of OrderLines via `OrderID` FK with `Inverse(true)` (one-to-many).
+
+### `Application.People` (21 columns)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| PersonID | int | NO | PK, Identity |
+| FullName | nvarchar(50) | NO |
+| PreferredName | nvarchar(50) | NO |
+| SearchName | nvarchar(101) | NO |
+| EmailAddress | nvarchar(256) | YES |
+| CustomFields | nvarchar(max) | YES | JSON string, e.g. `{"Title":"Team Member",...}` |
+| OtherLanguages | nvarchar(max) | YES | JSON array string, e.g. `["Polish","Chinese","Japanese"]` |
+| (plus 14 more system columns) | | |
+
+### `Purchasing.Suppliers` (29 columns)
+Key fields: SupplierID (PK), SupplierName, SupplierReference, PaymentDays, PhoneNumber, FaxNumber, WebsiteURL, BankAccountName, BankAccountBranch, BankAccountCode, BankAccountNumber, BankInternationalCode, plus address/city/contact IDs.
+
+### Embedded source tables (not independently queried in the code):
+- `Sales.CustomerTransactions` → embedded in orders and people as `customerTransactions` array
+- `Purchasing.PurchaseOrders` → embedded in people and suppliers as `purchaseOrders` array
+- `Warehouse.StockItems` → embedded in orderLines as single `stockItem` doc, also in people/suppliers as arrays
+- `Warehouse.StockItemStockGroups` → embedded in orderLines `stockItem.stockItemStockGroups` array
+- `Sales.Customers` → embedded in orders as single `customer` doc
+- `Warehouse.StockGroups` → embedded in people as `stockGroups` array
+
+---
+
+## TARGET SCHEMA: MongoDB (`uom` database)
+
+Four collections: `orderLines`, `orders`, `people`, `suppliers`.
+
+### `orderLines` (231,412 documents)
+Top-level fields (camelCase, matching mapping):
+`_id` (ObjectId), `orderLineId` (Number), `orderId` (Number), `stockItemId` (Number), `description` (String), `packageTypeId` (Number), `quantity` (Number), `unitPrice` (Decimal128), `taxRate` (Decimal128), `pickedQuantity` (Number), `pickingCompletedWhen` (Date), `lastEditedBy` (Number), `lastEditedWhen` (Date).
+
+Embedded sub-document: `stockItem` (single document) containing all StockItem fields plus `stockItemStockGroups` (array of objects with `stockItemStockGroupId`, `stockItemId`, `stockGroupId`, `lastEditedBy`, `lastEditedWhen`).
+
+### `orders` (73,595 documents)
+Top-level fields: `_id`, `orderId`, `customerId`, `salespersonPersonId`, `pickedByPersonId`, `contactPersonId`, `backorderOrderId`, `orderDate` (Date), `expectedDeliveryDate` (Date), `customerPurchaseOrderNumber` (String), `isUndersupplyBackordered` (Boolean), `comments`, `deliveryInstructions`, `internalComments`, `pickingCompletedWhen`, `lastEditedBy`, `lastEditedWhen`.
+
+Embedded sub-document: `customer` (single document) with all Customer fields plus `customerTransactions` array.
+
+**CRITICAL: OrderLines are NOT embedded in orders.** They are a separate `orderLines` collection referenced by `orderId`. This means NHibernate's `Fetch(o => o.OrderLines)` join must be replaced with either a separate query on the `orderLines` collection, or a MongoDB aggregation `$lookup`.
+
+### `people` (1,111 documents)
+Top-level fields: `_id`, `personId`, `fullName`, `preferredName`, `searchName`, `isPermittedToLogon`, `logonName`, `isExternalLogonProvider`, `hashedPassword`, `isSystemUser`, `isEmployee`, `isSalesperson`, `userPreferences`, `phoneNumber`, `faxNumber`, `emailAddress`, `photo`, `customFields` (String — JSON), `otherLanguages` (String — JSON array), `lastEditedBy`, `validFrom`, `validTo`.
+
+**Important for Query13/14:** `customFields` stores JSON as a plain string (e.g., `{ "Title": "Team Member", ... }`). `otherLanguages` stores a JSON array as a string (e.g., `["Polish","Chinese","Japanese"]`). In MongoDB, these are plain string fields, not native MongoDB objects/arrays, so queries against them will use `$regex` or `$expr` with string-matching patterns rather than MongoDB's native JSON operators. Only 19 of 1,111 documents have non-null `customFields`.
+
+### `suppliers` (13 documents)
+Top-level fields matching the Purchasing.Suppliers table mapping. Embedded arrays: `purchaseOrders` (Array of PurchaseOrder) and `stockItems` (Array of StockItem). Note: the `purchaseOrders` embedded in this collection sample returned 0 entries for some suppliers, and the `stockItems` array may be present.
+
+---
+
+## KEY TRANSLATION MAPPINGS
+
+| NHibernate Concept | Spring Data MongoDB 5.0 Equivalent |
+|---|---|
+| `session.Query<T>()` | `MongoTemplate` or `MongoRepository` query methods |
+| `IQueryable.Where()` | `Query` + `Criteria.where()` or `@Query` annotation |
+| `OrderBy().Skip().Take()` | `query.with(Sort...).skip().limit()` |
+| `GroupBy().Select()` | Aggregation pipeline with `$group`, `$project` |
+| `.Max(ol => ol.UnitPrice)` | Aggregation `$group` with `$max` |
+| `.Sum(ol => ol.Quantity * ol.UnitPrice)` | Aggregation `$group` with `$sum` + `$multiply` |
+| `.Fetch(o => o.OrderLines)` | Separate query on `orderLines` collection by `orderId`, or `$lookup` aggregation |
+| `.Distinct()` | `distinct()` or `$group` |
+| `SQL JSON_VALUE(CustomFields, '$.Title')` | Native MongoDB `$regex` on the string field, since `customFields` is stored as a plain string |
+| `SQL OPENJSON(OtherLanguages)` with `EXISTS` | `$regex` on the string field since `otherLanguages` is stored as a string |
+| `.Union()` (Query15) | Java Stream concatenation or two separate queries merged in code |
+| `ToDictionary(x => x.TaxRate, x => x.Count)` | Convert aggregation results to `Map<BigDecimal, Long>` |
+| Identity generator | MongoDB `ObjectId` auto-generation |
+
+Decimal values use `BigDecimal` in Java; MongoDB stores Decimal128. Dates use `java.util.Date` or `java.time.Instant`. Nullable value types (`decimal?`, `DateTime?`) use Java's reference types (`BigDecimal`, `Instant`). The `required` keyword in C# properties maps to `@NotNull` or non-null field constraints in Java.
+---
+Source Code:
+<source_schema_code>
+public class OrderLine
+{
+    public virtual int OrderLineID { get; set; }
+    public virtual int OrderID { get; set; }
+    public virtual int StockItemID { get; set; }
+    public virtual required string Description { get; set; }
+    public virtual int Quantity { get; set; }
+    public virtual decimal? UnitPrice { get; set; }
+    public virtual decimal TaxRate { get; set; }
+    public virtual int PickedQuantity { get; set; }
+    public virtual DateTime? PickingCompletedWhen { get; set; }
+    public virtual int LastEditedBy { get; set; }
+    public virtual DateTime LastEditedWhen { get; set; }
+}
+public class Order
+{
+    public virtual int OrderID { get; set; }
+    public virtual int CustomerID { get; set; }
+    public virtual int? BackorderOrderID { get; set; }
+    public virtual DateTime OrderDate { get; set; }
+    public virtual DateTime ExpectedDeliveryDate { get; set; }
+    public virtual string? CustomerPurchaseOrderNumber { get; set; }
+    public virtual bool IsUndersupplyBackordered { get; set; }
+    public virtual string? Comments { get; set; }
+    public virtual string? DeliveryInstructions { get; set; }
+    public virtual string? InternalComments { get; set; }
+    public virtual DateTime? PickingCompletedWhen { get; set; }
+    public virtual DateTime LastEditedWhen { get; set; }
+    public virtual IList<OrderLine> OrderLines { get; set; } = [];
+}
+public class Person
+{
+    public virtual int PersonID { get; set; }
+    public virtual required string FullName { get; set; }
+    public virtual required string PreferredName { get; set; }
+    public virtual string? EmailAddress { get; set; }
+    public virtual string? CustomFields { get; set; }
+    public virtual string? OtherLanguages { get; set; }
+}
+public class Supplier
+{
+    public virtual int SupplierID { get; set; }
+    public virtual required string SupplierName { get; set; }
+    public virtual string? SupplierReference { get; set; }
+    public virtual int PaymentDays { get; set; }
+    public virtual string? PhoneNumber { get; set; }
+    public virtual string? FaxNumber { get; set; }
+    public virtual string? WebsiteURL { get; set; }
+    public virtual string? BankAccountName { get; set; }
+    public virtual string? BankAccountBranch { get; set; }
+    public virtual string? BankAccountCode { get; set; }
+    public virtual string? BankAccountNumber { get; set; }
+    public virtual string? BankInternationalCode { get; set; }
+}
+public class CustomerTransaction
+{
+    public virtual int CustomerTransactionID { get; set; }
+    public virtual int CustomerID { get; set; }
+    public virtual DateTime TransactionDate { get; set; }
+    public virtual decimal TransactionAmount { get; set; }
+    public virtual decimal OutstandingBalance { get; set; }
+    public virtual bool IsFinalized { get; set; }
+}
+public class PurchaseOrder
+{
+    public virtual int PurchaseOrderID { get; set; }
+    public virtual int SupplierID { get; set; }
+    public virtual DateTime OrderDate { get; set; }
+    public virtual DateTime ExpectedDeliveryDate { get; set; }
+    public virtual string? SupplierReference { get; set; }
+    public virtual bool IsOrderFinalized { get; set; }
+}
+public class StockItem
+{
+    public virtual int StockItemID { get; set; }
+    public virtual required string StockItemName { get; set; }
+    public virtual int SupplierID { get; set; }
+    public virtual int QuantityPerOuter { get; set; }
+    public virtual int LeadTimeDays { get; set; }
+    public virtual bool IsChillerStock { get; set; }
+    public virtual decimal? UnitPrice { get; set; }
+    public virtual decimal RecommendedRetailPrice { get; set; }
+}
+public class StockItemStockGroup
+{
+    public virtual int StockItemStockGroupID { get; set; }
+    public virtual int StockItemID { get; set; }
+    public virtual int StockGroupID { get; set; }
+}
+public class SupplierContactInfo
+{
+    public int SupplierID { get; set; }
+    public string? SupplierName { get; set; }
+    public string? PhoneNumber { get; set; }
+    public string? FaxNumber { get; set; }
+    public string? WebsiteURL { get; set; }
+}
+public class SupplierBankAccount
+{
+    public int SupplierID { get; set; }
+    public string? BankAccountName { get; set; }
+    public string? BankAccountBranch { get; set; }
+    public string? BankAccountCode { get; set; }
+    public string? BankAccountNumber { get; set; }
+    public string? BankInternationalCode { get; set; }
+}
+public class SupplierAccounts
+{
+    public SupplierContactInfo? ContactInfo { get; set; }
+    public SupplierBankAccount? BankAccount { get; set; }
+}
+public class PurchaseOrderInfo
+{
+    public int PurchaseOrderID { get; set; }
+    public string? SupplierName { get; set; }
+    public DateTime OrderDate { get; set; }
+}
+public class OrderLineMap : ClassMapping<OrderLine> {
+    public OrderLineMap() {
+        Table("OrderLines"); Schema("Sales");
+        Id(x => x.OrderLineID, m => m.Generator(Generators.Identity));
+        Property(x => x.OrderID, m => { m.Insert(false); m.Update(false); });
+        Property(x => x.StockItemID);
+        Property(x => x.Description);
+        Property(x => x.Quantity);
+        Property(x => x.UnitPrice);
+        Property(x => x.TaxRate);
+        Property(x => x.PickedQuantity);
+        Property(x => x.PickingCompletedWhen);
+        Property(x => x.LastEditedBy);
+        Property(x => x.LastEditedWhen);
+    }
+}
+public class OrderMap : ClassMapping<Order> {
+    public OrderMap() {
+        Table("Orders"); Schema("Sales");
+        Id(x => x.OrderID, m => m.Generator(Generators.Identity));
+        Property(x => x.CustomerID);
+        Property(x => x.BackorderOrderID);
+        Property(x => x.OrderDate);
+        Property(x => x.ExpectedDeliveryDate);
+        Property(x => x.CustomerPurchaseOrderNumber);
+        Property(x => x.IsUndersupplyBackordered);
+        Property(x => x.Comments);
+        Property(x => x.DeliveryInstructions);
+        Property(x => x.InternalComments);
+        Property(x => x.PickingCompletedWhen);
+        Property(x => x.LastEditedWhen);
+        Bag(x => x.OrderLines, map => { map.Key(k => k.Column("OrderID")); map.Inverse(true); }, rel => rel.OneToMany());
+    }
+}
+public class PersonMap : ClassMapping<Person> {
+    public PersonMap() {
+        Table("People"); Schema("Application");
+        Id(x => x.PersonID, m => m.Generator(Generators.Identity));
+        Property(x => x.FullName);
+        Property(x => x.PreferredName);
+        Property(x => x.EmailAddress);
+        Property(x => x.CustomFields);
+        Property(x => x.OtherLanguages);
+    }
+}
+public class SupplierMap : ClassMapping<Supplier> {
+    public SupplierMap() {
+        Table("Suppliers"); Schema("Purchasing");
+        Id(x => x.SupplierID, m => m.Generator(Generators.Identity));
+        Property(x => x.SupplierName);
+        Property(x => x.SupplierReference);
+        Property(x => x.PaymentDays);
+        Property(x => x.PhoneNumber);
+        Property(x => x.FaxNumber);
+        Property(x => x.WebsiteURL);
+        Property(x => x.BankAccountName);
+        Property(x => x.BankAccountBranch);
+        Property(x => x.BankAccountCode);
+        Property(x => x.BankAccountNumber);
+        Property(x => x.BankInternationalCode);
+    }
+}
+public class CustomerTransactionMap : ClassMapping<CustomerTransaction> {
+    public CustomerTransactionMap() {
+        Table("CustomerTransactions"); Schema("Sales");
+        Id(x => x.CustomerTransactionID, m => m.Generator(Generators.Identity));
+        Property(x => x.CustomerID);
+        Property(x => x.TransactionDate);
+        Property(x => x.TransactionAmount);
+        Property(x => x.OutstandingBalance);
+        Property(x => x.IsFinalized);
+    }
+}
+public class PurchaseOrderMap : ClassMapping<PurchaseOrder> {
+    public PurchaseOrderMap() {
+        Table("PurchaseOrders"); Schema("Purchasing");
+        Id(x => x.PurchaseOrderID, m => m.Generator(Generators.Identity));
+        Property(x => x.SupplierID);
+        Property(x => x.OrderDate);
+        Property(x => x.ExpectedDeliveryDate);
+        Property(x => x.SupplierReference);
+        Property(x => x.IsOrderFinalized);
+    }
+}
+public class StockItemMap : ClassMapping<StockItem> {
+    public StockItemMap() {
+        Table("StockItems"); Schema("Warehouse");
+        Id(x => x.StockItemID, m => m.Generator(Generators.Identity));
+        Property(x => x.StockItemName);
+        Property(x => x.SupplierID);
+        Property(x => x.QuantityPerOuter);
+        Property(x => x.LeadTimeDays);
+        Property(x => x.IsChillerStock);
+        Property(x => x.UnitPrice);
+        Property(x => x.RecommendedRetailPrice);
+    }
+}
+public class StockItemStockGroupMap : ClassMapping<StockItemStockGroup> {
+    public StockItemStockGroupMap() {
+        Table("StockItemStockGroups"); Schema("Warehouse");
+        Id(x => x.StockItemStockGroupID, m => m.Generator(Generators.Identity));
+        Property(x => x.StockItemID);
+        Property(x => x.StockGroupID);
+    }
+}
+</source_schema_code>
+<source_query_code>
+public record TaxRateCount { public decimal TaxRate { get; set; } public long Count { get; set; } }
+
+public static IQueryable<OrderLine> Query1(NHibernate.ISession session)
+{
+    int orderId = 26866;
+    return session.Query<OrderLine>().Where(ol => ol.OrderID == orderId);
+}
+
+public static IQueryable<OrderLine> Query2(NHibernate.ISession session)
+{
+    decimal unitPrice = 25m;
+    return session.Query<OrderLine>().Where(ol => ol.UnitPrice == unitPrice);
+}
+
+public static IQueryable<OrderLine> Query3(NHibernate.ISession session)
+{
+    var from = new DateTime(2014, 12, 20);
+    var to = new DateTime(2014, 12, 31);
+    return session.Query<OrderLine>().Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);
+}
+
+public static IQueryable<OrderLine> Query4(NHibernate.ISession session)
+{
+    var orderIds = new List<int> { 1, 10, 100, 1000, 10000 };
+    return session.Query<OrderLine>().Where(ol => orderIds.Contains(ol.OrderID));
+}
+
+public static IQueryable<OrderLine> Query5(NHibernate.ISession session)
+{
+    string text = "C++";
+    return session.Query<OrderLine>().Where(ol => ol.Description.Contains(text));
+}
+
+public static IQueryable<OrderLine> Query6(NHibernate.ISession session)
+{
+    int skip = 1000;
+    int take = 50;
+    return session.Query<OrderLine>().OrderBy(ol => ol.OrderLineID).Skip(skip).Take(take);
+}
+
+public static Dictionary<decimal, int> Query7(NHibernate.ISession session)
+{
+    return session.Query<OrderLine>()
+        .GroupBy(ol => ol.TaxRate)
+        .Select(g => new { TaxRate = g.Key, Count = g.Count() })
+        .OrderByDescending(x => x.Count)
+        .ToDictionary(x => x.TaxRate, x => x.Count);
+}
+
+public static decimal? Query8(NHibernate.ISession session)
+{
+    return session.Query<OrderLine>().Max(ol => ol.UnitPrice);
+}
+
+public static decimal? Query9(NHibernate.ISession session)
+{
+    return session.Query<OrderLine>().Sum(ol => ol.Quantity * ol.UnitPrice);
+}
+
+public static Order Query10(NHibernate.ISession session)
+{
+    return session.Query<Order>().Fetch(o => o.OrderLines).Single(o => o.OrderID == 530);
+}
+
+public static IQueryable<Order> Query11(NHibernate.ISession session)
+{
+    return session.Query<Order>().OrderBy(o => o.ExpectedDeliveryDate).Take(1000);
+}
+
+public static IQueryable<string?> Query12(NHibernate.ISession session)
+{
+    return session.Query<Order>().Select(o => o.CustomerPurchaseOrderNumber).Distinct();
+}
+
+public static IList<Person> Query13(NHibernate.ISession session)
+{
+    var sql = """
+                  SELECT PersonID, FullName, PreferredName, EmailAddress, CustomFields, OtherLanguages
+                  FROM Application.People
+                  WHERE JSON_VALUE(CustomFields, '$.Title') = :title
+                  ORDER BY PersonID
+              """;
+    return session.CreateSQLQuery(sql)
+        .SetParameter("title", "Team Member")
+        .SetResultTransformer(Transformers.AliasToBean<Person>())
+        .List<Person>();
+}
+
+public static IList<Person> Query14(NHibernate.ISession session)
+{
+    var sql = """
+                  SELECT PersonID, FullName, PreferredName, EmailAddress, CustomFields, OtherLanguages
+                  FROM Application.People
+                  WHERE EXISTS (
+                      SELECT 1 FROM OPENJSON(OtherLanguages)
+                      WHERE value = :lang
+                  )
+                  ORDER BY PersonID
+              """;
+    return session.CreateSQLQuery(sql)
+        .SetParameter("lang", "Slovak")
+        .SetResultTransformer(Transformers.AliasToBean<Person>())
+        .List<Person>();
+}
+
+public static List<int> Query15(NHibernate.ISession session)
+{
+    var first = session.Query<Supplier>()
+        .Where(s => s.SupplierID < 5)
+        .Select(s => s.SupplierID)
+        .ToList();
+    var last = session.Query<Supplier>()
+        .Where(s => s.SupplierID >= 5 && s.SupplierID <= 10)
+        .Select(s => s.SupplierID)
+        .ToList();
+    return first.Union(last).OrderBy(s => s).ToList();
+}
+</source_query_code>
+
+Translate ONLY the entities, fields, and queries that appear above. Do not invent or carry over any entity or field that is not present in this source code.
+
+
+There are no tools available in this chat. Do NOT call the save_* tools; instead, output every
+piece the save tools would have collected, as fenced code blocks labeled EXACTLY like this (one
+schema pair + one source/target pair per query id — required ids: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
+
+```source_schema_body
+<the SOURCE-side entity/mapping classes>
+```
+```target_schema_body
+<the TARGET-side entity/mapping classes>
+```
+```source_query_body id=1
+<Query1's SOURCE-side harness fragment>
+```
+```target_query_body id=1
+<Query1's TARGET-side harness fragment>
+```
+... repeat the source/target pair for every required query id ...
+
+The fragment shapes/signatures are the ones the system prompt already specifies. Use only your own
+knowledge for framework API details (the research tools are unavailable). Do not omit any query id.

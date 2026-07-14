@@ -1,0 +1,11 @@
+[project]
+name = "evaluation"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "codebleu>=0.7.0",
+    "tree-sitter-c-sharp<0.22.0",
+    "tree-sitter-java<0.22.0",
+]

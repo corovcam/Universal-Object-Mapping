@@ -1,0 +1,58 @@
+stateDiagram-v2
+    [*] --> START
+    
+    START --> should_extract_input_gate
+    
+    state should_extract_input_gate <<choice>>
+    should_extract_input_gate --> extract_input : Inputs Missing
+    should_extract_input_gate --> schema_inspection : Inputs Present
+    should_extract_input_gate --> END : Extraction Failed (Max Loops)
+    
+    extract_input --> should_extract_input_gate
+    
+    schema_inspection --> generate_translation_node
+    
+    state route_post_translation_gate <<choice>>
+    route_post_translation_gate --> prep_schema_validation : TranslationType = SCHEMA & Valid Structured Output
+    route_post_translation_gate --> prep_query_validation : TranslationType = QUERY or BOTH & Valid Structured Output
+    route_post_translation_gate --> human_intervention_node : Structured Output Error & Not Single Pass
+    route_post_translation_gate --> END : Structured Output Error & Single Pass
+    
+    generate_translation_node --> route_post_translation_gate
+    
+    prep_schema_validation --> validate_schema_node
+    
+    state route_post_schema_validation_gate <<choice>>
+    route_post_schema_validation_gate --> prep_query_validation : Passed & TranslationType = BOTH
+    route_post_schema_validation_gate --> generate_translation_node : Failed & Loop < Max & Not Single Pass
+    route_post_schema_validation_gate --> human_intervention_node : Failed & Loop >= Max & Not Single Pass
+    route_post_schema_validation_gate --> finalize_translation_node : Passed & TranslationType = SCHEMA
+    route_post_schema_validation_gate --> END : Failed & Single Pass
+    
+    validate_schema_node --> route_post_schema_validation_gate
+    
+    prep_query_validation --> validate_query_node
+    
+    state route_post_query_validation_gate <<choice>>
+    route_post_query_validation_gate --> prep_query_equivalence : Both Compilations Passed
+    route_post_query_validation_gate --> evaluation_node : Compilation Failed
+    
+    validate_query_node --> route_post_query_validation_gate
+    
+    prep_query_equivalence --> check_query_equivalence_node
+    check_query_equivalence_node --> evaluation_node
+    
+    state route_post_evaluation_gate <<choice>>
+    route_post_evaluation_gate --> finalize_translation_node : Accepted
+    route_post_evaluation_gate --> generate_translation_node : Rejected & Loop < Max & Not Structured Output Error & Not Single Pass
+    route_post_evaluation_gate --> human_intervention_node : Rejected & (Loop >= Max OR Structured Output Error) & Not Single Pass
+    route_post_evaluation_gate --> END : Rejected & Single Pass
+    
+    evaluation_node --> route_post_evaluation_gate
+    
+    state human_intervention_gate <<choice>>
+    human_intervention_node --> human_intervention_gate
+    human_intervention_gate --> generate_translation_node : Rejected (Feedback)
+    human_intervention_gate --> finalize_translation_node : Accepted
+    
+    finalize_translation_node --> END

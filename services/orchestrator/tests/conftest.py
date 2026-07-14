@@ -117,7 +117,7 @@ def empty_state(efcore_mongodb_unstructured_input) -> State:
 @pytest.fixture()
 def context() -> Context:
     """Create a Context wired to real endpoints (reads from env / defaults)."""
-    return Context(model=AvailableModel.EINFRA_MINI)
+    return Context(model=AvailableModel.EINFRA_GPT_OSS_120B)
 
 
 @pytest.fixture()
@@ -210,7 +210,7 @@ def sample_mongo_results(config) -> dict:
 async def sample_chat_model(context: Context):
     """A pre-loaded chat model for testing nodes that require it."""
     model = await load_chat_model(
-        AvailableModel.EINFRA_MINI.value,
+        AvailableModel.EINFRA_GPT_OSS_120B.value,
         {
             "openai_api_url": context.openai_api_url,
             "openai_api_key": context.openai_api_key,

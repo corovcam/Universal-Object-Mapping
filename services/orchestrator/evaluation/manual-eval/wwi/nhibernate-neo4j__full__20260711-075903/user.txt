@@ -1,0 +1,504 @@
+Translate the following Source Code (schema/query) from .NET NHibernate to Java Spring Data Neo4j 8.0.0.
+
+Database Schema Context:
+I now have comprehensive information from both databases. Here is the complete schema summary:
+
+---
+
+## Source Database: Microsoft SQL Server (WideWorldImporters)
+
+### Relevant Tables
+
+**Sales.OrderLines** (231,412 rows mapped to Neo4j)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| OrderLineID | int | NO | PK, identity |
+| OrderID | int | NO | FK → Sales.Orders |
+| StockItemID | int | NO | FK → Warehouse.StockItems |
+| Description | nvarchar | NO | |
+| PackageTypeID | int | NO | FK → Warehouse.PackageTypes (not in code) |
+| Quantity | int | NO | |
+| UnitPrice | decimal | YES | |
+| TaxRate | decimal | NO | |
+| PickedQuantity | int | NO | |
+| PickingCompletedWhen | datetime2 | YES | |
+| LastEditedBy | int | NO | FK → Application.People (not in code) |
+| LastEditedWhen | datetime2 | NO | |
+
+**Sales.Orders** (73,595 rows mapped)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| OrderID | int | NO | PK, identity |
+| CustomerID | int | NO | FK → Sales.Customers |
+| SalespersonPersonID | int | NO | FK → Application.People (not in code) |
+| PickedByPersonID | int | YES | FK → Application.People (not in code) |
+| ContactPersonID | int | NO | FK → Application.People (not in code) |
+| BackorderOrderID | int | YES | FK → Sales.Orders (self-ref) |
+| OrderDate | date | NO | |
+| ExpectedDeliveryDate | date | NO | |
+| CustomerPurchaseOrderNumber | nvarchar | YES | |
+| IsUndersupplyBackordered | bit | NO | |
+| Comments | nvarchar | YES | |
+| DeliveryInstructions | nvarchar | YES | |
+| InternalComments | nvarchar | YES | |
+| PickingCompletedWhen | datetime2 | YES | |
+| LastEditedBy | int | NO | FK → Application.People (not in code) |
+| LastEditedWhen | datetime2 | NO | |
+
+**Application.People** (1,111 rows mapped)
+Used columns: PersonID (int PK), FullName (nvarchar NOT NULL), PreferredName (nvarchar NOT NULL), EmailAddress (nvarchar NULL), CustomFields (nvarchar NULL, contains JSON like `{"Title":"Team Member",...}`), OtherLanguages (nvarchar NULL, JSON array like `["Polish","Chinese","Japanese"]`)
+
+**Purchasing.Suppliers** (13 rows mapped)
+Used columns: SupplierID (int PK), SupplierName (nvarchar NOT NULL), SupplierReference (nvarchar NULL), PaymentDays (int NOT NULL), PhoneNumber (nvarchar NOT NULL), FaxNumber (nvarchar NOT NULL), WebsiteURL (nvarchar NOT NULL), BankAccountName (nvarchar NULL), BankAccountBranch (nvarchar NULL), BankAccountCode (nvarchar NULL), BankAccountNumber (nvarchar NULL), BankInternationalCode (nvarchar NULL)
+
+**Purchasing.PurchaseOrders** (2,074 rows mapped)
+Used columns: PurchaseOrderID (int PK), SupplierID (int FK→Suppliers), OrderDate (date), ExpectedDeliveryDate (date), SupplierReference (nvarchar NULL), IsOrderFinalized (bit NOT NULL)
+
+**Sales.CustomerTransactions** (97,147 rows mapped)
+Used columns: CustomerTransactionID (int PK), CustomerID (int FK→Customers), TransactionDate (date), TransactionAmount (decimal), OutstandingBalance (decimal), IsFinalized (bit NULL)
+
+**Warehouse.StockItems** (227 rows mapped)
+Used columns: StockItemID (int PK), StockItemName (nvarchar NOT NULL), SupplierID (int FK→Suppliers), QuantityPerOuter (int), LeadTimeDays (int), IsChillerStock (bit), UnitPrice (decimal NOT NULL), RecommendedRetailPrice (decimal NULL)
+
+**Warehouse.StockItemStockGroups** (442 rows mapped)
+Used columns: StockItemStockGroupID (int PK), StockItemID (int FK→StockItems), StockGroupID (int FK→StockGroups)
+
+### Key Foreign Key Relationships (source code relevant)
+- `OrderLines.OrderID` → `Orders.OrderID`
+- `OrderLines.StockItemID` → `StockItems.StockItemID`
+- `OrderLines.LastEditedBy` → `People.PersonID`
+- `Orders.CustomerID` → `Customers.CustomerID`
+- `Orders.BackorderOrderID` → `Orders.OrderID` (self-ref)
+- `Orders.SalespersonPersonID/ContactPersonID/PickedByPersonID/LastEditedBy` → `People.PersonID`
+- `Suppliers.PrimaryContactPersonID/AlternateContactPersonID/LastEditedBy` → `People.PersonID`
+- `PurchaseOrders.SupplierID` → `Suppliers.SupplierID`
+- `PurchaseOrders.ContactPersonID/LastEditedBy` → `People.PersonID`
+- `CustomerTransactions.CustomerID` → `Customers.CustomerID`
+- `CustomerTransactions.LastEditedBy` → `People.PersonID`
+- `StockItems.SupplierID` → `Suppliers.SupplierID`
+- `StockItemStockGroups.StockItemID` → `StockItems.StockItemID`
+- `StockItemStockGroups.StockGroupID` → `StockGroups.StockGroupID`
+
+---
+
+## Target Database: Neo4j (Community Edition v2026.02.2)
+
+### Node Labels & Properties (camelCase)
+
+**OrderLine** (231,412 nodes)
+`orderLineId` (Integer PK equivalent), `description` (String), `lastEditedWhen` (String), `pickedQuantity` (Integer), `pickingCompletedWhen` (String), `quantity` (Integer), `taxRate` (Float), `unitPrice` (Float)
+Note: `OrderID` and `StockItemID` are NOT properties — they are replaced by relationships.
+
+**Order** (73,595 nodes)
+`orderId` (Integer PK equivalent), `customerPurchaseOrderNumber` (String), `expectedDeliveryDate` (String), `isUndersupplyBackordered` (Integer, 0/1), `lastEditedWhen` (String), `orderDate` (String), `pickingCompletedWhen` (String)
+Note: Missing properties vs MSSQL: `Comments`, `DeliveryInstructions`, `InternalComments` (these exist in the mapping but not in the actual Neo4j nodes — they are nullable and may be null in the source). `CustomerID`, `BackorderOrderID`, `SalespersonPersonID`, `PickedByPersonID`, `ContactPersonID`, `LastEditedBy` are replaced by relationships.
+
+**Person** (1,111 nodes)
+`personId` (Integer PK), `customFields` (String, JSON), `emailAddress` (String), `faxNumber` (String), `fullName` (String), `isEmployee` (Integer), `isExternalLogonProvider` (Integer), `isPermittedToLogon` (Integer), `isSalesperson` (Integer), `isSystemUser` (Integer), `logonName` (String), `otherLanguages` (String, JSON array), `phoneNumber` (String), `preferredName` (String), `searchName` (String), `userPreferences` (String), `validFrom` (String), `validTo` (String)
+
+**Supplier** (13 nodes)
+`supplierId` (Integer PK), `supplierName` (String), `supplierReference` (String), `paymentDays` (Integer), `phoneNumber` (String), `faxNumber` (String), `websiteUrl` (String), `bankAccountName` (String), `bankAccountBranch` (String), `bankAccountCode` (String), `bankAccountNumber` (String), `bankInternationalCode` (String), plus address fields and timestamps
+
+**PurchaseOrder** (2,074 nodes)
+`purchaseOrderId` (Integer PK), `expectedDeliveryDate` (String), `isOrderFinalized` (Integer, 0/1), `lastEditedWhen` (String), `orderDate` (String), `supplierReference` (String)
+Note: `SupplierID`, `ContactPersonID`, `LastEditedBy` replaced by relationships; `Comments` and `InternalComments` not present in Neo4j.
+
+**CustomerTransaction** (97,147 nodes)
+`customerTransactionId` (Integer PK), `amountExcludingTax` (Float), `finalizationDate` (String), `isFinalized` (Integer, 0/1), `lastEditedWhen` (String), `outstandingBalance` (Float), `taxAmount` (Float), `transactionAmount` (Float), `transactionDate` (String)
+Note: `CustomerID`, `LastEditedBy` replaced by relationships.
+
+**StockItem** (227 nodes)
+`stockItemId` (Integer PK), `stockItemName` (String), `isChillerStock` (Integer, 0/1), `leadTimeDays` (Integer), `quantityPerOuter` (Integer), `recommendedRetailPrice` (Float), `unitPrice` (Float), `taxRate` (Float), plus `brand`, `customFields`, `marketingComments`, `searchDetails`, `size`, `tags`, `typicalWeightPerUnit`, `validFrom`, `validTo`
+Note: `SupplierID`, `LastEditedBy` replaced by relationships.
+
+**StockItemStockGroup** (442 nodes)
+`stockItemStockGroupId` (Integer PK), `lastEditedWhen` (String)
+Note: `StockItemID`, `StockGroupID`, `LastEditedBy` replaced by relationships.
+
+**StockGroup** (10 nodes)
+`stockGroupId` (Integer PK), `stockGroupName` (String), `validFrom` (String), `validTo` (String)
+
+**Customer** (663 nodes)
+`customerId` (Integer PK), `customerName` (String), plus address, contact, financial fields, timestamps
+
+### Relationships
+
+| Type | Direction | Properties | Count |
+|---|---|---|---|
+| `ORDERS` | `OrderLine` → `Order` | (none) | 7,538 |
+| `CUSTOMERS` | `CustomerTransaction` → `Customer` | (none) | 663 |
+| `STOCK_ITEMS` | `OrderLine` → `StockItem` | (none) | 442 |
+| `STOCK_ITEMS` | `StockItemStockGroup` → `StockItem` | (none) | — |
+| `STOCK_GROUPS` | `StockItemStockGroup` → `StockGroup` | (none) | 442 |
+| `SUPPLIERS` | `PurchaseOrder` → `Supplier` | (none) | 227 |
+| `PEOPLE` | `Order` → `Person` | (none) | 10 |
+| `STOCK_ITEM_HOLDINGS` | `Person` → `StockItem` | `binLocation`, `lastCostPrice`, `lastEditedWhen`, `lastStocktakeQuantity`, `quantityOnHand`, `reorderLevel`, `targetStockLevel` | 227 |
+
+### Critical Translation Notes
+
+1. **FK columns → Relationships**: In the NHibernate entities, `OrderLine.OrderID` is a scalar int property. In Neo4j, this is the `ORDERS` relationship. The NHibernate code uses `ol.OrderID == orderId` for filtering; Neo4j requires traversing `(ol)-[:ORDERS]->(o:Order)` and matching on `o.orderId`.
+
+2. **BIT → Integer 0/1**: MSSQL `bit` columns map to Neo4j Integer (0/1), not Boolean.
+
+3. **DECIMAL → Float**: MSSQL `decimal` values map to Neo4j `Float`. This is lossy for high-precision financial data.
+
+4. **DateTime → String**: MSSQL `date`/`datetime2` values are stored as ISO-8601 strings in Neo4j. String comparison works for equality but range queries need care.
+
+5. **Collection navigation**: `Order.OrderLines` (NHibernate `Bag`/`OneToMany`) becomes `(o:Order)<-[:ORDERS]-(ol:OrderLine)` in Neo4j.
+
+6. **`IsIdentity` = 0**: All PKs in MSSQL show `IsIdentity=0` in the system query but the NHibernate mapping uses `Generators.Identity` — IDs are pre-assigned in the migrated Neo4j data.
+
+7. **Missing properties on Neo4j Order nodes**: `Comments`, `DeliveryInstructions`, `InternalComments` are defined in the mapping but absent from actual Neo4j nodes (all null in MSSQL sample).
+
+8. **Native SQL queries (Query13, Query14)** use `JSON_VALUE` and `OPENJSON` on `CustomFields` and `OtherLanguages`. In Neo4j these are plain strings containing JSON — Cypher has `apoc.convert.fromJsonMap`/`fromJsonList` for parsing, or `toString()` + string matching.
+
+9. **`CONTAINS` (Query5)**: MSSQL `LIKE '%text%'` via NHibernate `.Contains()` maps to Cypher `ol.description CONTAINS 'C++'`.
+
+10. **The `SupplierContactInfo`, `SupplierBankAccount`, `SupplierAccounts`, `PurchaseOrderInfo` DTOs** are projection types not mapped to any database table — they are query result shapes only.
+---
+Source Code:
+<source_schema_code>
+public class OrderLine
+{
+    public virtual int OrderLineID { get; set; }
+    public virtual int OrderID { get; set; }
+    public virtual int StockItemID { get; set; }
+    public virtual required string Description { get; set; }
+    public virtual int Quantity { get; set; }
+    public virtual decimal? UnitPrice { get; set; }
+    public virtual decimal TaxRate { get; set; }
+    public virtual int PickedQuantity { get; set; }
+    public virtual DateTime? PickingCompletedWhen { get; set; }
+    public virtual int LastEditedBy { get; set; }
+    public virtual DateTime LastEditedWhen { get; set; }
+}
+public class Order
+{
+    public virtual int OrderID { get; set; }
+    public virtual int CustomerID { get; set; }
+    public virtual int? BackorderOrderID { get; set; }
+    public virtual DateTime OrderDate { get; set; }
+    public virtual DateTime ExpectedDeliveryDate { get; set; }
+    public virtual string? CustomerPurchaseOrderNumber { get; set; }
+    public virtual bool IsUndersupplyBackordered { get; set; }
+    public virtual string? Comments { get; set; }
+    public virtual string? DeliveryInstructions { get; set; }
+    public virtual string? InternalComments { get; set; }
+    public virtual DateTime? PickingCompletedWhen { get; set; }
+    public virtual DateTime LastEditedWhen { get; set; }
+    public virtual IList<OrderLine> OrderLines { get; set; } = [];
+}
+public class Person
+{
+    public virtual int PersonID { get; set; }
+    public virtual required string FullName { get; set; }
+    public virtual required string PreferredName { get; set; }
+    public virtual string? EmailAddress { get; set; }
+    public virtual string? CustomFields { get; set; }
+    public virtual string? OtherLanguages { get; set; }
+}
+public class Supplier
+{
+    public virtual int SupplierID { get; set; }
+    public virtual required string SupplierName { get; set; }
+    public virtual string? SupplierReference { get; set; }
+    public virtual int PaymentDays { get; set; }
+    public virtual string? PhoneNumber { get; set; }
+    public virtual string? FaxNumber { get; set; }
+    public virtual string? WebsiteURL { get; set; }
+    public virtual string? BankAccountName { get; set; }
+    public virtual string? BankAccountBranch { get; set; }
+    public virtual string? BankAccountCode { get; set; }
+    public virtual string? BankAccountNumber { get; set; }
+    public virtual string? BankInternationalCode { get; set; }
+}
+public class CustomerTransaction
+{
+    public virtual int CustomerTransactionID { get; set; }
+    public virtual int CustomerID { get; set; }
+    public virtual DateTime TransactionDate { get; set; }
+    public virtual decimal TransactionAmount { get; set; }
+    public virtual decimal OutstandingBalance { get; set; }
+    public virtual bool IsFinalized { get; set; }
+}
+public class PurchaseOrder
+{
+    public virtual int PurchaseOrderID { get; set; }
+    public virtual int SupplierID { get; set; }
+    public virtual DateTime OrderDate { get; set; }
+    public virtual DateTime ExpectedDeliveryDate { get; set; }
+    public virtual string? SupplierReference { get; set; }
+    public virtual bool IsOrderFinalized { get; set; }
+}
+public class StockItem
+{
+    public virtual int StockItemID { get; set; }
+    public virtual required string StockItemName { get; set; }
+    public virtual int SupplierID { get; set; }
+    public virtual int QuantityPerOuter { get; set; }
+    public virtual int LeadTimeDays { get; set; }
+    public virtual bool IsChillerStock { get; set; }
+    public virtual decimal? UnitPrice { get; set; }
+    public virtual decimal RecommendedRetailPrice { get; set; }
+}
+public class StockItemStockGroup
+{
+    public virtual int StockItemStockGroupID { get; set; }
+    public virtual int StockItemID { get; set; }
+    public virtual int StockGroupID { get; set; }
+}
+public class SupplierContactInfo
+{
+    public int SupplierID { get; set; }
+    public string? SupplierName { get; set; }
+    public string? PhoneNumber { get; set; }
+    public string? FaxNumber { get; set; }
+    public string? WebsiteURL { get; set; }
+}
+public class SupplierBankAccount
+{
+    public int SupplierID { get; set; }
+    public string? BankAccountName { get; set; }
+    public string? BankAccountBranch { get; set; }
+    public string? BankAccountCode { get; set; }
+    public string? BankAccountNumber { get; set; }
+    public string? BankInternationalCode { get; set; }
+}
+public class SupplierAccounts
+{
+    public SupplierContactInfo? ContactInfo { get; set; }
+    public SupplierBankAccount? BankAccount { get; set; }
+}
+public class PurchaseOrderInfo
+{
+    public int PurchaseOrderID { get; set; }
+    public string? SupplierName { get; set; }
+    public DateTime OrderDate { get; set; }
+}
+public class OrderLineMap : ClassMapping<OrderLine> {
+    public OrderLineMap() {
+        Table("OrderLines"); Schema("Sales");
+        Id(x => x.OrderLineID, m => m.Generator(Generators.Identity));
+        Property(x => x.OrderID, m => { m.Insert(false); m.Update(false); });
+        Property(x => x.StockItemID);
+        Property(x => x.Description);
+        Property(x => x.Quantity);
+        Property(x => x.UnitPrice);
+        Property(x => x.TaxRate);
+        Property(x => x.PickedQuantity);
+        Property(x => x.PickingCompletedWhen);
+        Property(x => x.LastEditedBy);
+        Property(x => x.LastEditedWhen);
+    }
+}
+public class OrderMap : ClassMapping<Order> {
+    public OrderMap() {
+        Table("Orders"); Schema("Sales");
+        Id(x => x.OrderID, m => m.Generator(Generators.Identity));
+        Property(x => x.CustomerID);
+        Property(x => x.BackorderOrderID);
+        Property(x => x.OrderDate);
+        Property(x => x.ExpectedDeliveryDate);
+        Property(x => x.CustomerPurchaseOrderNumber);
+        Property(x => x.IsUndersupplyBackordered);
+        Property(x => x.Comments);
+        Property(x => x.DeliveryInstructions);
+        Property(x => x.InternalComments);
+        Property(x => x.PickingCompletedWhen);
+        Property(x => x.LastEditedWhen);
+        Bag(x => x.OrderLines, map => { map.Key(k => k.Column("OrderID")); map.Inverse(true); }, rel => rel.OneToMany());
+    }
+}
+public class PersonMap : ClassMapping<Person> {
+    public PersonMap() {
+        Table("People"); Schema("Application");
+        Id(x => x.PersonID, m => m.Generator(Generators.Identity));
+        Property(x => x.FullName);
+        Property(x => x.PreferredName);
+        Property(x => x.EmailAddress);
+        Property(x => x.CustomFields);
+        Property(x => x.OtherLanguages);
+    }
+}
+public class SupplierMap : ClassMapping<Supplier> {
+    public SupplierMap() {
+        Table("Suppliers"); Schema("Purchasing");
+        Id(x => x.SupplierID, m => m.Generator(Generators.Identity));
+        Property(x => x.SupplierName);
+        Property(x => x.SupplierReference);
+        Property(x => x.PaymentDays);
+        Property(x => x.PhoneNumber);
+        Property(x => x.FaxNumber);
+        Property(x => x.WebsiteURL);
+        Property(x => x.BankAccountName);
+        Property(x => x.BankAccountBranch);
+        Property(x => x.BankAccountCode);
+        Property(x => x.BankAccountNumber);
+        Property(x => x.BankInternationalCode);
+    }
+}
+public class CustomerTransactionMap : ClassMapping<CustomerTransaction> {
+    public CustomerTransactionMap() {
+        Table("CustomerTransactions"); Schema("Sales");
+        Id(x => x.CustomerTransactionID, m => m.Generator(Generators.Identity));
+        Property(x => x.CustomerID);
+        Property(x => x.TransactionDate);
+        Property(x => x.TransactionAmount);
+        Property(x => x.OutstandingBalance);
+        Property(x => x.IsFinalized);
+    }
+}
+public class PurchaseOrderMap : ClassMapping<PurchaseOrder> {
+    public PurchaseOrderMap() {
+        Table("PurchaseOrders"); Schema("Purchasing");
+        Id(x => x.PurchaseOrderID, m => m.Generator(Generators.Identity));
+        Property(x => x.SupplierID);
+        Property(x => x.OrderDate);
+        Property(x => x.ExpectedDeliveryDate);
+        Property(x => x.SupplierReference);
+        Property(x => x.IsOrderFinalized);
+    }
+}
+public class StockItemMap : ClassMapping<StockItem> {
+    public StockItemMap() {
+        Table("StockItems"); Schema("Warehouse");
+        Id(x => x.StockItemID, m => m.Generator(Generators.Identity));
+        Property(x => x.StockItemName);
+        Property(x => x.SupplierID);
+        Property(x => x.QuantityPerOuter);
+        Property(x => x.LeadTimeDays);
+        Property(x => x.IsChillerStock);
+        Property(x => x.UnitPrice);
+        Property(x => x.RecommendedRetailPrice);
+    }
+}
+public class StockItemStockGroupMap : ClassMapping<StockItemStockGroup> {
+    public StockItemStockGroupMap() {
+        Table("StockItemStockGroups"); Schema("Warehouse");
+        Id(x => x.StockItemStockGroupID, m => m.Generator(Generators.Identity));
+        Property(x => x.StockItemID);
+        Property(x => x.StockGroupID);
+    }
+}
+</source_schema_code>
+<source_query_code>
+public record TaxRateCount { public decimal TaxRate { get; set; } public long Count { get; set; } }
+
+public static IQueryable<OrderLine> Query1(NHibernate.ISession session)
+{
+    int orderId = 26866;
+    return session.Query<OrderLine>().Where(ol => ol.OrderID == orderId);
+}
+
+public static IQueryable<OrderLine> Query2(NHibernate.ISession session)
+{
+    decimal unitPrice = 25m;
+    return session.Query<OrderLine>().Where(ol => ol.UnitPrice == unitPrice);
+}
+
+public static IQueryable<OrderLine> Query3(NHibernate.ISession session)
+{
+    var from = new DateTime(2014, 12, 20);
+    var to = new DateTime(2014, 12, 31);
+    return session.Query<OrderLine>().Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);
+}
+
+public static IQueryable<OrderLine> Query4(NHibernate.ISession session)
+{
+    var orderIds = new List<int> { 1, 10, 100, 1000, 10000 };
+    return session.Query<OrderLine>().Where(ol => orderIds.Contains(ol.OrderID));
+}
+
+public static IQueryable<OrderLine> Query5(NHibernate.ISession session)
+{
+    string text = "C++";
+    return session.Query<OrderLine>().Where(ol => ol.Description.Contains(text));
+}
+
+public static IQueryable<OrderLine> Query6(NHibernate.ISession session)
+{
+    int skip = 1000;
+    int take = 50;
+    return session.Query<OrderLine>().OrderBy(ol => ol.OrderLineID).Skip(skip).Take(take);
+}
+
+public static Dictionary<decimal, int> Query7(NHibernate.ISession session)
+{
+    return session.Query<OrderLine>()
+        .GroupBy(ol => ol.TaxRate)
+        .Select(g => new { TaxRate = g.Key, Count = g.Count() })
+        .OrderByDescending(x => x.Count)
+        .ToDictionary(x => x.TaxRate, x => x.Count);
+}
+
+public static decimal? Query8(NHibernate.ISession session)
+{
+    return session.Query<OrderLine>().Max(ol => ol.UnitPrice);
+}
+
+public static decimal? Query9(NHibernate.ISession session)
+{
+    return session.Query<OrderLine>().Sum(ol => ol.Quantity * ol.UnitPrice);
+}
+
+public static Order Query10(NHibernate.ISession session)
+{
+    return session.Query<Order>().Fetch(o => o.OrderLines).Single(o => o.OrderID == 530);
+}
+
+public static IQueryable<Order> Query11(NHibernate.ISession session)
+{
+    return session.Query<Order>().OrderBy(o => o.ExpectedDeliveryDate).Take(1000);
+}
+
+public static IQueryable<string?> Query12(NHibernate.ISession session)
+{
+    return session.Query<Order>().Select(o => o.CustomerPurchaseOrderNumber).Distinct();
+}
+
+public static IList<Person> Query13(NHibernate.ISession session)
+{
+    var sql = """
+                  SELECT PersonID, FullName, PreferredName, EmailAddress, CustomFields, OtherLanguages
+                  FROM Application.People
+                  WHERE JSON_VALUE(CustomFields, '$.Title') = :title
+                  ORDER BY PersonID
+              """;
+    return session.CreateSQLQuery(sql)
+        .SetParameter("title", "Team Member")
+        .SetResultTransformer(Transformers.AliasToBean<Person>())
+        .List<Person>();
+}
+
+public static IList<Person> Query14(NHibernate.ISession session)
+{
+    var sql = """
+                  SELECT PersonID, FullName, PreferredName, EmailAddress, CustomFields, OtherLanguages
+                  FROM Application.People
+                  WHERE EXISTS (
+                      SELECT 1 FROM OPENJSON(OtherLanguages)
+                      WHERE value = :lang
+                  )
+                  ORDER BY PersonID
+              """;
+    return session.CreateSQLQuery(sql)
+        .SetParameter("lang", "Slovak")
+        .SetResultTransformer(Transformers.AliasToBean<Person>())
+        .List<Person>();
+}
+
+public static List<int> Query15(NHibernate.ISession session)
+{
+    var first = session.Query<Supplier>()
+        .Where(s => s.SupplierID < 5)
+        .Select(s => s.SupplierID)
+        .ToList();
+    var last = session.Query<Supplier>()
+        .Where(s => s.SupplierID >= 5 && s.SupplierID <= 10)
+        .Select(s => s.SupplierID)
+        .ToList();
+    return first.Union(last).OrderBy(s => s).ToList();
+}
+</source_query_code>
+
+Translate ONLY the entities, fields, and queries that appear above. Do not invent or carry over any entity or field that is not present in this source code.

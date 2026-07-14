@@ -82,7 +82,7 @@ class TestExtractInput:
     async def test_with_real_llm(
         self, empty_state: State, runnable_config: RunnableConfig, runtime: MagicMock
     ):
-        """Call extract_input with a real EINFRA_MINI model.
+        """Call extract_input with a real EINFRA_GPT_OSS_120B model.
 
         Asserts structural correctness of the output (valid FrameworkType,
         non-empty source_code) without checking exact content.
@@ -135,7 +135,7 @@ class TestSchemaInspection:
     # async def test_with_real_llm(
     #     self, sample_state: State, runnable_config: RunnableConfig, runtime: MagicMock
     # ):
-    #     """Call schema_inspection with a real EINFRA_MINI model.
+    #     """Call schema_inspection with a real EINFRA_GPT_OSS_120B model.
 
     #     Asserts structural correctness of the output (valid FrameworkType,
     #     non-empty schema_context) without checking exact content.

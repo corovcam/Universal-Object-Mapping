@@ -271,7 +271,8 @@ final class Neo4jTemplateFactory {
     static Neo4jTemplate create(Driver driver) {
         Neo4jClient client = Neo4jClient.create(driver);
         var mappingContext = new Neo4jMappingContext();
-        mappingContext.setInitialEntitySet(Set.of(Order.class, Customer.class, CustomerTransaction.class, OrderLine.class));
+        // No setInitialEntitySet: the @Node entity classes are dataset-specific, and the mapping
+        // context registers them lazily on first use — hardcoding names breaks other schemas.
         mappingContext.afterPropertiesSet();
     
         Neo4jTransactionManager transactionManager = new Neo4jTransactionManager(driver);

@@ -34,6 +34,39 @@ from react_agent.utils.types import FrameworkType
 logger = logging.getLogger(__name__)
 
 
+class _EmptyToolsBindMixin:
+    """Never send `tools: []` to the provider.
+
+    ``create_agent`` with a ``ProviderStrategy`` response format calls
+    ``model.bind_tools(final_tools, strict=True, **kwargs)`` UNCONDITIONALLY — even when the
+    agent has no tools (the LLM-judge evaluate node). ``BaseChatModel.bind_tools`` then puts a
+    literal ``tools: []`` in the request payload, which vLLM/e-INFRA rejects with 400
+    "`tools` must not be an empty array" (2026-07-04 eval run: every deepseek-v4 judge call
+    failed and fell through to weaker fallback models). With no tools there is nothing for
+    ``tool_choice``/``strict``/``parallel_tool_calls`` to apply to, so bind the remaining
+    kwargs (e.g. ``response_format``) and omit the tools field entirely.
+    """
+
+    def bind_tools(self, tools: Any, *args: Any, **kwargs: Any) -> Any:
+        if not tools:
+            for tools_only_kwarg in ("tool_choice", "strict", "parallel_tool_calls"):
+                kwargs.pop(tools_only_kwarg, None)
+            return self.bind(**kwargs)  # type: ignore[attr-defined]
+        return super().bind_tools(tools, *args, **kwargs)  # type: ignore[misc]
+
+
+class SafeChatLiteLLM(_EmptyToolsBindMixin, ChatLiteLLM):
+    """ChatLiteLLM that omits the `tools` field when the tools list is empty."""
+
+
+class SafeChatOpenAI(_EmptyToolsBindMixin, ChatOpenAI):
+    """ChatOpenAI that omits the `tools` field when the tools list is empty."""
+
+
+class SafeChatOllama(_EmptyToolsBindMixin, ChatOllama):
+    """ChatOllama that omits the `tools` field when the tools list is empty."""
+
+
 def get_context_dir() -> str:
     """Retrieve the absolute path to the local context directory.
 
@@ -108,26 +141,31 @@ def translate_localhost_to_host_gateway(uri: str) -> str:
     return uri
 
 
-async def get_snippet_content(framework: FrameworkEnum, is_schema: bool = False) -> str:
+async def get_snippet_content(framework: FrameworkEnum, is_schema: bool = False) -> dict[Literal["content", "entry_type_name"], str]:
     """Read a snippet file's content based on framework and type."""
     snippets_dir = os.path.join(get_context_dir(), "snippets")
 
     if framework not in FRAMEWORK_TO_SNIPPET_FILES:
         logger.warning(f"No snippet file mapping found for framework {framework.value}")
-        return ""
+        return {"content": "", "entry_type_name": ""}
 
-    file_name = (
-        FRAMEWORK_TO_SNIPPET_FILES[framework][0]
-        if is_schema
-        else FRAMEWORK_TO_SNIPPET_FILES[framework][1]
-    )
+    if is_schema:
+        file_name = FRAMEWORK_TO_SNIPPET_FILES[framework]["schema_validation"]
+        entry_type_name = FRAMEWORK_TO_SNIPPET_FILES[framework]["schema_validation_entry_type_name"]
+    else:
+        file_name = FRAMEWORK_TO_SNIPPET_FILES[framework]["query_validation"]
+        entry_type_name = FRAMEWORK_TO_SNIPPET_FILES[framework]["query_validation_entry_type_name"]
+
     path = os.path.join(snippets_dir, file_name)
     try:
         async with aiofiles.open(path) as f:
-            return await f.read()
+            return {
+                "content": await f.read(),
+                "entry_type_name": entry_type_name
+            }
     except Exception as e:
         logger.warning(f"Failed to read snippet file {path}: {e}")
-        return ""
+        return {"content": "", "entry_type_name": ""}
 
 
 async def get_framework_config_content(framework: FrameworkEnum) -> str:
@@ -174,6 +212,34 @@ def get_normalized_framework_name(
     return FRAMEWORK_TO_NORMALIZED_NAME[cast(FrameworkEnum, framework)]
 
 
+# Progress noise emitted by dotnet restore / Maven dependency resolution. These lines carry no
+# diagnostic value but once inflated a single evaluation prompt to 1.5 MB (nhib-neo4j,
+# run 20260708-234928): the sandbox restores the whole package graph per validation.
+_BUILD_NOISE_RE = re.compile(
+    r"^\s*(?:Restored /|Determining projects to restore|Downloading from |Downloaded from |Progress \(\d)"
+)
+
+
+def compact_build_log(text: str, cap: int = 20_000) -> str:
+    """Compact a sandbox build/run log for inclusion in an LLM prompt or ToolMessage.
+
+    Drops restore/download progress noise lines, then caps the remainder head+tail. Error and
+    warning lines are never noise-matched, and the parsed JSON results travel through graph
+    state — this text is only advisory context for the model.
+    """
+    lines = text.splitlines()
+    kept = [ln for ln in lines if not _BUILD_NOISE_RE.match(ln)]
+    dropped = len(lines) - len(kept)
+    out = "\n".join(kept)
+    if dropped:
+        out += f"\n[... {dropped} build/restore progress lines omitted ...]"
+    if len(out) > cap:
+        half = cap // 2
+        omitted = len(out) - cap
+        out = out[:half] + f"\n[... {omitted} chars omitted ...]\n" + out[-half:]
+    return out
+
+
 def get_message_text(msg: BaseMessage) -> str:
     """Get the text content of a message."""
     content = msg.content
@@ -212,7 +278,41 @@ async def load_chat_model(
     # log_http_transport = llm_request_logger.LogTransport(httpx.HTTPTransport())
     # async_log_http_transport = llm_request_logger.AsyncLogTransport(httpx.AsyncHTTPTransport())
 
-    if provider == "openai" or provider == "einfra":
+    if provider == "einfra":
+        extra_body = config.get("extra_body")
+        extra_body_kwargs: dict[str, Any] = {}
+        if config.get("reasoning") is not None:
+            extra_body_kwargs["chat_template_kwargs"] = {
+                "enable_thinking": config["reasoning"]
+            }
+        if extra_body is not None:
+            chat_template_kwargs = extra_body_kwargs.get("chat_template_kwargs", {})
+            extra_body_kwargs["chat_template_kwargs"] = {
+                **chat_template_kwargs,
+                **extra_body.get("chat_template_kwargs", {}),
+            }
+            extra_body_kwargs.update({k: v for k, v in extra_body.items() if k != "chat_template_kwargs"})
+        
+        litellm_api_base = config.get("openai_api_url", "").rstrip("/v1")
+        model_client = SafeChatLiteLLM(
+            model=f"openai/{model}",
+            api_base=litellm_api_base,
+            api_key=config.get("openai_api_key"),
+            openai_api_key=config.get("openai_api_key"),
+            streaming=True,
+            max_retries=10,
+            request_timeout=120,
+            **(
+                {"temperature": config.get("temperature", 1)}
+                if config.get("temperature") is not None
+                else {}
+            ),
+            model_kwargs={
+                "stream_usage": True,
+                **(extra_body_kwargs if extra_body_kwargs else {}),
+            },
+        )
+    elif provider == "openai":
         debug_kwargs = {}
         # if debugging:
         #     debug_kwargs = {
@@ -240,7 +340,7 @@ async def load_chat_model(
         if extra_body is not None:
             extra_body_kwargs.get("chat_template_kwargs", {}).update(extra_body)
 
-        model_client = ChatOpenAI(
+        model_client = SafeChatOpenAI(
             model=model,  # type: ignore
             base_url=config.get("openai_api_url"),  # type: ignore
             api_key=config.get("openai_api_key"),  # type: ignore
@@ -275,7 +375,7 @@ async def load_chat_model(
         #             # "transport": async_log_http_transport
         #         },
         #     }
-        model_client = ChatOllama(
+        model_client = SafeChatOllama(
             model=model,
             base_url=config.get("ollama_api_url", "http://localhost:11434"),
             **(
@@ -289,37 +389,6 @@ async def load_chat_model(
                 else {}
             ),
             # **debug_kwargs,  # type: ignore
-        )
-    elif provider == "litellm":
-        extra_body = config.get("extra_body")
-        extra_body_kwargs: dict[str, Any] = {}
-        if config.get("reasoning") is not None:
-            extra_body_kwargs["chat_template_kwargs"] = {
-                "enable_thinking": config["reasoning"]
-            }
-        if extra_body is not None:
-            extra_body_kwargs.get("chat_template_kwargs", {}).update(extra_body)
-        
-        litellm_api_base = config.get("openai_api_url", "").rstrip("/v1")
-        model_client = ChatLiteLLM(
-            model=f"openai/{model}",
-            api_base=litellm_api_base,
-            api_key=config.get("openai_api_key"),
-            openai_api_key=config.get("openai_api_key"),
-            streaming=True,
-            max_retries=10,
-            request_timeout=120,
-            max_tokens=131072,
-            **(
-                {"temperature": config.get("temperature", 1)}
-                if config.get("temperature") is not None
-                else {}
-            ),
-            model_kwargs={
-                "stream_usage": True,
-                "max_completion_tokens": 131072,
-                **(extra_body_kwargs if extra_body_kwargs else {}),
-            },
         )
     else:
         if debugging:
@@ -628,7 +697,53 @@ async def get_model(
         "extra_body": extra_body,
         **chat_model_kwargs,
     }
+    extra_body_kwargs = await get_extra_body_for_model(AvailableModel(model_name))
+    if extra_body_kwargs:
+        chat_model_config["extra_body"] = chat_model_config.get("extra_body") or {}
+        chat_model_config["extra_body"].update(extra_body_kwargs)
     return await load_chat_model(model_name, config=chat_model_config)
+
+
+async def get_extra_body_for_model(model_name: AvailableModel) -> dict[str, Any]:
+    """Return any necessary extra body parameters for specific models."""
+    import base64
+    
+    cache_file = os.path.join(get_config_dir(), "model_profiles.json")
+    if not MODEL_PROFILE_CACHE:
+        try:
+            async with aiofiles.open(cache_file, "rb") as f:
+                content = await f.read()
+                if content:
+                    MODEL_PROFILE_CACHE.update(orjson.loads(content))
+        except Exception:
+            pass
+    
+    # Cap the COMPLETION budget well below the context size. Passing max_input_tokens here
+    # (262k/1M) effectively unbounded the thinking channel: kimi-k2.7 was observed spending a
+    # single 211k-char reasoning turn (23 min) and finishing with no tool call at all. 64k is
+    # comfortably above the largest observed useful output (full dual harness save ≈ 12-15k
+    # tokens) while making runaway rumination terminate.
+    _COMPLETION_TOKEN_CAP = 65536
+
+    extra_body: dict[str, Any] = {}
+    if model_name == AvailableModel.EINFRA_GLM_5_2:
+        extra_body = {
+            "max_tokens": _COMPLETION_TOKEN_CAP,
+            "max_completion_tokens": _COMPLETION_TOKEN_CAP,
+        }
+        extra_body["chat_template_kwargs"] = {
+            "cache_salt": base64.b64encode(b"universal-object-mapping-cache-salt").decode(),
+            "enable_thinking": False,
+            "thinking": False,
+            # "preserve_thinking": True,
+            # "reasoning_effort": "high",
+        }
+    elif model_name == AvailableModel.EINFRA_KIMI_K2_7:
+        extra_body = {
+            "max_tokens": _COMPLETION_TOKEN_CAP,
+            "max_completion_tokens": _COMPLETION_TOKEN_CAP,
+        }
+    return extra_body
 
 
 async def get_database_mapping_json(
@@ -666,9 +781,15 @@ async def create_example_for_prompt(
     framework: FrameworkEnum, return_schema: bool
 ) -> str:
     """Create example code snippets for prompts based on the framework."""
-    example = f"""
+    if return_schema:
+        example = f"""
 <example framework="{framework.value}">
-{await get_snippet_content(framework, is_schema=True) if return_schema else await get_snippet_content(framework, is_schema=False)}
+{(await get_snippet_content(framework, is_schema=True))["content"]}
+</example>"""
+    else:
+        example = f"""
+<example framework="{framework.value}">
+{(await get_snippet_content(framework, is_schema=False))["content"]}
 </example>"""
     return example
 

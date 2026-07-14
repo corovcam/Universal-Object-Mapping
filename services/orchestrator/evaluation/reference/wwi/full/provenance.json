@@ -1,0 +1,50 @@
+{
+  "net-dapper__java-spring-data-mongodb": {
+    "tag": "20260709-150203",
+    "variant": "full",
+    "run_id": "1de64392-89e1-40f8-8f3e-d408b0630cd6",
+    "pred_dir": "einfra-kimi-k2-7/our_approach-1de64392",
+    "recording": "our_approach-full-06c2eb64",
+    "frozen": "2026-07-11"
+  },
+  "net-dapper__java-spring-data-neo4j": {
+    "tag": "20260709-150203",
+    "variant": "full",
+    "run_id": "7f5c495f-4461-4564-8c8d-f67daadf6bd1",
+    "pred_dir": "einfra-kimi-k2-7/our_approach-7f5c495f",
+    "recording": "our_approach-full-32ceaee9",
+    "frozen": "2026-07-11"
+  },
+  "net-entity-framework-core__java-spring-data-mongodb": {
+    "tag": "20260709-150203",
+    "variant": "full",
+    "run_id": "43ceba37-23d4-41f8-865e-ed32517aae3d",
+    "pred_dir": "einfra-kimi-k2-7/our_approach-43ceba37",
+    "recording": "our_approach-full-3b40a0c4",
+    "frozen": "2026-07-11"
+  },
+  "net-entity-framework-core__java-spring-data-neo4j": {
+    "tag": "20260709-150203",
+    "variant": "full",
+    "run_id": "2889b5e7-c243-4d7d-904f-c989315ed124",
+    "pred_dir": "einfra-kimi-k2-7/our_approach-2889b5e7",
+    "recording": "our_approach-full-1793cbec",
+    "frozen": "2026-07-11"
+  },
+  "net-nhibernate__java-spring-data-mongodb": {
+    "tag": "20260709-150203",
+    "variant": "full",
+    "run_id": "1dec6ffc-4b27-4dfb-87f1-3ffc09b6ab01",
+    "pred_dir": "einfra-kimi-k2-7/our_approach-1dec6ffc",
+    "recording": "our_approach-full-465da09f",
+    "frozen": "2026-07-11"
+  },
+  "net-nhibernate__java-spring-data-neo4j": {
+    "tag": "20260709-150203",
+    "variant": "full",
+    "run_id": "401db9f4-d5a1-492c-8e29-2efd0ac2064c",
+    "pred_dir": "einfra-kimi-k2-7/our_approach-401db9f4",
+    "recording": "our_approach-full-edd2deb5",
+    "frozen": "2026-07-11"
+  }
+}

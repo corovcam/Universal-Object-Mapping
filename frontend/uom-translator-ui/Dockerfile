@@ -124,9 +124,9 @@ RUN if [ -n "$PRODUCTION_DOMAIN_OR_IP" ]; then \
 # COPY --from=builder --chown=node:node /app/.next/cache ./.next/cache
 
 # Install additional dependencies using apt
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
-    rm -rf /var/lib/apt/lists/*
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends curl && \
+#     rm -rf /var/lib/apt/lists/*
 
 # Switch to non-root user for security best practices
 USER node

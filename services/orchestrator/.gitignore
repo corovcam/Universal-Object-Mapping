@@ -169,4 +169,6 @@ misc/
 .env.dev
 bin/
 obj/
-tests/aimock/recorded/
+tests/**/recorded*/
+evaluation/traces/
+out/

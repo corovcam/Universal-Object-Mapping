@@ -16,6 +16,8 @@ misc/
 mockups/
 .devcontainer/*agent.sh
 nginx*.conf
+.vercel
+.context/
 .design-sync/
 .ds-sync/
 ds-bundle/

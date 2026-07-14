@@ -13,7 +13,10 @@ services:
       - SSH_GATEWAY_URL=daytona.${PRODUCTION_DOMAIN_OR_IP}:2222
       - SSH_GATEWAY_COMMAND=ssh -p 2222 {{TOKEN}}@daytona.${PRODUCTION_DOMAIN_OR_IP}
       - OTEL_ENABLED=false
+
+      - DEFAULT_SNAPSHOT=${DAYTONA_DEFAULT_SNAPSHOT:-corovcam/uom-default-snapshot:1.0.0}
     networks:
+      - default
       - uom
 
   proxy:
@@ -22,28 +25,34 @@ services:
       - PROXY_PROTOCOL=https
       - COOKIE_DOMAIN=proxy.daytona.${PRODUCTION_DOMAIN_OR_IP}
     networks:
+      - default
       - uom
 
   runner:
     networks:
+      - default
       - uom
     extra_hosts:
       - "host.docker.internal:${OUTER_HOST_GATEWAY_IP:-host-gateway}"
   
   dex:
     volumes:
-      - ../../../services/daytona/dex/config.yaml:/etc/dex/config.yaml
+      - ../../services/daytona/dex/config-prod.yaml:/etc/dex/config.yaml
     ports: !override
       - 5356:5556
     networks:
+      - default
       - uom
 
   registry:
+    # environment:
+    #   - REGISTRY_HTTP_HEADERS_Access-Control-Allow-Origin='[http://registry-ui.example.com]'
     ports: !override
       - 6058:6000
   
   ssh-gateway:
     networks:
+      - default
       - uom
   
   maildev: !reset null

@@ -61,6 +61,17 @@ class InputState:
     destination_target: FrameworkEnum | None = field(default=None)
     destination_target_version: str | None = field(default=None)
 
+    single_pass: bool = field(default=False)
+    """
+    Experiment run-mode flag (the evaluation baseline arm). When True, the pipeline runs as a
+    SINGLE-SHOT translator: `generate_translation_node` does one direct model call with just the
+    save tool (no ReAct research loop, no docs MCP), and the validation routers do NOT loop back to
+    regenerate or hand off to human intervention on failure — they terminate. This isolates the
+    value of the agentic self-repair loop (the only difference from the default full-loop run) while
+    producing the same deterministic assemble→validate→finalize artifacts for an apples-to-apples
+    comparison. Settable at invoke because the conditional-edge routers read it from state.
+    """
+
 
 @dataclass
 class OutputState:
@@ -174,6 +185,42 @@ class State(InputState, OutputState):
     """
     Track the number of times we've retried a translation after sandbox failures or deepdiff failures.
     The graph uses this to branch to `human_intervention_node` if it exceeds the limit (e.g., > 3).
+    """
+
+    translation_schema_bodies: dict[str, str] | None = field(default=None)
+    """
+    Fragment-contract schema bodies keyed by side ("source"/"target") as saved by
+    `save_schema_translation`. Used for selective retries (pre-seeding the next agent run) and
+    for the deterministic finalize step.
+    """
+
+    translation_query_fragments: dict[str, dict[str, str]] | None = field(default=None)
+    """
+    Fragment-contract per-query bodies: `{query_id: {"source": ..., "target": ...}}` as saved by
+    `save_query_translation`. The unit of per-query acceptance/retry — a rejected loop pre-seeds
+    these and regenerates only the failing query ids.
+    """
+
+    accepted_query_ids: list[str] = field(default_factory=list)
+    """
+    Query ids whose translations are currently accepted (deterministically Equivalent, or
+    explicitly passed by the evaluation judge). NOT frozen across retries: a query accepted
+    deterministically in an earlier loop that stops verifying after a revision is a regression
+    and gets re-decided (dropped or re-judged) in the next evaluation pass.
+    """
+
+    judge_accepted_query_ids: list[str] = field(default_factory=list)
+    """
+    The subset of ``accepted_query_ids`` accepted by the evaluation JUDGE rather than the
+    deterministic checker. These stay accepted across loops (their diff is a shape change the
+    judge already ruled on, which by construction keeps reporting "Differences Found"), while
+    deterministic acceptances must re-verify every loop.
+    """
+
+    query_verdicts: dict[str, str] | None = field(default=None)
+    """
+    Latest per-query verdict map (`{query_id: "pass" | "fail: <reason>"}`) combining the
+    deterministic equivalence statuses with the judge's per-query calls. Surfaced to metrics.
     """
     
     ui_messages: Annotated[Sequence[AnyMessage], add_messages] = field(

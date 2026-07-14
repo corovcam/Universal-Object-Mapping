@@ -166,6 +166,10 @@ To deploy the stack in production mode, ensure all environment variables in the 
 ```
 See the **[DevOps & Deployment Operations](docs/devops/devops.md)** documentation for detailed information on the production deployment setup, environment variable configurations, and operational guidelines.
 
+## Troubleshooting
+
+1. Daytona needs at least 75% of disk space free on host to startup the default runner, i.e. the entire Daytona stack. Very hard to debug.
+
 ## Acknowledgements
 
 Part of the `benchmarks` source code, including some workflows and diagrams, were developed by Milan Abrahám as part of his Master thesis titled _Framework-Agnostic Query Adaptation: Ensuring SQL Compatibility Across .NET Database Frameworks_. The thesis is available at http://hdl.handle.net/20.500.11956/203083, and the source code is available at https://github.com/milan252525/orm-convertor.

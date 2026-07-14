@@ -1,0 +1,26 @@
+---
+config:
+  flowchart:
+    curve: basis
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	model(model)
+	tools(tools)
+	TodoListMiddleware\2eafter_model(TodoListMiddleware.after_model)
+	PatchToolCallsMiddleware\2ebefore_agent(PatchToolCallsMiddleware.before_agent)
+	LocalContextMiddleware\2ebefore_agent(LocalContextMiddleware.before_agent)
+	HumanInTheLoopMiddleware\2eafter_model(HumanInTheLoopMiddleware.after_model)
+	__end__([<p>__end__</p>]):::last
+	HumanInTheLoopMiddleware\2eafter_model --> TodoListMiddleware\2eafter_model;
+	LocalContextMiddleware\2ebefore_agent --> model;
+	PatchToolCallsMiddleware\2ebefore_agent --> LocalContextMiddleware\2ebefore_agent;
+	TodoListMiddleware\2eafter_model -.-> __end__;
+	TodoListMiddleware\2eafter_model -.-> model;
+	TodoListMiddleware\2eafter_model -.-> tools;
+	__start__ --> PatchToolCallsMiddleware\2ebefore_agent;
+	model --> HumanInTheLoopMiddleware\2eafter_model;
+	tools -.-> model;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

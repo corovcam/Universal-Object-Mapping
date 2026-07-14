@@ -9,13 +9,13 @@ import {
 import { cva, type VariantProps } from "class-variance-authority";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
 import { memo, useCallback, useRef, useState } from "react";
-import { StreamdownText } from "@/components/streamdown-text";
 import {
 	Collapsible,
 	CollapsibleContent,
 	CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 
 const ANIMATION_DURATION = 200;
 
@@ -217,7 +217,7 @@ function ReasoningText({ className, ...props }: React.ComponentProps<"div">) {
 	);
 }
 
-const ReasoningImpl: ReasoningMessagePartComponent = () => <StreamdownText />;
+const ReasoningImpl: ReasoningMessagePartComponent = () => <MarkdownText />;
 
 const ReasoningGroupImpl: ReasoningGroupComponent = ({
 	children,

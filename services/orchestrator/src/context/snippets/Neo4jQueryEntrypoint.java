@@ -6,7 +6,6 @@ import java.time.format.*;
 import java.time.temporal.*;
 import java.util.*;
 import java.util.Set;
-import java.util.function.*;
 
 import org.neo4j.cypherdsl.core.*;
 import org.neo4j.cypherdsl.core.SortItem.*;
@@ -116,6 +115,33 @@ final class QueryRuntimeSupport {
     static String getNeo4jPassword() {
         String pass = System.getenv("NEO4J_PASSWORD");
         return pass != null ? pass : DEFAULT_NEO4J_PASS;
+    }
+
+    /**
+     * Strip store-internal identifiers before results are written: equivalence compares source and
+     * target result JSON field-by-field, and the mapped store id (Neo4j element id / Mongo
+     * ObjectId, always surfacing as a bare "id" property) has no source-side counterpart — the C#
+     * entities expose only domain keys (orderId, orderLineId, ...). Removing it centrally means a
+     * translated entity that misses @JsonIgnoreProperties({"id"}) can no longer fail equivalence
+     * on shape alone.
+     */
+    static void stripStoreInternalIds(JsonNode node) {
+        if (node == null) {
+            return;
+        }
+        if (node.isObject()) {
+            ((tools.jackson.databind.node.ObjectNode) node).remove("id");
+        }
+        for (JsonNode child : node) {
+            stripStoreInternalIds(child);
+        }
+    }
+
+    static void writeResults(String path, Object results) {
+        JsonMapper mapper = createJsonMapper();
+        JsonNode tree = mapper.valueToTree(results);
+        stripStoreInternalIds(tree);
+        mapper.writeValue(new java.io.File(path), tree);
     }
 }
 
@@ -279,7 +305,8 @@ final class Neo4jTemplateFactory {
     static Neo4jTemplate create(Driver driver) {
         Neo4jClient client = Neo4jClient.create(driver);
         var mappingContext = new Neo4jMappingContext();
-        mappingContext.setInitialEntitySet(Set.of(Order.class, Customer.class, CustomerTransaction.class, OrderLine.class));
+        // No setInitialEntitySet: the @Node entity classes are dataset-specific, and the mapping
+        // context registers them lazily on first use — hardcoding names breaks other schemas.
         mappingContext.afterPropertiesSet();
     
         Neo4jTransactionManager transactionManager = new Neo4jTransactionManager(driver);
@@ -502,7 +529,7 @@ public class Neo4jQueryEntrypoint {
 
             // Now create and execute the queries and capture results
             var results = new LinkedHashMap<String, Object>();
-            List<Supplier<Map<String, Object>>> harnesses = List.of(
+            List<java.util.function.Supplier<Map<String, Object>>> harnesses = List.of(
                 () -> Query1.harness(template),
                 () -> Query2.harness(template),
                 () -> Query3.harness(template, client),
@@ -523,7 +550,7 @@ public class Neo4jQueryEntrypoint {
                     results.put("query" + idx, Map.of("error", e.toString()));
                 }
             }
-            QueryRuntimeSupport.createJsonMapper().writeValue(new java.io.File(System.getenv("NEO4J_RESULTS_PATH") + "/neo4j_results_" + System.currentTimeMillis() + ".json"), results);
+            QueryRuntimeSupport.writeResults(System.getenv("NEO4J_RESULTS_PATH") + "/neo4j_results_" + System.currentTimeMillis() + ".json", results);
         }
     }
 }

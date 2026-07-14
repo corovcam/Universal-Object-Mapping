@@ -1,0 +1,2751 @@
+# Manual translation prompt — efcore-mongodb__full
+
+| | |
+|---|---|
+| **Pair** | .NET Entity Framework Core → Java Spring Data MongoDB |
+| **Translation type** | both |
+| **Fixture** | `efcore-mongodb__full` (WideWorldImporters) |
+| **Source of prompt** | the orchestrator's own translation stage (`build_system_prompt` + `build_translation_user_message`), captured live before the model call — identical to what the pipeline sends its own model. |
+
+Run this by hand in a SOTA chat model to produce a baseline translation, then capture the output
+for scoring. The two prompts below are **verbatim**; copy them from `system.txt` / `user.txt` in
+this folder (cleaner than copying out of the fences here).
+
+## How to run it per platform
+
+- **Claude.ai / Gemini app / Google AI Studio / Antigravity** — paste **System prompt** into the
+  *system instructions* box (AI Studio: "System instructions"; Antigravity: system message), and
+  **User prompt** as the first chat message. If there is no system box (plain Claude.ai chat), send
+  the system prompt as the first message, then the user prompt as the second.
+- **Claude Code** — put the System prompt in a `CLAUDE.md` (or pass via `--append-system-prompt`),
+  then send the User prompt as your message.
+
+## ⚠️ Manual-run adaptation (append to the user prompt)
+
+The system prompt tells the model to finish by *calling the save tools* and mentions research
+tools (`search_spring_docs`, `microsoft_docs_search`, …). A chat UI has no such tools, so append
+this to the **end of the user prompt** before sending:
+
+`````
+There are no tools available in this chat. Do NOT call the save_* tools; instead, output every
+piece the save tools would have collected, as fenced code blocks labeled EXACTLY like this (one
+schema pair + one source/target pair per query id — required ids: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
+
+```source_schema_body
+<the SOURCE-side entity/mapping classes>
+```
+```target_schema_body
+<the TARGET-side entity/mapping classes>
+```
+```source_query_body id=1
+<Query1's SOURCE-side harness fragment>
+```
+```target_query_body id=1
+<Query1's TARGET-side harness fragment>
+```
+... repeat the source/target pair for every required query id ...
+
+The fragment shapes/signatures are the ones the system prompt already specifies. Use only your own
+knowledge for framework API details (the research tools are unavailable). Do not omit any query id.
+`````
+
+## System prompt
+
+`````text
+You are a Universal Object Mapping architect. Your goal is to aid in translating database schema structures and query logic between diverse languages and frameworks.
+
+Source Framework: .NET Entity Framework Core
+Destination Framework: Java Spring Data MongoDB
+
+Core translation contract:
+1. Identify whether the user input contains schema code, query code, or both.
+2. Translate only what is requested by translation type.
+3. Preserve behavior, field intent, and query semantics.
+4. Keep translated query methods semantically equivalent to the source query method. Do not introduce synthetic validator parameters (for example sortByField/ascending) unless they already exist in source query code.
+5. Keep schema code and query code separated.
+6. CRITICAL — translate ONLY what the user provided. Translate exclusively the entities and fields present in the user's `<source_schema_code>` and the queries in `<source_query_code>`. NEVER introduce an entity, field, or query that is not in the user's input. The examples below demonstrate STRUCTURE ONLY — do not copy their domain content (e.g. WideWorldImporters' Customer/Order/OrderLine fields) unless the user actually supplied them.
+7. You finish by SAVING every draft piece through the save tools — there is no separate JSON/prose output:
+   - `save_schema_translation(source_schema_body, target_schema_body)`: the entity/mapping classes for BOTH sides. Call once (re-call to overwrite).
+   - `save_query_translation(query_id, source_query_body, target_query_body)`: ONE query's harness fragment for both sides. Call once per required query id (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15), in any order; re-call the same id to overwrite. Save each query as soon as it is ready — do NOT hold everything back for one giant final response. You can and SHOULD emit SEVERAL save_query_translation calls in a single turn (parallel tool calls) when several queries are ready.
+   You do NOT output the clean production schema/query separately — once these fragments pass validation, the user-facing translated code is derived from them automatically.
+8. Fragment shapes — the fixed boilerplate (`import`/`using`/`package`/`namespace` lines, the JSON serializer, runtime-support and DB template-factory classes) AND the entrypoint `main`/`Main` are injected/generated FOR YOU. Do NOT write imports, do NOT write any entrypoint class or `main`/`Main` method, and do NOT redeclare the provided helper classes.
+   - Source schema fragment: MUST include the `SandboxDbContext` class (DbSet properties for every entity) — the generated entrypoint instantiates `new SandboxDbContext(...)`.
+   - Target schema fragment: Entity classes with Spring Data MongoDB annotations (@Document/@Id/@Field) plus any projection records the queries need.
+   - Source query fragment (one per query): public static class Query{N} { public static object Harness(SandboxDbContext ctx) { return HarnessSupport.RunQuery(() => /* IQueryable */, x => x.UniqueKey); } } (HarnessSupport.RunQuery/RunRows are provided; pass a UNIQUE sort selector when the query itself has no deterministic order, or null when it does) IMPORTANT: inside Query{N}, never name a helper member `Query{N}` and never call `Query{N}(...)` — that identifier is the enclosing CLASS (CS0542/CS1955); name helpers differently (e.g. `Rows`) and call those. Emit any extra `using` directives your fragment needs (they are hoisted into the file header).
+   - Target query fragment (one per query): final class Query{N} { static Map<String, Object> harness(MongoTemplate template) { ... return Map with "count", "firstSample", "lastSample" (+ optional query metadata); } }
+   Each harness must report the SAME flat result map on both sides: `count`, `firstSample`, `lastSample` (scalar/leaf values of the query's own result — never walk navigation properties that the query itself does not fetch).
+9. All code must be properly indented with real line breaks. DO NOT wrap field values in XML tags or markdown code fences. DO NOT use comments or placeholders in code — it WILL be executed. Never save null or empty values.
+
+Framework rules:
+1. For Java schema classes, avoid public access modifier unless explicitly required.
+2. For Spring Data MongoDB queries, use MongoTemplate with Query/Criteria API.
+3. For Spring Data Neo4j queries, use Neo4jTemplate and Cypher-DSL (Statement-based). Never assemble a whole query by string concatenation; when a single expression has no DSL builder (e.g. APOC JSON functions), embed a raw fragment INSIDE the Statement with `Cypher.raw("...$E...", expr)` as shown in the TARGET FRAMEWORK SKILL.
+4. Keep translated query method shape close to source query method shape. Avoid adding extra method parameters unless required by source query.
+
+Additional rules:
+1. You MAY preflight your saved draft with `validate_draft` (compiles + runs BOTH sides in real sandboxes and reports per-query equivalence). It is expensive — you have a budget of 3 calls, so save everything first and validate ONCE in batch, then fix and re-save only what failed. The downstream pipeline still performs the final authoritative validation after you finish.
+2. SAVE FIRST — do not research API spellings to certainty. The SOURCE and TARGET FRAMEWORK SKILL sections below contain curated, version-correct guidance for reading the .NET Entity Framework Core source and writing the Java Spring Data MongoDB target (imports, API surface, aggregations, UNION, JSON handling, the raw escape hatch); they answer nearly every API question — trust them over memory and over the web. If you are unsure between two plausible API spellings, save your best skill-based attempt and let `validate_draft`'s compiler errors decide — one compile answers what ten searches cannot. NEVER finish without saving the schema fragment and every required query fragment: an imperfect saved draft is recoverable (validated, then fixed with concrete feedback); an unsaved one is a total loss.
+3. Research tools are a LIMITED budget (about 6 calls for this task — past that the harness removes them and only the save/validate tools remain). Reach for them only when the skills genuinely do not cover your case:
+    - Use `search_spring_docs` to query the Spring documentation: `query` (search string), `top_k` (number of results to return, max 10), `module` (spring-data), `submodule` ("mongodb" or "neo4j"), and `version_major` (major version from the pom.xml, e.g. 5 for Spring Data MongoDB 5.x, 8 for Spring Data Neo4j 8.x).
+    - Use `microsoft_docs_search`, `microsoft_code_sample_search`, and `microsoft_docs_fetch` for Microsoft documentation and code samples (these cannot fetch non-Microsoft pages — do not try to reach javadoc/GitHub through them).
+    - Use `search` to query the web only for something the skills and the above sources cannot answer; web snippets rarely settle exact API signatures — the validator does.
+
+--- Validation setup configuration ---
+Source (.NET Entity Framework Core)
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>efcore_sandbox</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.1" />
+  </ItemGroup>
+</Project>
+
+Target (Java Spring Data MongoDB)
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.3</version>
+        <relativePath/>
+    </parent>
+    <groupId>uom.services</groupId>
+    <artifactId>mongo_sandbox</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <description>
+        Minimal Maven project for MongoDB sandbox compilation of LLM-generated Java code.
+    </description>
+    <properties>
+        <java.version>25</java.version>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-mongodb</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.6.3</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+
+
+--- SOURCE FRAMEWORK SKILL: .NET Entity Framework Core ---
+Authoritative, version-correct guidance for the SOURCE framework you are translating FROM. Use it to
+read the source entities and queries correctly (the exact filter/projection/sort/relationship
+semantics you must preserve) and — in fragment mode — to author the compilable source-side
+validation-harness fragment. The detailed per-topic references follow the overview.
+
+# .NET Entity Framework Core 10 Expert (source side)
+
+This skill makes you a reliable engineer for the **EF Core 10 generation** on **.NET 10 / C#
+13**. In the Universal Object Mapping pipeline, EF Core is a **source** framework — you translate
+*from* it into a Java target (Spring Data MongoDB or Neo4j). So this skill buys you two things:
+
+1. **Correctly reading the EF Core source** — the entity model expressed with data annotations and
+   a `DbContext`, and the LINQ query semantics you must preserve on the target (the exact filter,
+   projection, sort, grouping, and result shape).
+2. **Authoring a version-correct EF Core validation-harness fragment** that actually compiles
+   against EF Core 10 on SQL Server. The harness runs the *source* query so its result can be
+   compared, row-for-row, against the translated target. A single wrong `using`, a naming
+   collision, or a missing `SandboxDbContext` fails the whole build.
+
+The biggest EF-Core-specific trap when authoring a harness fragment is a **class/member name
+collision** — see the naming rule under "Non-negotiable rules". If unsure which namespace a type
+lives in, **stop and consult `references/imports.md`** — do not guess.
+
+## Source stack (assume this unless told otherwise)
+
+| Component | Version | Why it matters |
+|---|---|---|
+| .NET | 10.0 (`net10.0`) | C# 14; primary constructors, collection expressions `[]`, `required` members |
+| EF Core | 10.0.x (`Microsoft.EntityFrameworkCore.SqlServer`) | `DbContext`/`DbSet<T>`, LINQ provider, `OwnsOne(...).ToJson()` |
+| ADO provider | `Microsoft.Data.SqlClient` 7.0.x | the underlying SQL Server driver EF Core uses |
+| Serialization | `System.Text.Json` | the harness serializer (injected — do not re-author it) |
+| `ImplicitUsings` | enabled | `System`, `System.Linq`, `System.Collections.Generic`, `System.Threading.Tasks` etc. are already in scope |
+
+## How to use this skill
+
+1. Decide what you are producing: **schema (entity) fragment**, **query fragments**, or **both**.
+2. Read the matching reference file(s) before writing code:
+   - `references/schema-mapping.md` — data annotations, the `DbContext`/`DbSet<T>` requirement,
+     `OnModelCreating` fluent config, owned types / JSON columns (`OwnsOne(...).ToJson()`), and the
+     .NET → Java type intent you must carry to the target.
+   - `references/queries.md` — the LINQ query surface (`Where`, `OrderBy`/`OrderByDescending`,
+     `Skip`/`Take`, `Contains`, `Include`/`ThenInclude`, `GroupBy`, `Max`/`Sum`, `Distinct`, set
+     operations) and how to wrap each query in a `Query{N}.Harness` fragment with
+     `HarnessSupport.RunQuery`.
+   - `references/imports.md` — the canonical `using` set, what `ImplicitUsings` already covers, and
+     the traps.
+3. Write the code following the rules below.
+4. If the code must run (validation harness), re-check every `using` against `references/imports.md`
+   and confirm the schema fragment declares `SandboxDbContext`.
+
+## Non-negotiable rules
+
+These are the rules that most often separate a harness that compiles and runs from one that does
+not.
+
+**The schema fragment MUST declare `SandboxDbContext`.** The generated entrypoint does
+`new SandboxDbContext(...)`, so your schema body must include the context class with a `DbSet<T>`
+property for every entity:
+
+```csharp
+public class SandboxDbContext(DbContextOptions<SandboxDbContext> options) : DbContext(options)
+{
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<OrderLine> OrderLines => Set<OrderLine>();
+}
+```
+
+If (and only if) an entity uses an owned type mapped to JSON, override `OnModelCreating` in the
+context — see `references/schema-mapping.md`.
+
+**Never name a helper member `Query{N}`, and never call `Query{N}(...)`, inside the `Query{N}`
+class.** The enclosing class is already named `Query{N}`; a same-named method is `CS0542` ("member
+names cannot be the same as their enclosing type") and calling `Query{N}(...)` resolves to the
+*class* (`CS1955`), which cascades into `CS0411` inference failures. Name inner helpers something
+else (e.g. `Rows`, `Build`) and call those. This is the single most common .NET harness failure.
+
+**The harness fragment shape is fixed.** One class per query:
+
+```csharp
+public static class Query1
+{
+    public static object Harness(SandboxDbContext ctx)
+    {
+        return HarnessSupport.RunQuery(() => ctx.OrderLines.Where(ol => ol.OrderID == 26866),
+                                       ol => ol.OrderLineID);
+    }
+}
+```
+
+`HarnessSupport.RunQuery` (provided in the injected prelude — do NOT redeclare it) takes a
+`Func<IQueryable<T>>` and an optional **unique** sort selector, and returns
+`{ count, firstSample, lastSample }`. Pass a unique selector when the query has no deterministic
+order of its own; pass `null` when it already orders by a unique key. For scalar/aggregate queries
+(`Max`, `Sum`, a grouped dictionary, a set-operation list) do not force `RunQuery` — build the same
+`count`/`firstSample`/`lastSample` map yourself. See `references/queries.md`.
+
+**Emit any extra `using` directives your fragment needs.** They are hoisted into the file header,
+so an EF Core `using Microsoft.EntityFrameworkCore;` (for `Include`, `ToQueryString`, etc.) placed
+at the top of your fragment is fine even though the prelude usually already has it. Do NOT write a
+`namespace` line and do NOT redeclare the injected serializer/`HarnessSupport`.
+
+**No comments or placeholders in code that will be executed.** The fragment is compiled and run.
+`// TODO`, `...`, or stub bodies break it. Emit complete, runnable code.
+
+**Preserve the source query's exact semantics.** Do not add synthetic parameters, extra filters, or
+a different sort than the source query expresses. The *only* ordering you may add is a deterministic
+tie-break inside the harness (the unique sort selector) so `firstSample`/`lastSample` are stable —
+that ordering must not change which rows the query returns.
+
+**Carry .NET types to the target faithfully.** `decimal`/`decimal?` is money/exact — it becomes
+`BigDecimal` on a document target and `Double` on a Neo4j target (Neo4j has no decimal type), never
+a lossy `double` by accident. `DateTime` → `LocalDateTime` (date-only intent → `LocalDate`). A
+`List<T>` navigation is a one-to-many relationship. See `references/schema-mapping.md`.
+
+## Quick orientation example (the shape to aim for)
+
+An EF Core entity with data annotations, the `SandboxDbContext`, and a query wrapped as a harness
+fragment. This is the source you *read* and the harness you *write*.
+
+```csharp
+[Table("OrderLines", Schema = "Sales")]
+public class OrderLine
+{
+    [Key]
+    public int OrderLineID { get; set; }
+    [ForeignKey(nameof(Order))]
+    public int OrderID { get; set; }
+    public required string Description { get; set; }
+    public int Quantity { get; set; }
+    public decimal? UnitPrice { get; set; }        // money -> BigDecimal (Mongo) / Double (Neo4j)
+    public decimal TaxRate { get; set; }
+    public DateTime? PickingCompletedWhen { get; set; }
+}
+
+public class SandboxDbContext(DbContextOptions<SandboxDbContext> options) : DbContext(options)
+{
+    public DbSet<OrderLine> OrderLines => Set<OrderLine>();
+}
+
+public static class Query3
+{
+    public static object Harness(SandboxDbContext ctx)
+    {
+        var from = new DateTime(2014, 12, 20);
+        var to = new DateTime(2014, 12, 31);
+        return HarnessSupport.RunQuery(
+            () => ctx.OrderLines.Where(ol => ol.PickingCompletedWhen >= from
+                                          && ol.PickingCompletedWhen <= to),
+            ol => ol.OrderLineID);
+    }
+}
+```
+
+## Common traps
+
+- **`Query{N}` member/call collision** (`CS0542`/`CS1955`/`CS0411`) — the dominant .NET harness
+  failure. Never name a helper `Query{N}` or call `Query{N}(...)` inside `class Query{N}`.
+- **Forgetting `SandboxDbContext`** in the schema fragment → the generated entrypoint cannot
+  instantiate the context.
+- **Owned type not configured** — a JSON/owned property (e.g. `CustomFields`) needs
+  `OwnsOne(p => p.CustomFields, cb => cb.ToJson())` in `OnModelCreating`, or EF Core treats it as a
+  separate table and the query fails.
+- **`decimal` read as `double`** — silently loses precision and drifts the equivalence check.
+- **`new DateTime(2014, 12, 20)`** is correct in C# (unlike Java's deprecated `new Date`); keep it
+  as-is in the source harness, but translate it to `LocalDate.of(...)`/`LocalDateTime.of(...)` on
+  the Java target.
+- **`.Contains` is overloaded** — `collection.Contains(x)` compiles to SQL `IN`, while
+  `string.Contains(text)` compiles to `LIKE '%text%'`. They translate to different target operators;
+  read which one the source means.
+- **Client vs. server evaluation** — set operations in the eval source (`first.Union(last)`) run in
+  memory over `ToList()`ed sequences, not as SQL `UNION`. Keep that shape; it returns a materialized
+  `List<T>`, so build the result map by hand rather than via `RunQuery`.
+
+## Project context (Universal Object Mapping)
+
+This skill backs the `generate_translation_node` translator when the **source** is EF Core. In
+fragment mode you author, per query, a `Query{N}.Harness(SandboxDbContext)` for the source side and
+the matching Java `Query{N}.harness(...)` for the target side; both must return the SAME flat map
+(`count`, `firstSample`, `lastSample`). The fixed prelude — `using` lines, the JSON serializer,
+`HarnessSupport`, and the generated `Main` — is **injected for you**; start your schema body at the
+entity classes and `SandboxDbContext`, and start each query body at `public static class Query{N}`.
+The target framework's own skill (Spring Data MongoDB or Neo4j) governs the Java side; this skill
+governs reading the EF Core source and writing the EF Core harness.
+
+### Reference: imports
+
+# Canonical usings — EF Core 10 / .NET 10 (source harness)
+
+This is the source of truth for `using` directives in an EF Core validation harness. The project
+targets `net10.0` with `<ImplicitUsings>enable</ImplicitUsings>` and `<Nullable>enable</Nullable>`,
+EF Core 10.0.x (`Microsoft.EntityFrameworkCore.SqlServer`) and `Microsoft.Data.SqlClient` 7.0.x.
+
+You rarely need to add usings yourself: the injected prelude already carries the full set below, and
+any `using` you *do* write at the top of a fragment is hoisted and de-duplicated into the header. If
+a namespace is not listed here, look it up before using it — do not guess.
+
+## Already implicit (do NOT add — `ImplicitUsings` provides them)
+
+```csharp
+// System, System.Linq, System.Collections.Generic, System.Threading, System.Threading.Tasks,
+// System.IO, System.Text — all in scope automatically. Writing them is harmless but unnecessary.
+```
+
+## The canonical prelude usings (injected — present for your fragment)
+
+```csharp
+using System;
+using System.Linq;
+using Microsoft.EntityFrameworkCore;                              // DbContext, DbSet, Include, ToQueryString, UseSqlServer
+using System.ComponentModel.DataAnnotations;                      // [Key], [MaxLength], [Required]
+using System.ComponentModel.DataAnnotations.Schema;               // [Table], [Column], [ForeignKey], [NotMapped]
+using System.Text.Json;
+using System.Text.Json.Serialization;                             // [JsonPropertyName], JsonConverter
+using System.Text.Encodings.Web;
+using System.Globalization;
+using System.Text.Json.Serialization.Metadata;
+using Microsoft.EntityFrameworkCore.Diagnostics;                  // DbContextLoggerOptions
+using Microsoft.Extensions.Logging;                               // LogLevel
+```
+
+`Microsoft.Data.SqlClient` (the `SqlConnection`) is used only by the *generated* `Main` bootstrap,
+not by your EF Core query fragments — your fragments receive a ready `SandboxDbContext`.
+
+## Mapping namespaces you reference in a schema fragment
+
+| Attribute / type | Namespace |
+|---|---|
+| `[Table]`, `[Column]`, `[ForeignKey]`, `[NotMapped]`, `[DatabaseGenerated]` | `System.ComponentModel.DataAnnotations.Schema` |
+| `[Key]`, `[MaxLength]`, `[Required]`, `[StringLength]` | `System.ComponentModel.DataAnnotations` |
+| `[Precision(p, s)]` | `Microsoft.EntityFrameworkCore` |
+| `[JsonPropertyName]` | `System.Text.Json.Serialization` |
+| `DbContext`, `DbSet<T>`, `DbContextOptions<T>`, `ModelBuilder` | `Microsoft.EntityFrameworkCore` |
+
+## Query namespaces you reference in a query fragment
+
+| Operator / type | Where it comes from |
+|---|---|
+| `Where`, `OrderBy`, `Select`, `GroupBy`, `Distinct`, `Skip`, `Take`, `Count`, `Max`, `Sum`, `Union`, `Intersect`, `ToList`, `ToDictionary` | `System.Linq` (implicit) |
+| `Include`, `ThenInclude`, `AsSplitQuery`, `AsNoTracking`, `ToQueryString`, `SingleOrDefault`/`FirstOrDefault` (EF async variants) | `Microsoft.EntityFrameworkCore` |
+| `IQueryable<T>`, `IEnumerable<T>` | `System.Linq` / `System.Collections.Generic` (implicit) |
+
+## Renamed / removed / do-not-use
+
+| Wrong (old / other-stack / hallucinated) | Correct (EF Core 10) |
+|---|---|
+| `System.Data.Entity.*` (EF6 / EF Classic) | `Microsoft.EntityFrameworkCore.*` |
+| `[Table]` from `System.ComponentModel.DataAnnotations` | `System.ComponentModel.DataAnnotations.Schema` |
+| `modelBuilder.Entity<T>().Property(x => x.P).HasColumnType("json")` for a POCO | `OwnsOne(p => p.Owned, cb => cb.ToJson())` for an owned type |
+| `DbSet<T> X { get; set; }` mutable auto-property | `DbSet<T> X => Set<T>();` (the project convention; both compile) |
+| Naming a helper `Query{N}` inside `class Query{N}` | name it `Rows`/`Build` (avoids `CS0542`/`CS1955`) |
+| `Newtonsoft.Json` for the harness serializer | it is injected as `System.Text.Json` — do not add another |
+| declaring a `namespace ...;` in your fragment | omit it — the prelude owns the namespace |
+
+### Reference: queries
+
+# EF Core LINQ queries (reading them, wrapping them as harness fragments)
+
+EF Core queries are **LINQ over `IQueryable<T>`** obtained from a `DbSet<T>`. The provider
+translates the expression tree to SQL and runs it server-side. When EF Core is the source you read
+the LINQ to understand the semantics to preserve, then re-express each query as a `Query{N}.Harness`
+fragment that the validation harness executes.
+
+## The LINQ surface you will encounter
+
+| LINQ | Meaning | SQL it becomes |
+|---|---|---|
+| `.Where(x => pred)` | filter | `WHERE` |
+| `.OrderBy(x => k)` / `.OrderByDescending` | sort | `ORDER BY … ASC/DESC` |
+| `.Skip(n).Take(m)` | paging | `OFFSET n ROWS FETCH NEXT m ROWS ONLY` |
+| `collection.Contains(x.Col)` | membership | `WHERE Col IN (…)` |
+| `x.StrCol.Contains(text)` | substring | `WHERE StrCol LIKE '%text%'` |
+| `.Select(x => new { … })` | projection | `SELECT …` |
+| `.Distinct()` | dedupe | `SELECT DISTINCT` |
+| `.GroupBy(x => k).Select(g => new { g.Key, g.Count() })` | group + aggregate | `GROUP BY` |
+| `.Max(x => c)` / `.Sum(x => c)` / `.Count()` | scalar aggregate | `MAX/SUM/COUNT` |
+| `.Include(x => x.Nav).ThenInclude(...)` | eager load navigation | `JOIN` (or split queries) |
+| `.AsSplitQuery()` | load each Include as a separate round-trip | multiple `SELECT`s |
+| `.Single/.SingleOrDefault/.First/.FirstOrDefault` | materialize one | `TOP 1/2` + client check |
+| `.Union(other)` / `.Intersect(other)` | set operations | in the eval source these run **in memory** over `ToList()`ed sequences |
+
+**Read `.Contains` carefully.** `orderIds.Contains(ol.OrderID)` is an `IN` list;
+`ol.Description.Contains("C++")` is a `LIKE` substring match. They translate to different target
+operators (`Criteria.in(...)` vs `Criteria.regex(...)` on Mongo; different Cypher predicates).
+
+## Wrapping a query in a harness fragment
+
+`HarnessSupport.RunQuery` (injected — do not redeclare) is designed for **row sets**:
+
+```csharp
+public static object RunQuery<T>(Func<IQueryable<T>> q, Func<T, object>? orderBySelector = null)
+// returns { count, firstSample, lastSample }
+```
+
+Pass a **unique** `orderBySelector` when the query has no deterministic order, so `firstSample`
+(min) and `lastSample` (max) are stable across runs and across stores. Pass `null` when the query
+already orders by a unique key.
+
+### Row-returning query → `RunQuery`
+
+```csharp
+public static class Query1
+{
+    public static object Harness(SandboxDbContext ctx)
+    {
+        int orderId = 26866;
+        return HarnessSupport.RunQuery(() => ctx.OrderLines.Where(ol => ol.OrderID == orderId),
+                                       ol => ol.OrderLineID);   // unique tie-break
+    }
+}
+```
+
+### Paging query already ordered by a unique key → pass `null`
+
+```csharp
+public static class Query6
+{
+    public static object Harness(SandboxDbContext ctx)
+    {
+        return HarnessSupport.RunQuery(
+            () => ctx.OrderLines.OrderBy(ol => ol.OrderLineID).Skip(1000).Take(50), null);
+    }
+}
+```
+
+### One-to-many fetch (`Include`) — sort by the root's unique key
+
+```csharp
+public static class Query10
+{
+    public static object Harness(SandboxDbContext ctx)
+    {
+        return HarnessSupport.RunQuery(
+            () => ctx.Orders.Include(o => o.OrderLines).Where(o => o.OrderID == 530),
+            o => o.OrderID);
+    }
+}
+```
+
+`SingleOrDefault(o => o.OrderID == 530)` in the source is equivalent to
+`.Where(o => o.OrderID == 530)` for the harness (which counts and samples). Prefer the `Where` form
+so `RunQuery` gets an `IQueryable`.
+
+### Group + aggregate → run `RunQuery` over the grouped projection
+
+Keep the grouping as an `IQueryable` of an anonymous/record projection and sort by the group key
+(unique within a `GROUP BY`):
+
+```csharp
+public static class Query7
+{
+    public static object Harness(SandboxDbContext ctx)
+    {
+        return HarnessSupport.RunQuery(
+            () => ctx.OrderLines.GroupBy(ol => ol.TaxRate)
+                                .Select(g => new { TaxRate = g.Key, Count = g.Count() }),
+            x => x.TaxRate);
+    }
+}
+```
+
+### Scalar aggregate (`Max`, `Sum`, `Count`) → build the map by hand
+
+`RunQuery` needs an `IQueryable`, so for a single scalar build the same three-key map directly and
+keep `firstSample` a **leaf scalar** so both sides serialize the identical value:
+
+```csharp
+public static class Query8
+{
+    public static object Harness(SandboxDbContext ctx)
+    {
+        decimal? max = ctx.OrderLines.Max(ol => ol.UnitPrice);
+        return new { count = max.HasValue ? 1 : 0, firstSample = (object?)max, lastSample = (object?)null };
+    }
+}
+```
+
+The target-side harness must produce the **same** `{count, firstSample, lastSample}` for the
+equivalence check to pass — coordinate the shape across both sides.
+
+### Set operation returning a primitive list → materialize and sample
+
+```csharp
+public static class Query15
+{
+    public static object Harness(SandboxDbContext ctx)
+    {
+        var first = ctx.Suppliers.Where(s => s.SupplierID < 5).Select(s => s.SupplierID).ToList();
+        var last = ctx.Suppliers.Where(s => s.SupplierID >= 5 && s.SupplierID <= 10)
+                                .Select(s => s.SupplierID).ToList();
+        var union = first.Union(last).OrderBy(s => s).ToList();
+        return new { count = union.Count,
+                     firstSample = union.Count > 0 ? (object?)union[0] : null,
+                     lastSample = union.Count > 1 ? (object?)union[^1] : null };
+    }
+}
+```
+
+## Reminders
+
+- **Never** name a helper `Query{N}` or call `Query{N}(...)` inside `class Query{N}`
+  (`CS0542`/`CS1955`). Name helpers `Rows`/`Build`.
+- Do not add filters, parameters, or a different sort than the source expresses; the unique
+  `orderBySelector` is the only extra ordering allowed, and it must not change the result set.
+- Emit any extra `using` your fragment needs (e.g. `using Microsoft.EntityFrameworkCore;` for
+  `Include`); it is hoisted into the header. No `namespace` line.
+- The result map keys are exactly `count`, `firstSample`, `lastSample` (plus optional metadata the
+  serializer ignores in equivalence). Leaf/scalar values only — never walk a navigation the query
+  itself did not fetch.
+
+### Reference: schema-mapping
+
+# EF Core schema mapping (reading the source model, writing the schema fragment)
+
+EF Core maps a POCO to a table with **data annotations** (and/or fluent `OnModelCreating`), and
+exposes the tables through a `DbContext` with a `DbSet<T>` per entity. When EF Core is the source,
+you (a) read this model to understand what the target must preserve, and (b) re-declare it as the
+**schema fragment** that the source validation harness compiles against.
+
+## 1. The entity class
+
+```csharp
+[Table("OrderLines", Schema = "Sales")]        // -> table Sales.OrderLines
+public class OrderLine
+{
+    [Key]                                       // primary key
+    public int OrderLineID { get; set; }
+    [ForeignKey(nameof(Order))]                 // FK column backing the Order navigation
+    public int OrderID { get; set; }
+    public required string Description { get; set; }   // C# 11 `required`: non-null, must be set
+    public int Quantity { get; set; }
+    public decimal? UnitPrice { get; set; }     // nullable money
+    public decimal TaxRate { get; set; }
+    [Column(TypeName = "datetime2")]
+    [Precision(7)]
+    public DateTime? PickingCompletedWhen { get; set; }
+}
+```
+
+Attributes you will see and what they mean for the translation:
+
+| Attribute | Meaning | Target intent |
+|---|---|---|
+| `[Table("N", Schema="S")]` | table name/schema | the collection / node label name source |
+| `[Key]` | primary key | source integer id — becomes the store id **plus** a normal field/property on the target |
+| `[ForeignKey(nameof(Nav))]` | the scalar FK behind a navigation | a relationship / reference, or an embedded child |
+| `[Column(TypeName=…)]`, `[Precision(p,s)]` | SQL column type / decimal precision | precision to preserve for `decimal` |
+| `[MaxLength(n)]` / `[StringLength(n)]` | string length | informational only |
+| `[JsonPropertyName("x")]` | JSON serialization name (harness only) | NOT an ORM mapping — do not carry to the target as a field name |
+| `[NotMapped]` | property is not persisted | drop it |
+
+`[JsonPropertyName]` is a **serialization** hint the harness uses so both sides emit the same JSON
+key casing (e.g. `customerId`). It is not part of the object–relational mapping; do not confuse it
+with a column name.
+
+## 2. The `DbContext` (REQUIRED in the schema fragment)
+
+The generated entrypoint runs `new SandboxDbContext(...)`, so your schema body must include it with
+a `DbSet<T>` for every entity, using the project's expression-bodied convention:
+
+```csharp
+public class SandboxDbContext(DbContextOptions<SandboxDbContext> options) : DbContext(options)
+{
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<OrderLine> OrderLines => Set<OrderLine>();
+    public DbSet<Person> People => Set<Person>();
+}
+```
+
+The primary-constructor form `SandboxDbContext(DbContextOptions<SandboxDbContext> options) :
+DbContext(options)` is required — the bootstrap passes options built with `.UseSqlServer(...)`.
+
+## 3. Navigations (one-to-many / many-to-one)
+
+A collection navigation is a one-to-many; a reference navigation is the many-to-one back-reference.
+Initialize collections with the collection expression `[]`:
+
+```csharp
+public class Order
+{
+    [Key] public int OrderID { get; set; }
+    [ForeignKey(nameof(Customer))] public int CustomerID { get; set; }
+    public Customer Customer { get; set; } = null!;        // reference navigation (many-to-one)
+    public List<OrderLine> OrderLines { get; set; } = [];  // collection navigation (one-to-many)
+}
+```
+
+For the target: a `List<T>` navigation becomes an **embedded array** or a **`@DocumentReference`**
+(Spring Data MongoDB) or a **`@Relationship`** to another `@Node` (Spring Data Neo4j). The
+`[ForeignKey]` scalar carries the join key.
+
+## 4. Owned types / JSON columns
+
+A complex sub-object stored as a JSON column is an **owned type** configured with
+`OwnsOne(...).ToJson()` in `OnModelCreating` (EF Core 8+). The eval `Person.CustomFields` is the
+canonical case:
+
+```csharp
+public class CustomFields                       // owned type: NO [Table], NO [Key]
+{
+    public List<string>? OtherLanguages { get; set; }
+    public DateTime? HireDate { get; set; }
+    public string? Title { get; set; }
+}
+
+public class SandboxDbContext(DbContextOptions<SandboxDbContext> options) : DbContext(options)
+{
+    public DbSet<Person> People => Set<Person>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Person>().OwnsOne(p => p.CustomFields, cb => cb.ToJson());
+        base.OnModelCreating(modelBuilder);
+    }
+}
+```
+
+Reading it: a query like `Where(p => p.CustomFields!.Title == "Team Member")` filters *inside* the
+JSON document — it translates to a nested-field match on the target (Mongo `customFields.title`,
+Neo4j a nested property or JSON predicate). A `List<string>?` scalar collection (e.g.
+`OtherLanguages`) maps to a JSON array; `Contains` over it is an array-membership test.
+
+## 5. .NET → Java type intent (what the target must preserve)
+
+| .NET source type | Java target intent |
+|---|---|
+| `int` / `int?` | `Integer` |
+| `long` / `long?` | `Long` |
+| `bool` | `Boolean` |
+| `decimal` / `decimal?` | `BigDecimal` (Mongo) / `Double` (Neo4j — no decimal type). **Never** `double` for money |
+| `DateTime` / `DateTime?` | `LocalDateTime` (date-only intent → `LocalDate`) |
+| `string` | `String` |
+| `Guid` | `String` (or `UUID`) |
+| `List<T>` navigation | embedded `List<T>` / `@DocumentReference` / `@Relationship` |
+
+Keep the **source `[Key]` integer as a normal field on the target**; the store id (`@Id` String on
+Mongo, `@Id @GeneratedValue` on Neo4j) is a separate, store-generated identity.
+
+--- TARGET FRAMEWORK SKILL: Java Spring Data MongoDB ---
+Authoritative, version-correct guidance for the TARGET framework you are translating INTO. Follow its
+import and API rules exactly — they are the number-one defense against a hallucinated package or
+method that fails the whole compile. The detailed per-topic references (full import lists,
+query/mapping recipes) follow the overview; consult them BEFORE writing any target import or query.
+
+# Spring Data MongoDB 5.0 Expert
+
+This skill makes you a reliable engineer for the **5.0 generation** of Spring Data
+MongoDB. The single most important thing it buys you is **correct imports and correct
+API surface** — the APIs that actually compile against Spring Boot 4.x / Spring Data
+MongoDB 5.0 on Java 25, not the half-remembered APIs from older tutorials. When you
+generate code that will be compiled and executed, a single hallucinated package or a
+renamed-since-3.x class fails the whole build, so precision here matters more than
+breadth.
+
+## Target stack (assume this unless told otherwise)
+
+| Component | Version | Why it matters |
+|---|---|---|
+| Spring Boot | 4.0.x (`spring-boot-starter-data-mongodb`) | Pulls Spring Data MongoDB 5.0 transitively |
+| Spring Data MongoDB | 5.0.x | The mapping + `MongoTemplate` + aggregation APIs below |
+| Java | 25 | Records, `var`, text blocks, pattern matching all available |
+| Jackson | 3.x | **Databind moved to `tools.jackson.*`**; annotations stay at `com.fasterxml.jackson.annotation.*` |
+| MongoDB Java Driver | 5.x (`com.mongodb.client.*`) | `MongoClients`, `MongoClient` |
+
+If you are unsure which package a class lives in, **stop and consult
+`references/imports.md`** — it is the canonical import list. Do not guess an import.
+Guessing is the number-one failure mode for this library.
+
+## How to use this skill
+
+1. Decide what you are producing: **schema mapping classes**, **queries**, or **both**.
+2. Read the matching reference file(s) before writing code:
+   - `references/schema-mapping.md` — `@Document` classes, field/type mapping, embedding vs references, the `@Id`/`_id` rule, manual `MongoTemplate` bootstrap.
+   - `references/queries.md` — `MongoTemplate` read operations, the `Query`/`Criteria` API, operators, sorting, paging, field projection, fluent/typed queries.
+   - `references/aggregation.md` — `Aggregation`/`TypedAggregation` pipelines (`group`, `project`, `match`, `sort`, `unwind`, `lookup`, counting).
+   - `references/imports.md` — every import you are allowed to use, plus the renamed/removed traps.
+3. Write the code following the rules below. Prefer explicit imports over wildcards in
+   production code so a reviewer can see exactly what resolves.
+4. If the code must run (validation/translation harness), re-check every import against
+   `references/imports.md` and the type-mapping table in `references/schema-mapping.md`.
+
+## Non-negotiable rules
+
+These are the rules that most often separate code that compiles from code that does not.
+
+**Imports come from the canonical list.** Mapping annotations live under
+`org.springframework.data.mongodb.core.mapping`, *except* `@Id`, `@Transient`,
+`@ReadOnlyProperty`, and `@PersistenceCreator`, which come from
+`org.springframework.data.annotation`. The query API (`Query`, `Criteria`, `Update`)
+lives under `org.springframework.data.mongodb.core.query`. `Sort`, `Pageable`, and
+`PageRequest` come from `org.springframework.data.domain`. See `references/imports.md`.
+
+**`@Field` needs an explicit import.** `org.springframework.data.mongodb.core.mapping.Field`
+collides with `java.lang.reflect.Field` (and any wildcard that pulls the latter in).
+Import it by name even when you wildcard the rest of the package, exactly as the project
+snippets do.
+
+**The `@Id` is a `String` mapped to `_id`.** Mongo's `_id` is an `ObjectId`/string, not
+the source system's integer key. Map the business key (e.g. `customerId`) as its own
+`@Field`, and keep `@Id private String id;`. Never map an `int`/`Integer` primary key
+straight onto `@Id` when translating from a relational entity.
+
+**Use `java.time` and `BigDecimal`, never legacy date constructors.** Prefer `LocalDate`,
+`LocalDateTime`, `Instant`, and `BigDecimal`. Build dates with `LocalDate.of(2014, 12, 20)`.
+**Never** write `new Date(2014, 12, 20)` — that constructor is deprecated and interprets
+the year as 1900-relative, so it is both wrong and a smell that the code came from an old
+model. Money/decimal columns map to `BigDecimal` (stored as `Decimal128`).
+
+**No comments or placeholders in code that will be executed.** Generated translation/
+validation code is compiled and run. `// TODO`, `...`, or stub method bodies break it.
+Emit complete, runnable code.
+
+**Schema classes avoid the `public` modifier unless required.** Match the project
+convention: top-level mapping classes are package-private (`class OrderLine`), only the
+entrypoint class carrying `main`/`build` is `public`.
+
+**Embedded objects have no `@Document`.** Only aggregate roots that map to their own
+collection get `@Document`. Value objects embedded inside another document (e.g. a
+`Customer` embedded in `Order`) are plain classes — annotating them with `@Document` is
+wrong and signals they should be a separate collection.
+
+## Quick orientation example (the shape to aim for)
+
+A correctly-imported aggregate root plus a `Query`/`Criteria` read. Study the imports —
+they are the part most likely to be wrong.
+
+```java
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+
+import org.springframework.data.annotation.Id;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+
+@Document(collection = "orderLines")
+class OrderLine {
+
+    @Id
+    private String id;
+
+    @Field("orderLineId")
+    private Integer orderLineId;
+
+    @Field("pickingCompletedWhen")
+    private LocalDateTime pickingCompletedWhen;
+
+    private BigDecimal unitPrice;
+
+    OrderLine() {
+    }
+
+    // getters and setters ...
+}
+
+class OrderLineQueries {
+
+    private final MongoTemplate mongoTemplate;
+
+    OrderLineQueries(MongoTemplate mongoTemplate) {
+        this.mongoTemplate = mongoTemplate;
+    }
+
+    List<OrderLine> recentlyPicked() {
+        LocalDateTime from = LocalDateTime.of(2014, 12, 20, 0, 0);
+        LocalDateTime to = LocalDateTime.of(2014, 12, 31, 23, 59, 59);
+        Query query = new Query(Criteria.where("pickingCompletedWhen").gte(from).lte(to))
+                .with(Sort.by(Sort.Direction.ASC, "orderLineId"));
+        return mongoTemplate.find(query, OrderLine.class);
+    }
+}
+```
+
+## Common traps (renamed or removed since the 3.x era)
+
+These are the API changes that catch out a model trained on older docs. Full list in
+`references/imports.md`.
+
+- `MongoDbFactory` → **`MongoDatabaseFactory`** (`org.springframework.data.mongodb`).
+- `SimpleMongoClientDbFactory` → **`SimpleMongoClientDatabaseFactory`**
+  (`org.springframework.data.mongodb.core`).
+- Jackson 2 `com.fasterxml.jackson.databind.*` → Jackson 3 **`tools.jackson.databind.*`**.
+  Jackson *annotations* (`@JsonIgnoreProperties`, `@JsonInclude`) stay at
+  `com.fasterxml.jackson.annotation.*`.
+- `new Date(y, m, d)` → `LocalDate.of(y, m, d)` / `LocalDateTime.of(...)`.
+- Repository `MongoRepository` still exists, but this project's pattern is **explicit
+  `MongoTemplate` + `Query`/`Criteria`**, not derived-query repository interfaces. Prefer
+  `MongoTemplate` unless the user asks for repositories.
+
+## Project context (Universal Object Mapping)
+
+This skill backs the `generate_translation_node` translator. When translating from a
+relational ORM (EF Core, NHibernate, Dapper) into Spring Data MongoDB:
+
+- A table usually becomes a `@Document` collection; a foreign-key child can become either
+  an **embedded** array (denormalized into the parent) or a **`@DocumentReference`**
+  (kept as a separate collection). `references/schema-mapping.md` explains when to pick
+  which and how to express both.
+- Keep query method shape close to the source: one source `Query1()` → one target
+  `query1()` returning the same logical result set. Don't invent extra parameters.
+- Field names in `@Field(...)` and in `Criteria.where(...)` are the **MongoDB document
+  field names** (usually camelCase), not the Java property name and not the SQL column.
+
+### Reference: aggregation
+
+# Aggregation framework — Spring Data MongoDB 5.0
+
+Use the aggregation framework when a query needs grouping, multi-stage transformation,
+joins (`$lookup`), or computed fields — anything a single `Query`/`Criteria` find cannot
+express. The builder lives in `org.springframework.data.mongodb.core.aggregation`.
+
+## Table of contents
+
+1. Pipeline basics: `newAggregation` vs `TypedAggregation`
+2. The stage operators
+3. Executing and reading results
+4. `previousOperation()` and stage references
+5. Output types (records, interfaces) and counting a pipeline
+6. Worked examples
+
+---
+
+## 1. Pipeline basics
+
+Static-import the factory so stages read like the Mongo pipeline (this matches the
+official docs):
+
+```java
+import static org.springframework.data.mongodb.core.aggregation.Aggregation.*;
+import static org.springframework.data.domain.Sort.Direction.DESC;
+
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.aggregation.TypedAggregation;
+```
+
+`newAggregation(...)` builds an untyped pipeline; `newAggregation(Entity.class, ...)`
+builds a `TypedAggregation<Entity>` that knows the input collection and maps field names
+through the entity. Prefer the typed form when you have the entity class.
+
+```java
+TypedAggregation<OrderLine> agg = Aggregation.newAggregation(
+        OrderLine.class,
+        group("taxRate").count().as("count"),
+        project("count").and("taxRate").previousOperation(),
+        sort(DESC, "count"));
+```
+
+## 2. The stage operators
+
+All produced by static methods on `Aggregation`:
+
+| Stage | Mongo | Notes |
+|---|---|---|
+| `match(Criteria)` | `$match` | filter; reuse the same `Criteria.where(...)` API |
+| `group("f")` / `group("a","b")` | `$group` | then `.count().as(..)`, `.sum("x").as(..)`, `.avg`, `.min`, `.max`, `.first`, `.last`, `.addToSet`, `.push` |
+| `project("f"...)` | `$project` | include fields; `.and("x").as("y")`, `.andExpression(...)`, `.nested(bind(...))` |
+| `sort(Direction, "f"...)` | `$sort` | or `sort(Sort)` |
+| `unwind("arrayField")` | `$unwind` | flatten an array |
+| `limit(n)` / `skip(n)` | `$limit` / `$skip` | |
+| `count().as("name")` | `$count` | terminal count stage |
+| `lookup("from","localF","foreignF","as")` | `$lookup` | join another collection |
+| `addFields()` / `set(...)` | `$addFields`/`$set` | computed fields |
+| `replaceRoot(...)` | `$replaceRoot` | promote a sub-document |
+
+## 3. Executing and reading results
+
+```java
+AggregationResults<TagCount> results =
+        mongoTemplate.aggregate(agg, OrderLine.class, TagCount.class);
+
+List<TagCount> mapped = results.getMappedResults();   // all rows
+TagCount unique       = results.getUniqueMappedResult(); // exactly one row, else null
+```
+
+`mongoTemplate.aggregate(...)` overloads:
+
+- `aggregate(TypedAggregation<I>, Class<O> out)` — input collection from the typed agg.
+- `aggregate(Aggregation, Class<I> in, Class<O> out)` — input collection from `in`.
+- `aggregate(Aggregation, String collectionName, Class<O> out)` — explicit collection.
+
+## 4. `previousOperation()` and stage references
+
+Inside a `project` (or `sort`), `previousOperation()` refers to the `_id` produced by the
+preceding `group`. This is how you rename the group key:
+
+```java
+group("taxRate").count().as("count"),     // _id = taxRate, count = n
+project("count").and("taxRate").previousOperation()  // expose group _id as "taxRate"
+```
+
+`sort(DESC, previousOperation(), "totalPop")` sorts by the previous group key plus a field.
+
+## 5. Output types and counting a pipeline
+
+A record or a plain class both work as the output type; field names must match the
+projected names.
+
+```java
+record TagCount(String taxRate, Long count) {}
+record CountProjection(Long count) {}
+```
+
+To count how many rows a pipeline yields, append a `$count` stage to a copy of the
+pipeline and read the unique result (pattern used in the project harness):
+
+```java
+var baseOps = new java.util.ArrayList<>(agg.getPipeline().getOperations());
+baseOps.add(Aggregation.count().as("count"));
+var countAgg = Aggregation.newAggregation(OrderLine.class, baseOps);
+CountProjection cp = mongoTemplate.aggregate(countAgg, OrderLine.class, CountProjection.class)
+        .getUniqueMappedResult();
+long total = cp != null ? cp.count() : 0L;
+```
+
+Inspect the compiled pipeline for debugging with `agg.toString()`.
+
+## 6. Worked examples
+
+Count documents per `taxRate`, highest first:
+
+```java
+import static org.springframework.data.mongodb.core.aggregation.Aggregation.*;
+import static org.springframework.data.domain.Sort.Direction.DESC;
+
+TypedAggregation<OrderLine> agg = newAggregation(
+        OrderLine.class,
+        group("taxRate").count().as("count"),
+        project("count").and("taxRate").previousOperation(),
+        sort(DESC, "count"));
+
+record TaxRateCount(java.math.BigDecimal taxRate, Long count) {}
+
+List<TaxRateCount> rows =
+        mongoTemplate.aggregate(agg, OrderLine.class, TaxRateCount.class).getMappedResults();
+```
+
+Filter then group (sum quantity per order, only completed lines):
+
+```java
+TypedAggregation<OrderLine> agg = newAggregation(
+        OrderLine.class,
+        match(org.springframework.data.mongodb.core.query.Criteria
+                .where("pickedQuantity").gt(0)),
+        group("orderId").sum("quantity").as("totalQty"),
+        sort(DESC, "totalQty"));
+
+record OrderQty(Integer orderId, Long totalQty) {}
+List<OrderQty> rows =
+        mongoTemplate.aggregate(agg, OrderLine.class, OrderQty.class).getMappedResults();
+```
+
+Join with `$lookup` (order lines for each order):
+
+```java
+TypedAggregation<Order> agg = newAggregation(
+        Order.class,
+        match(org.springframework.data.mongodb.core.query.Criteria.where("customerId").is(1)),
+        lookup("orderLines", "orderId", "orderId", "lines"));
+```
+
+When the source query was a simple filter/sort/projection, do **not** reach for
+aggregation — translate it to a `Query`/`Criteria` find (see `queries.md`). Use
+aggregation only for grouping/joining/computed transformations.
+
+### Reference: imports
+
+# Canonical imports — Spring Data MongoDB 5.0 / Spring Boot 4 / Jackson 3
+
+This is the source of truth for imports. If a class is not here, look it up before using
+it — do not guess the package. Every entry below is valid for Spring Data MongoDB 5.0.x
+(Spring Boot 4.0.x) on Java 25.
+
+## Table of contents
+
+1. Mapping annotations
+2. Identity (`@Id`) and lifecycle annotations
+3. Indexing annotations
+4. Query API (`Query`, `Criteria`, `Update`)
+5. Sorting / paging (`Sort`, `Pageable`)
+6. `MongoTemplate` and operations interfaces
+7. Manual bootstrap (standalone `MongoTemplate`, no Spring context)
+8. Aggregation framework
+9. MongoDB Java driver
+10. Jackson 3 (serialization for harnesses)
+11. Renamed / removed — do NOT use the left column
+
+---
+
+## 1. Mapping annotations — `org.springframework.data.mongodb.core.mapping`
+
+```java
+import org.springframework.data.mongodb.core.mapping.Document;          // class -> collection
+import org.springframework.data.mongodb.core.mapping.Field;             // field -> document key (import by name; see note)
+import org.springframework.data.mongodb.core.mapping.FieldType;         // explicit BSON type for @Field(targetType = ...)
+import org.springframework.data.mongodb.core.mapping.MongoId;           // _id with explicit target type (alternative to @Id)
+import org.springframework.data.mongodb.core.mapping.DocumentReference; // reference stored as target's _id (preferred ref)
+import org.springframework.data.mongodb.core.mapping.DBRef;            // legacy {$ref,$id} reference
+import org.springframework.data.mongodb.core.mapping.Sharded;          // sharded collection metadata
+import org.springframework.data.mongodb.core.mapping.TimeSeries;       // time-series collection
+```
+
+> **`@Field` import note.** `org.springframework.data.mongodb.core.mapping.Field` clashes
+> with `java.lang.reflect.Field`. Always import it explicitly by name, even if you
+> wildcard the rest of `core.mapping`. The project snippets do exactly this:
+> `import org.springframework.data.mongodb.core.mapping.*;` followed by
+> `import org.springframework.data.mongodb.core.mapping.Field;`.
+
+## 2. Identity & lifecycle — `org.springframework.data.annotation`
+
+These are NOT in the mongodb package. This is the most common import mistake.
+
+```java
+import org.springframework.data.annotation.Id;                 // maps property to _id
+import org.springframework.data.annotation.Transient;          // exclude from persistence
+import org.springframework.data.annotation.ReadOnlyProperty;   // populated on read, never written
+import org.springframework.data.annotation.PersistenceCreator; // chosen constructor for instantiation
+import org.springframework.data.annotation.Version;            // optimistic locking
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+```
+
+`@Id` (from `data.annotation`) is the idiomatic choice. Use `@MongoId` (from
+`core.mapping`) only when you need to pin the BSON target type of `_id`.
+
+## 3. Indexing — `org.springframework.data.mongodb.core.index`
+
+```java
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
+import org.springframework.data.mongodb.core.index.TextIndexed;
+import org.springframework.data.mongodb.core.index.GeoSpatialIndexed;
+import org.springframework.data.mongodb.core.index.HashIndexed;
+```
+
+## 4. Query API — `org.springframework.data.mongodb.core.query`
+
+```java
+import org.springframework.data.mongodb.core.query.Query;     // Query, Query.query(...), new Query(criteria)
+import org.springframework.data.mongodb.core.query.Criteria;  // Criteria.where(...), and/or/not operators
+import org.springframework.data.mongodb.core.query.Update;    // Update.update(...), set/inc/push for writes
+import org.springframework.data.mongodb.core.query.Collation; // case-insensitive / locale collation
+import org.springframework.data.mongodb.core.query.BasicQuery;// raw JSON query string
+```
+
+Static-import convenience (optional, mirrors the official docs):
+
+```java
+import static org.springframework.data.mongodb.core.query.Criteria.where;
+import static org.springframework.data.mongodb.core.query.Query.query;
+import static org.springframework.data.mongodb.core.query.Update.update;
+```
+
+## 5. Sorting & paging — `org.springframework.data.domain`
+
+```java
+import org.springframework.data.domain.Sort;        // Sort.by(Sort.Direction.ASC, "field")
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;  // PageRequest.of(page, size, sort)
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Slice;
+```
+
+## 6. Template & operations — `org.springframework.data.mongodb.core`
+
+```java
+import org.springframework.data.mongodb.core.MongoTemplate;     // primary entry point
+import org.springframework.data.mongodb.core.MongoOperations;   // interface MongoTemplate implements
+import org.springframework.data.mongodb.core.ExecutableFindOperation; // fluent template().query(...) API
+```
+
+## 7. Manual bootstrap (standalone `MongoTemplate`)
+
+Use this when wiring a `MongoTemplate` by hand (validation/translation harnesses) rather
+than relying on Spring Boot autoconfiguration.
+
+```java
+import org.springframework.data.mongodb.MongoDatabaseFactory;                  // NOTE: ...mongodb, not ...mongodb.core
+import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory; // current name (NOT ...DbFactory)
+import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
+import org.springframework.data.mongodb.core.convert.DefaultDbRefResolver;
+import org.springframework.data.mongodb.core.convert.DefaultMongoTypeMapper;
+import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
+import org.springframework.data.mongodb.core.mapping.MongoMappingContext;
+```
+
+## 8. Aggregation — `org.springframework.data.mongodb.core.aggregation`
+
+```java
+import org.springframework.data.mongodb.core.aggregation.Aggregation;        // factory: newAggregation, group, project, match, sort, unwind, limit, count, lookup
+import org.springframework.data.mongodb.core.aggregation.TypedAggregation;   // type-bound pipeline
+import org.springframework.data.mongodb.core.aggregation.AggregationResults; // .getMappedResults(), .getUniqueMappedResult()
+import org.springframework.data.mongodb.core.aggregation.AggregationOperation;
+import org.springframework.data.mongodb.core.aggregation.GroupOperation;
+import org.springframework.data.mongodb.core.aggregation.ProjectionOperation;
+import org.springframework.data.mongodb.core.aggregation.MatchOperation;
+```
+
+Static-import convenience (recommended for readable pipelines, matches official docs):
+
+```java
+import static org.springframework.data.mongodb.core.aggregation.Aggregation.*;
+// gives: newAggregation, group, project, match, sort, unwind, limit, skip, count, lookup, previousOperation, bind
+import static org.springframework.data.domain.Sort.Direction.ASC;
+import static org.springframework.data.domain.Sort.Direction.DESC;
+```
+
+## 9. MongoDB Java driver — `com.mongodb.client`
+
+```java
+import com.mongodb.client.MongoClients; // MongoClients.create(uri)
+import com.mongodb.client.MongoClient;
+```
+
+## 10. Jackson 3 (only when a harness serializes results to JSON)
+
+Jackson 3 moved **databind and core** to the `tools.jackson` namespace. Annotations did
+**not** move — they remain under `com.fasterxml.jackson.annotation`.
+
+```java
+// databind / core — tools.jackson.*
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.SerializationFeature;
+import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.module.SimpleModule;
+import tools.jackson.databind.ser.std.StdSerializer;
+import tools.jackson.databind.SerializationContext;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.StreamWriteFeature;
+import tools.jackson.databind.cfg.DateTimeFeature;
+
+// annotations — still com.fasterxml.jackson.annotation
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
+```
+
+## 11. Renamed / removed — do NOT use the left column
+
+| Wrong (old / hallucinated) | Correct (5.0) |
+|---|---|
+| `org.springframework.data.mongodb.MongoDbFactory` | `org.springframework.data.mongodb.MongoDatabaseFactory` |
+| `SimpleMongoClientDbFactory` | `SimpleMongoClientDatabaseFactory` |
+| `SimpleMongoDbFactory` (driver 3.x) | `SimpleMongoClientDatabaseFactory` |
+| `com.fasterxml.jackson.databind.ObjectMapper` | `tools.jackson.databind.json.JsonMapper` (Jackson 3) |
+| `com.fasterxml.jackson.databind.*` (databind) | `tools.jackson.databind.*` |
+| `new com.mongodb.MongoClient(...)` (driver 3.x) | `com.mongodb.client.MongoClients.create(uri)` |
+| `@org.springframework.data.mongodb.core.mapping.Id` | `@org.springframework.data.annotation.Id` |
+| `java.util.Date` for date columns | `java.time.LocalDate` / `LocalDateTime` / `Instant` |
+| `new Date(2014, 12, 20)` | `LocalDate.of(2014, 12, 20)` |
+| `MongoTemplate#findAllAndRemove` confusions | use `find`, `findOne`, `count`, `exists` (see queries.md) |
+
+### Reference: queries
+
+# Queries — `MongoTemplate` + Query/Criteria API (Spring Data MongoDB 5.0)
+
+This project queries with explicit `MongoTemplate` calls and the `Query`/`Criteria`
+builder, not derived-query repository interfaces. Keep query method shape close to the
+source: one source query method → one target method returning the same logical result.
+
+## Table of contents
+
+1. Building a `Query` with `Criteria`
+2. Criteria operators (the ones you actually need)
+3. Executing reads on `MongoTemplate`
+4. Sorting, `limit`, `skip`, paging
+5. Field projection (include/exclude) and typed projections
+6. Counting and existence
+7. The fluent / typed `template.query(...)` API
+8. Dates, decimals, and literals in queries
+9. Worked examples (mirroring the project harness)
+
+---
+
+## 1. Building a `Query` with `Criteria`
+
+Two equivalent constructions:
+
+```java
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+
+// constructor form
+Query q1 = new Query(Criteria.where("customerId").is(1));
+
+// static factory form (with static imports of where / query)
+Query q2 = query(where("customerId").is(1));
+```
+
+Combine criteria:
+
+```java
+Query ranged = new Query(
+        Criteria.where("pickingCompletedWhen")
+                .gte(LocalDate.of(2014, 12, 20))
+                .lte(LocalDate.of(2014, 12, 31)));
+
+// AND across different fields: chain .and(...)
+Query andQuery = new Query(
+        Criteria.where("orderId").is(42).and("quantity").gt(0));
+
+// explicit boolean operators
+Query orQuery = new Query(new Criteria().orOperator(
+        Criteria.where("taxRate").is(BigDecimal.ZERO),
+        Criteria.where("taxRate").gt(new BigDecimal("15"))));
+```
+
+`addCriteria` appends to an existing query: `q.addCriteria(Criteria.where("x").is(1));`.
+
+## 2. Criteria operators (the ones you actually need)
+
+| Method | Mongo operator | Meaning |
+|---|---|---|
+| `.is(v)` | `$eq` | equals |
+| `.ne(v)` | `$ne` | not equals |
+| `.gt(v)` / `.gte(v)` | `$gt` / `$gte` | greater (or equal) |
+| `.lt(v)` / `.lte(v)` | `$lt` / `$lte` | less (or equal) |
+| `.in(a, b, ...)` / `.in(coll)` | `$in` | in set |
+| `.nin(...)` | `$nin` | not in set |
+| `.exists(true)` | `$exists` | field present |
+| `.regex("^H")` | `$regex` | regular expression |
+| `.ne(null)` / `.exists(true)` | — | "is not null" patterns |
+| `.and("field")` | — | continue building on another field |
+| `.orOperator(c...)` | `$or` | logical OR |
+| `.andOperator(c...)` | `$and` | logical AND |
+| `.norOperator(c...)` | `$nor` | logical NOR |
+| `.not()` | `$not` | negate the next operator |
+| `.size(n)` | `$size` | array length |
+| `.elemMatch(c)` | `$elemMatch` | array element matches sub-criteria |
+
+## 3. Executing reads on `MongoTemplate`
+
+```java
+import java.util.List;
+import org.springframework.data.mongodb.core.MongoTemplate;
+
+List<OrderLine> all      = mongoTemplate.find(query, OrderLine.class);
+OrderLine       one      = mongoTemplate.findOne(query, OrderLine.class); // first match or null
+OrderLine       byId     = mongoTemplate.findById("652f...", OrderLine.class);
+List<OrderLine> everyDoc = mongoTemplate.findAll(OrderLine.class);
+long            n        = mongoTemplate.count(query, OrderLine.class);
+boolean         any      = mongoTemplate.exists(query, OrderLine.class);
+String          coll     = mongoTemplate.getCollectionName(OrderLine.class);
+```
+
+The entity `Class` argument both selects the collection and drives mapping. Pass a second
+collection-name string overload only when querying a collection that doesn't match the
+entity's `@Document`.
+
+## 4. Sorting, `limit`, `skip`, paging
+
+`Query` is mutable and fluent; `with`, `limit`, `skip` return the same instance.
+
+```java
+import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.PageRequest;
+
+Query sorted = new Query()
+        .with(Sort.by(Sort.Direction.DESC, "quantity"))
+        .limit(50);
+
+Query firstByKey = new Query(Criteria.where("customerId").is(1))
+        .with(Sort.by(Sort.Direction.ASC, "orderId"))
+        .limit(1);
+
+// deterministic "last" element via skip
+long count = mongoTemplate.count(base, OrderLine.class);
+Query last = new Query()
+        .with(Sort.by(Sort.Direction.ASC, "orderLineId"))
+        .skip(count - 1)
+        .limit(1);
+
+// page-based
+Query paged = new Query().with(PageRequest.of(0, 20, Sort.by("orderId")));
+```
+
+> Note: `new Query().with(sort)` mutates and returns the same object. When you need an
+> independent variant, build a fresh `Query` rather than reusing one you've already
+> mutated.
+
+## 5. Field projection and typed projections
+
+Include/exclude document fields:
+
+```java
+Query q = new Query();
+q.fields().include("orderLineId", "quantity"); // only these (+ _id) come back
+// q.fields().exclude("largeBlob");
+```
+
+Typed (interface) projection via the fluent API returns only the projected shape:
+
+```java
+interface OrderLineView {
+    Integer getOrderLineId();
+    Integer getQuantity();
+}
+
+OrderLineView v = mongoTemplate.query(OrderLine.class)
+        .as(OrderLineView.class)
+        .matching(new Query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1))
+        .firstValue();
+```
+
+## 6. Counting and existence
+
+```java
+long c   = mongoTemplate.count(query, OrderLine.class);
+boolean e = mongoTemplate.exists(query, OrderLine.class);
+
+// fluent equivalent
+long c2 = mongoTemplate.query(OrderLine.class).matching(query).count();
+```
+
+`count(new Query(), X.class)` counts the whole collection. Counting ignores `limit`/`skip`
+on the query object, so build a dedicated count query when needed.
+
+## 7. The fluent / typed `template.query(...)` API
+
+`ExecutableFindOperation` reads fluently and is handy for projections and single values:
+
+```java
+List<OrderLine> list = mongoTemplate.query(OrderLine.class)
+        .matching(query(where("customerId").is(1)))
+        .all();
+
+OrderLine first = mongoTemplate.query(OrderLine.class)
+        .matching(query(where("customerId").is(1)).with(Sort.by("orderId")))
+        .firstValue();
+
+Optional<OrderLine> opt = mongoTemplate.query(OrderLine.class)
+        .matching(query(where("orderLineId").is(7)))
+        .one();
+```
+
+## 8. Dates, decimals, and literals in queries
+
+- Dates: build with `java.time` factories — `LocalDate.of(2014, 12, 20)`,
+  `LocalDateTime.of(2014, 12, 20, 0, 0)`, `Instant.parse(...)`. The field type in the
+  entity must match what you compare against. **Never** `new Date(2014, 12, 20)`.
+- Decimals: compare with `BigDecimal` literals via the string constructor to avoid binary
+  float error — `new BigDecimal("15.00")`, not `15.00`.
+- Inspecting the generated filter (useful in harnesses):
+  `query.getQueryObject()`, `query.getSortObject()`, `query.getFieldsObject()` return the
+  `org.bson.Document` Mongo will run.
+
+## 9. Worked examples (mirroring the project harness)
+
+Range filter + deterministic samples:
+
+```java
+Query q = new Query(Criteria.where("pickingCompletedWhen")
+        .gte(LocalDate.of(2014, 12, 20))
+        .lte(LocalDate.of(2014, 12, 31)));
+long count = mongoTemplate.count(q, OrderLine.class);
+OrderLine firstSample = mongoTemplate.findOne(
+        q.with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1), OrderLine.class);
+```
+
+Equality on a business key against an embedded-bearing root:
+
+```java
+Query byCustomer = new Query(Criteria.where("customerId").is(1));
+List<Order> orders = mongoTemplate.find(byCustomer, Order.class);
+```
+
+Top-N by a field:
+
+```java
+Query topByQty = new Query()
+        .with(Sort.by(Sort.Direction.DESC, "quantity"))
+        .limit(50);
+List<OrderLine> top = mongoTemplate.find(topByQty, OrderLine.class);
+```
+
+Projection to two fields:
+
+```java
+Query proj = new Query();
+proj.fields().include("orderLineId", "quantity");
+List<OrderLine> slim = mongoTemplate.find(proj, OrderLine.class);
+```
+
+For grouping/counting by a field (e.g. "count per taxRate"), that is an aggregation, not a
+`Query` — see `aggregation.md`.
+
+### Reference: schema-mapping
+
+# Schema mapping — Spring Data MongoDB 5.0 document classes
+
+How to turn a domain model (or a relational entity being migrated) into Spring Data
+MongoDB mapping classes that map cleanly and round-trip through `MongoTemplate`.
+
+## Table of contents
+
+1. The anatomy of an aggregate root
+2. The `@Id` / `_id` rule (most common mistake)
+3. Field mapping and `@Field`
+4. Type mapping table (Java ↔ BSON)
+5. Embedding vs referencing
+6. `@DocumentReference` and `@DBRef`
+7. Indexes
+8. Constructors, access modifiers, getters/setters
+9. Standalone `MongoTemplate` bootstrap (for harnesses)
+
+---
+
+## 1. Anatomy of an aggregate root
+
+An aggregate root maps to one collection and carries `@Document`. Keep top-level mapping
+classes package-private (no `public`), matching project convention.
+
+```java
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+
+@Document(collection = "orders")
+class Order {
+
+    @Id
+    private String id;
+
+    @Field("orderId")
+    private Integer orderId;
+
+    @Field("customerId")
+    private Integer customerId;
+
+    private Customer customer; // embedded value object (no @Document)
+
+    Order() {
+    }
+
+    // getters and setters ...
+}
+```
+
+`@Document(collection = "orders")` pins the collection name. Without the `collection`
+attribute the collection defaults to the decapitalized class name (`order`), which is
+usually NOT what you want when matching an existing collection — always set it explicitly.
+
+## 2. The `@Id` / `_id` rule (most common mistake)
+
+MongoDB's primary key is `_id`. Spring maps the `@Id`-annotated property to `_id`.
+
+- Use `@Id private String id;`. A `String` accepts both `ObjectId` hex strings and
+  natural string keys, so it is the safe default.
+- When migrating a relational entity whose key is `int CustomerID`, **do not** put `@Id`
+  on an `Integer customerId`. Instead keep a separate `@Id private String id;` for `_id`,
+  and map the business key as `@Field("customerId") private Integer customerId;`.
+- Use `@MongoId` (from `core.mapping`) only when you must control the BSON type of `_id`
+  (e.g. force an `ObjectId`).
+
+Wrong (collapses the natural key onto `_id`, loses the Mongo identity):
+
+```java
+@Id
+private Integer customerId; // ❌ don't map an int PK onto _id
+```
+
+Right:
+
+```java
+@Id
+private String id;          // _id
+
+@Field("customerId")
+private Integer customerId; // business key preserved as its own field
+```
+
+## 3. Field mapping and `@Field`
+
+- A property with no annotation is stored under its Java name.
+- Use `@Field("documentKey")` when the stored key differs (e.g. the existing collection
+  uses camelCase and differs from the Java name, or you want to be explicit).
+- The string in `@Field(...)`, in `Criteria.where(...)`, and in aggregation stages is the
+  **MongoDB document field name** — not the Java property and not the SQL column.
+- Import `Field` by name (clashes with `java.lang.reflect.Field`; see `imports.md`).
+- For an explicit BSON type, use `@Field(targetType = FieldType.DECIMAL128)`.
+
+## 4. Type mapping table (Java ↔ BSON)
+
+Choose Java types deliberately when translating from SQL/.NET. These map predictably:
+
+| Source intent | Java type | BSON | Notes |
+|---|---|---|---|
+| identity / `_id` | `String` | ObjectId or String | `@Id` |
+| 32-bit int | `Integer` | int32 | |
+| 64-bit int / bigint | `Long` | int64 | |
+| `decimal` / money | `BigDecimal` | Decimal128 | In 5.0 the representation default changed; `BigDecimal` → Decimal128 is the safe explicit choice |
+| `float`/`double` | `Double` | double | avoid for money |
+| `bit`/`bool` | `Boolean` | bool | |
+| `date` (no time) | `LocalDate` | Date | build via `LocalDate.of(y, m, d)` |
+| `datetime`/`timestamp` | `LocalDateTime` | Date | `LocalDateTime.of(...)` |
+| instant / UTC | `Instant` | Date | |
+| `nvarchar`/text | `String` | string | |
+| `uniqueidentifier`/UUID | `java.util.UUID` | binary/string | 5.0 no longer defaults the UUID representation — set it explicitly if needed |
+| array / collection | `List<T>` | array | |
+
+**Never** use `java.util.Date` or `new Date(y, m, d)` — see `imports.md` §11.
+
+## 5. Embedding vs referencing
+
+When a relational parent/child (one-to-many via FK) becomes MongoDB, you choose:
+
+**Embed** the child inside the parent when the child is owned by and always read with the
+parent, the child set is bounded, and you want a single read. The embedded class is a
+plain value object — **no `@Document`**, no `@Id`.
+
+```java
+@Document(collection = "orders")
+class Order {
+    @Id
+    private String id;
+    @Field("orderId")
+    private Integer orderId;
+    private Customer customer;                 // single embedded object
+    // getters/setters ...
+}
+
+class Customer {                              // embedded value object: NO @Document
+    private Integer customerId;
+    private String customerName;
+    private LocalDate accountOpenedDate;
+    private BigDecimal creditLimit;
+    private List<CustomerTransaction> customerTransactions = new ArrayList<>(); // embedded array
+    // getters/setters ...
+}
+
+class CustomerTransaction {                   // embedded value object: NO @Document
+    private Integer customerTransactionId;
+    private LocalDate transactionDate;
+    private BigDecimal transactionAmount;
+    // getters/setters ...
+}
+```
+
+**Reference** the child as a separate collection when it is large, shared, or queried
+independently. See §6.
+
+Rule of thumb when translating: a child table that is only ever accessed through its
+parent → embed; a child table that is itself an aggregate root or is huge → reference.
+
+## 6. `@DocumentReference` and `@DBRef`
+
+Prefer `@DocumentReference` (stores the target's `_id`, flexible lookup) over the legacy
+`@DBRef` (stores a `{$ref,$id}` document).
+
+A lazy, read-only back-reference resolved by a custom lookup (as used in the project's
+`Order` → `OrderLine` link):
+
+```java
+import java.util.List;
+import org.springframework.data.annotation.ReadOnlyProperty;
+import org.springframework.data.mongodb.core.mapping.DocumentReference;
+
+@ReadOnlyProperty
+@DocumentReference(lazy = true, lookup = "{ 'orderId': ?#{#self.orderId} }", sort = "{ 'orderLineId': 1 }")
+private List<OrderLine> orderLines;
+```
+
+- `lazy = true` defers resolution until the field is accessed.
+- `lookup = "{ 'orderId': ?#{#self.orderId} }"` matches `OrderLine.orderId` against this
+  document's `orderId` (SpEL `#self`), instead of matching on `_id`.
+- `@ReadOnlyProperty` means the field is populated on read and never written back.
+
+Simple reference (stores referenced `_id`):
+
+```java
+import org.springframework.data.mongodb.core.mapping.DocumentReference;
+
+@DocumentReference
+private Warehouse warehouse;
+```
+
+## 7. Indexes
+
+```java
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+
+@Document(collection = "people")
+@CompoundIndex(name = "name_age_idx", def = "{'lastName': 1, 'age': -1}")
+class Person {
+    @Id
+    private String id;
+    @Indexed(unique = true)
+    private Integer ssn;
+    @Field("fName")
+    private String firstName;
+    // ...
+}
+```
+
+For a pure migration/validation scenario you usually don't need indexes — add them only
+when the source schema or the user calls for them.
+
+## 8. Constructors, access modifiers, getters/setters
+
+- Provide a no-arg constructor (Spring instantiates via it unless a `@PersistenceCreator`
+  constructor is present).
+- Keep classes package-private; only the harness/entrypoint class with `main` is `public`.
+- Provide getters/setters for mapped fields. If serializing results with Jackson in a
+  harness, getters are what Jackson reads.
+- Do not put `public` on every field/class reflexively — it diverges from the project
+  snippets and is unnecessary.
+
+## 9. Standalone `MongoTemplate` bootstrap (for harnesses)
+
+When code must run outside a Spring context (validation/translation harness), build the
+`MongoTemplate` by hand. This exact wiring is what the project snippets use:
+
+```java
+import com.mongodb.client.MongoClients;
+import org.springframework.data.mongodb.MongoDatabaseFactory;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory;
+import org.springframework.data.mongodb.core.convert.DefaultDbRefResolver;
+import org.springframework.data.mongodb.core.convert.DefaultMongoTypeMapper;
+import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
+import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
+import org.springframework.data.mongodb.core.mapping.MongoMappingContext;
+
+final class MongoTemplateFactory {
+    private MongoTemplateFactory() {
+    }
+
+    static MongoTemplate create(String mongoUri, String mongoDatabase) {
+        MongoDatabaseFactory databaseFactory =
+                new SimpleMongoClientDatabaseFactory(MongoClients.create(mongoUri), mongoDatabase);
+
+        MongoCustomConversions customConversions = MongoCustomConversions.create(configuration -> {});
+
+        MongoMappingContext mappingContext = new MongoMappingContext();
+        mappingContext.setSimpleTypeHolder(customConversions.getSimpleTypeHolder());
+        mappingContext.afterPropertiesSet();
+
+        MappingMongoConverter converter =
+                new MappingMongoConverter(new DefaultDbRefResolver(databaseFactory), mappingContext);
+        converter.setCustomConversions(customConversions);
+        converter.setTypeMapper(new DefaultMongoTypeMapper(null)); // null => omit _class type hints
+        converter.afterPropertiesSet();
+
+        return new MongoTemplate(databaseFactory, converter);
+    }
+}
+```
+
+`new DefaultMongoTypeMapper(null)` suppresses the `_class` discriminator field so reads
+against an existing collection don't expect Spring-written type hints. Validate each
+aggregate root with a one-document fetch:
+
+```java
+Query probe = new Query().limit(1);
+mongoTemplate.findOne(probe, Order.class); // throws MappingException if the mapping is wrong
+```
+
+Only validate `@Document` aggregate roots this way — embedded value objects (no
+`@Document`) are not fetched directly.
+
+--- TARGET-LANGUAGE MAPPING REFERENCE ---
+Quick source->target mapping reference. For AUTHORITATIVE, version-correct imports and API surface, rely on the TARGET FRAMEWORK SKILL above — never on memory for imports. Apply these patterns to the user's OWN entities/fields/queries only; never introduce names from this reference.
+
+Type mapping (.NET -> Java):
+- `int`/`int?` -> `Integer`;  `long`/`long?` -> `Long`;  `bool` -> `Boolean`
+- `decimal`/`decimal?` -> `BigDecimal` (NEVER `double` for money)
+- `DateTime`/`DateTime?` -> `LocalDateTime` (date-only intent -> `LocalDate`)
+- `string` -> `String`;  `Guid` -> `String` (or `UUID`)
+- `IList<T>`/`List<T>` navigation -> embedded `List<T>` (document store) or a relationship (graph store)
+
+Annotation / entity mapping (relational -> target ORM):
+- Spring Data MongoDB: `[Table]`/`ClassMapping<T>` -> `@Document(collection="...")`; `[Key]`/`Id(...)` -> `@Id private String id;` (Mongo `_id` is a String — keep the source integer key as its OWN `@Field`); other columns -> `@Field("camelCaseName")`. Value objects embedded in a parent document have NO `@Document`.
+- Spring Data Neo4j: `[Table]`/`ClassMapping<T>` -> `@Node("Label")`; `[Key]`/`Id(...)` -> `@Id @GeneratedValue private Long id;` (keep the source integer key as its own `@Property`); other columns -> `@Property("camelCaseName")`; navigations -> `@Relationship(type="...", direction=...)`.
+- Names in `@Field`/`@Property`/`Criteria.where(...)`/Cypher are the TARGET store's field names (usually camelCase), NOT the SQL column and NOT the Java property.
+
+Query API (translate the query BODY; keep each method 1:1 with the source query, same result shape, no extra params):
+- Spring Data MongoDB: `MongoTemplate` + `Query`/`Criteria` (`.where().gte().lte()`, `.in()`, `.regex()`), `Sort` for ordering, `Aggregation` for group/having/count. Details: the "queries" and "aggregation" references in the TARGET FRAMEWORK SKILL above.
+- Spring Data Neo4j: `Neo4jTemplate` + Cypher-DSL `Statement` (typed builders), NOT string concatenation. Details: the "queries" and "traversals" references in the TARGET FRAMEWORK SKILL above.
+
+--- FRAGMENT STRUCTURE REFERENCE ---
+The examples below show the STRUCTURE of the schema classes and per-query classes for this framework
+pair. You save the schema classes via `save_schema_translation` and each `Query<N>` class via
+`save_query_translation` (one call per query id). The imports, JSON serializer, runtime support, DB
+template factory AND the entrypoint `main` (which runs every query with try/catch and writes the
+results JSON) are injected/generated automatically — they MUST NOT appear in your fragments.
+
+Imitate the SHAPE only (class layout, harness method signatures, flat count/firstSample/lastSample
+result maps). Use exclusively the user's own entities, fields, and queries — never this example's
+WideWorldImporters domain content.
+
+<fragment_structure side="source" framework=".NET Entity Framework Core">
+[Table("Customers", Schema = "Sales")]
+public class Customer
+{
+    [Key]
+    [JsonPropertyName("customerId")]
+    public required int CustomerID { get; set; }
+    [MaxLength(200)]
+    public required string CustomerName { get; set; }
+    [Column(TypeName="datetime2")]
+    [Precision(7)]
+    public required DateTime AccountOpenedDate { get; set; }
+    [Column(TypeName="decimal")]
+    [Precision(18, 2)]
+    public decimal? CreditLimit { get; set; }
+
+    public List<CustomerTransaction> CustomerTransactions { get; set; } = [];
+}
+
+[Table("CustomerTransactions", Schema = "Sales")]
+public class CustomerTransaction
+{
+    [Key]
+    [JsonPropertyName("customerTransactionId")]
+    public int CustomerTransactionID { get; set; }
+    [ForeignKey(nameof(Customer))]
+    [JsonPropertyName("customerId")]
+    public int CustomerID { get; set; }
+    public DateTime TransactionDate { get; set; }
+    public decimal TransactionAmount { get; set; }
+}
+
+[Table("Orders", Schema = "Sales")]
+public class Order
+{
+    [Key]
+    [JsonPropertyName("orderId")]
+    public int OrderID { get; set; }
+    [ForeignKey(nameof(Customer))]
+    [JsonPropertyName("customerId")]
+    public int CustomerID { get; set; }
+
+    public Customer Customer { get; set; } = null!;
+    public List<OrderLine> OrderLines { get; set; } = [];
+}
+
+[Table("OrderLines", Schema = "Sales")]
+public class OrderLine
+{
+    [Key]
+    [JsonPropertyName("orderLineId")]
+    public int OrderLineID { get; set; }
+    [ForeignKey(nameof(Order))]
+    [JsonPropertyName("orderId")]
+    public int OrderID { get; set; }
+    [JsonPropertyName("stockItemId")]
+    public int StockItemID { get; set; }
+    public required string Description { get; set; }
+    [JsonPropertyName("packageTypeId")]
+    public int PackageTypeID { get; set; }
+    public int Quantity { get; set; }
+    public decimal? UnitPrice { get; set; }
+    public decimal TaxRate { get; set; }
+    public int PickedQuantity { get; set; }
+    public DateTime? PickingCompletedWhen { get; set; }
+    public int LastEditedBy { get; set; }
+    public DateTime LastEditedWhen { get; set; }
+}
+
+public class SandboxDbContext(DbContextOptions<SandboxDbContext> options) : DbContext(options)
+{
+    public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<CustomerTransaction> CustomerTransactions => Set<CustomerTransaction>();
+    public DbSet<OrderLine> OrderLines => Set<OrderLine>();
+}
+
+// --- Query Entrypoint ---
+</fragment_structure>
+
+<fragment_structure side="target" framework="Java Spring Data MongoDB">
+/**
+ * Order document with embedded Customer and CustomerTransactions.
+ * 
+ * TRANSLATED FROM: C# EFCore Customer, CustomerTransaction entities
+ * ARCHITECTURAL SHIFT: Denormalized - Customers no longer a root collection.
+ *                      Instead, Customer and its transactions are embedded within Order.
+ */
+@Document(collection = "orders")
+@JsonIgnoreProperties({ "id" })
+class Order {
+
+    @Id
+    private String id;
+
+    @Field("orderId")
+    private Integer orderId;
+
+    @Field("customerId")
+    private Integer customerId;
+
+    // Embedded Customer document (denormalized from Sales.Customers table)
+    private Customer customer;
+
+    @ReadOnlyProperty
+    @DocumentReference(lazy = true, lookup = "{ 'orderId': ?#{#self.orderId} }", sort = "{ 'orderLineId': 1 }")
+    private List<OrderLine> orderLines;
+
+    // Constructors
+    public Order() {
+    }
+
+    // Getters and Setters
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+    public Integer getOrderId() { return orderId; }
+    public void setOrderId(Integer orderId) { this.orderId = orderId; }
+    public Integer getCustomerId() { return customerId; }
+    public void setCustomerId(Integer customerId) { this.customerId = customerId; }
+    public Customer getCustomer() { return customer; }
+    public void setCustomer(Customer customer) { this.customer = customer; }
+    public List<OrderLine> getOrderLines() { return orderLines; }
+    public void setOrderLines(List<OrderLine> orderLines) { this.orderLines = orderLines; }
+}
+
+/**
+ * Embedded Customer document within Order.
+ * Represents the denormalized Sales.Customers table data.
+ * 
+ * TRANSLATED FROM: C# Customer entity (no longer a @Document root)
+ * NOTE: No @Document annotation - this is a value object embedded in Order
+ */
+class Customer {
+
+    private Integer customerId;
+    private String customerName;
+    private LocalDate accountOpenedDate;
+    private BigDecimal creditLimit;
+
+    // Embedded CustomerTransactions array (denormalized from Sales.CustomerTransactions table)
+    private List<CustomerTransaction> customerTransactions = new ArrayList<>();
+
+    // Constructors
+    public Customer() {
+    }
+
+    // Getters and Setters
+    public Integer getCustomerId() { return customerId; }
+    public void setCustomerId(Integer customerId) { this.customerId = customerId; }
+    public String getCustomerName() { return customerName; }
+    public void setCustomerName(String customerName) { this.customerName = customerName; }
+    public LocalDate getAccountOpenedDate() { return accountOpenedDate; }
+    public void setAccountOpenedDate(LocalDate accountOpenedDate) { this.accountOpenedDate = accountOpenedDate; }
+    public BigDecimal getCreditLimit() { return creditLimit; }
+    public void setCreditLimit(BigDecimal creditLimit) { this.creditLimit = creditLimit; }
+    public List<CustomerTransaction> getCustomerTransactions() { return customerTransactions; }
+    public void setCustomerTransactions(List<CustomerTransaction> customerTransactions) { this.customerTransactions = customerTransactions; }
+}
+
+/**
+ * Embedded CustomerTransaction document within Customer.customerTransactions array.
+ * Represents the denormalized Sales.CustomerTransactions table data.
+ * 
+ * TRANSLATED FROM: C# CustomerTransaction entity
+ * NOTE: No @Document annotation - this is a value object embedded in Customer
+ */
+class CustomerTransaction {
+
+    private Integer customerTransactionId;
+    private Integer customerId;
+    private LocalDate transactionDate;
+    private BigDecimal transactionAmount;
+
+    // Constructors
+    public CustomerTransaction() {
+    }
+
+    // Getters and Setters
+    public Integer getCustomerTransactionId() { return customerTransactionId; }
+    public void setCustomerTransactionId(Integer customerTransactionId) { this.customerTransactionId = customerTransactionId; }
+    public Integer getCustomerId() { return customerId; }
+    public void setCustomerId(Integer customerId) { this.customerId = customerId; }
+    public LocalDate getTransactionDate() { return transactionDate; }
+    public void setTransactionDate(LocalDate transactionDate) { this.transactionDate = transactionDate; }
+    public BigDecimal getTransactionAmount() { return transactionAmount; }
+    public void setTransactionAmount(BigDecimal transactionAmount) { this.transactionAmount = transactionAmount; }
+}
+
+/**
+ * OrderLine document.
+ * Maps to the 'orderLines' collection in MongoDB.
+ * 
+ * TRANSLATED FROM: C# OrderLine entity
+ */
+@Document(collection = "orderLines")
+@JsonIgnoreProperties({ "id" })
+class OrderLine {
+
+    @Id
+    private String id;
+
+    @Field("orderLineId")
+    private Integer orderLineId;
+
+    @Field("orderId")
+    private Integer orderId;
+
+    @Field("stockItemId")
+    private Integer stockItemId;
+
+    private String description;
+
+    @Field("packageTypeId")
+    private Integer packageTypeId;
+
+    private Integer quantity;
+
+    private BigDecimal unitPrice;
+
+    @Field("taxRate")
+    private BigDecimal taxRate;
+
+    @Field("pickedQuantity")
+    private Integer pickedQuantity;
+
+    @Field("pickingCompletedWhen")
+    private LocalDateTime pickingCompletedWhen;
+
+    @Field("lastEditedBy")
+    private Integer lastEditedBy;
+
+    @Field("lastEditedWhen")
+    private LocalDateTime lastEditedWhen;
+
+    // Constructors
+    public OrderLine() {
+    }
+
+    // Getters and Setters
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+    public Integer getOrderLineId() { return orderLineId; }
+    public void setOrderLineId(Integer orderLineId) { this.orderLineId = orderLineId; }
+    public Integer getOrderId() { return orderId; }
+    public void setOrderId(Integer orderId) { this.orderId = orderId; }
+    public Integer getStockItemId() { return stockItemId; }
+    public void setStockItemId(Integer stockItemId) { this.stockItemId = stockItemId; }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+    public Integer getPackageTypeId() { return packageTypeId; }
+    public void setPackageTypeId(Integer packageTypeId) { this.packageTypeId = packageTypeId; }
+    public Integer getQuantity() { return quantity; }
+    public void setQuantity(Integer quantity) { this.quantity = quantity; }
+    public BigDecimal getUnitPrice() { return unitPrice; }
+    public void setUnitPrice(BigDecimal unitPrice) { this.unitPrice = unitPrice; }
+    public BigDecimal getTaxRate() { return taxRate; }
+    public void setTaxRate(BigDecimal taxRate) { this.taxRate = taxRate; }
+    public Integer getPickedQuantity() { return pickedQuantity; }
+    public void setPickedQuantity(Integer pickedQuantity) { this.pickedQuantity = pickedQuantity; }
+    public LocalDateTime getPickingCompletedWhen() { return pickingCompletedWhen; }
+    public void setPickingCompletedWhen(LocalDateTime pickingCompletedWhen) { this.pickingCompletedWhen = pickingCompletedWhen; }
+    public Integer getLastEditedBy() { return lastEditedBy; }
+    public void setLastEditedBy(Integer lastEditedBy) { this.lastEditedBy = lastEditedBy; }
+    public LocalDateTime getLastEditedWhen() { return lastEditedWhen; }
+    public void setLastEditedWhen(LocalDateTime lastEditedWhen) { this.lastEditedWhen = lastEditedWhen; }
+}
+
+final class MongoTemplateFactory {
+    private MongoTemplateFactory() {
+    }
+
+    static MongoTemplate create(String mongoUri, String mongoDatabase) {
+        MongoDatabaseFactory databaseFactory = new SimpleMongoClientDatabaseFactory(MongoClients.create(mongoUri), mongoDatabase);
+        MongoCustomConversions customConversions = MongoCustomConversions.create(configuration -> {});
+        MongoMappingContext mappingContext = new MongoMappingContext();
+        mappingContext.setSimpleTypeHolder(customConversions.getSimpleTypeHolder());
+        mappingContext.afterPropertiesSet();
+
+        MappingMongoConverter converter = new MappingMongoConverter(new DefaultDbRefResolver(databaseFactory), mappingContext);
+        converter.setCustomConversions(customConversions);
+        converter.setTypeMapper(new DefaultMongoTypeMapper(null));
+        converter.afterPropertiesSet();
+
+        return new MongoTemplate(databaseFactory, converter);
+    }
+}
+
+// --- Query Entrypoint ---
+
+record CountProjection(Long count) {
+}
+
+interface Query5Projection {
+    Integer getOrderLineId();
+    Integer getQuantity();
+}
+
+final class Query1 {
+    public static Query query() {
+        LocalDate from = LocalDate.of(2014, 12, 20);
+        LocalDate to = LocalDate.of(2014, 12, 31);
+        return new Query(Criteria.where("pickingCompletedWhen").gte(from).lte(to));
+    }
+
+    public static Map<String, Object> harness(MongoTemplate template) {
+        Query q = query();
+        long count = template.count(q, OrderLine.class);
+        Object first = null;
+        if (count > 0) {
+            first = template.findOne(query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1), OrderLine.class);
+        }
+        Object last = null;
+        if (count > 1) {
+            last = template.findOne(query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1), OrderLine.class);
+        }
+        return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject()), "count", count, "firstSample", first, "lastSample", last);
+    }
+}
+
+final class Query2 {
+    public static Query query() {
+        return new Query(Criteria.where("customerId").is(1));
+    }
+
+    public static Map<String, Object> harness(MongoTemplate template) {
+        Query q = query();
+        long count = template.count(q, Order.class);
+        Object first = null;
+        if (count > 0) {
+            first = template.findOne(query().with(Sort.by(Sort.Direction.ASC, "orderId")).limit(1), Order.class);
+        }
+        Object last = null;
+        if (count > 1) {
+            last = template.findOne(query().with(Sort.by(Sort.Direction.DESC, "orderId")).limit(1), Order.class);
+        }
+        return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(Order.class), "filter", q.getQueryObject()), "count", count, "firstSample", first, "lastSample", last);
+    }
+}
+
+final class Query3 {
+    public static TypedAggregation<OrderLine> query() {
+        return Aggregation.newAggregation(
+            OrderLine.class,
+            Aggregation.group("taxRate").count().as("count"),
+            Aggregation.project("count").and("taxRate").previousOperation(),
+            Aggregation.sort(Sort.Direction.DESC, "count")
+        );
+    }
+
+    public static Map<String, Object> harness(MongoTemplate template) {
+        var baseAgg = query();
+        
+        var countOps = new ArrayList<>(baseAgg.getPipeline().getOperations());
+        countOps.add(Aggregation.count().as("count"));
+        var countAgg = Aggregation.newAggregation(OrderLine.class, countOps);
+        var countResult = template.aggregate(countAgg, OrderLine.class, CountProjection.class).getUniqueMappedResult();
+        var count = countResult != null ? countResult.count() : 0L;
+        
+        Object first = null;
+        if (count > 0) {
+            var agg = Aggregation.newAggregation(query().getPipeline().add(Aggregation.sort(Sort.Direction.ASC, "taxRate")).add(Aggregation.limit(1)).getOperations());
+            first = template.aggregate(agg, template.getCollectionName(OrderLine.class), Object.class).getUniqueMappedResult();
+        }
+        Object last = null;
+        if (count > 1) {
+            var desc = Aggregation.newAggregation(query().getPipeline().add(Aggregation.sort(Sort.Direction.DESC, "taxRate")).add(Aggregation.limit(1)).getOperations());
+            last = template.aggregate(desc, template.getCollectionName(OrderLine.class), Object.class).getUniqueMappedResult();
+        }
+        return Map.of("mongoAggregation", Map.of("collection", template.getCollectionName(OrderLine.class), "pipeline", baseAgg.toString()), "count", count, "firstSample", first, "lastSample", last);
+    }
+}
+
+final class Query4 {
+    public static Query query() {
+        return new Query().with(Sort.by(Sort.Direction.DESC, "quantity")).limit(50);
+    }
+
+    public static Map<String, Object> harness(MongoTemplate template) {
+        Query q = query();
+        long count = template.count(q, OrderLine.class);
+
+        Object first = null;
+        if (count > 0) {
+            Query firstQ = q.with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1);
+            first = template.findOne(firstQ, OrderLine.class);
+        }
+        Object last = null;
+        if (count > 1) {
+            Query lastQ = q.with(Sort.by(Sort.Direction.ASC, "orderLineId")).skip(count - 1).limit(1);
+            last = template.findOne(lastQ, OrderLine.class);
+        }
+        return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject(), "sort", q.getSortObject()), "count", count, "firstSample", first, "lastSample", last);
+    }
+}
+
+final class Query5 {
+    public static Query query() {
+        Query q = new Query();
+        q.fields().include("orderLineId", "quantity");
+        return q;
+    }
+
+    public static Map<String, Object> harness(MongoTemplate template) {
+        Query q = query();
+        long count = template.count(q, OrderLine.class);
+        
+        Object first = null;
+        if (count > 0) {
+            Query asc = query().with(Sort.by(Sort.Direction.ASC, "orderLineId")).limit(1);
+            first = template.query(OrderLine.class).as(Query5Projection.class).matching(asc).firstValue();
+        }
+        Object last = null;
+        if (count > 1) {
+            Query desc = query().with(Sort.by(Sort.Direction.DESC, "orderLineId")).limit(1);
+            last = template.query(OrderLine.class).as(Query5Projection.class).matching(desc).firstValue();
+        }
+        return Map.of("mongoQuery", Map.of("collection", template.getCollectionName(OrderLine.class), "filter", q.getQueryObject(), "fields", q.getFieldsObject()), "count", count, "firstSample", first, "lastSample", last);
+    }
+}
+</fragment_structure>
+
+System time: 2026-07-11T06:54:11.723849+00:00
+
+`````
+
+## User prompt
+
+`````text
+Translate the following Source Code (schema/query) from .NET Entity Framework Core 10 to Java Spring Data MongoDB 5.0.
+
+Database Schema Context:
+Here is the comprehensive schema summary.
+
+---
+
+## SOURCE: Microsoft SQL Server (WideWorldImporters)
+
+### Sales.OrderLines
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| OrderLineID | int | NO | PK |
+| OrderID | int | NO | FK → Sales.Orders |
+| StockItemID | int | NO | FK → Warehouse.StockItems |
+| Description | nvarchar(100) | NO | |
+| PackageTypeID | int | NO | |
+| Quantity | int | NO | |
+| UnitPrice | decimal(18,2) | YES | |
+| TaxRate | decimal(18,3) | NO | |
+| PickedQuantity | int | NO | |
+| PickingCompletedWhen | datetime2 | YES | |
+| LastEditedBy | int | NO | |
+| LastEditedWhen | datetime2 | NO | |
+
+### Sales.Orders
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| OrderID | int | NO | PK |
+| CustomerID | int | NO | |
+| SalespersonPersonID | int | NO | |
+| PickedByPersonID | int | YES | |
+| ContactPersonID | int | NO | |
+| BackorderOrderID | int | YES | |
+| OrderDate | date | NO | |
+| ExpectedDeliveryDate | date | NO | |
+| CustomerPurchaseOrderNumber | nvarchar(20) | YES | |
+| IsUndersupplyBackordered | bit | NO | |
+| Comments | nvarchar(MAX) | YES | |
+| DeliveryInstructions | nvarchar(MAX) | YES | |
+| InternalComments | nvarchar(MAX) | YES | |
+| PickingCompletedWhen | datetime2 | YES | |
+| LastEditedBy | int | NO | |
+| LastEditedWhen | datetime2 | NO | |
+
+### Application.People
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| PersonID | int | NO | PK |
+| FullName | nvarchar(50) | NO | |
+| PreferredName | nvarchar(50) | NO | |
+| SearchName | nvarchar(101) | NO | |
+| IsPermittedToLogon | bit | NO | |
+| LogonName | nvarchar(50) | YES | |
+| IsExternalLogonProvider | bit | NO | |
+| HashedPassword | varbinary(MAX) | YES | |
+| IsSystemUser | bit | NO | |
+| IsEmployee | bit | NO | |
+| IsSalesperson | bit | NO | |
+| UserPreferences | nvarchar(MAX) | YES | |
+| PhoneNumber | nvarchar(20) | YES | |
+| FaxNumber | nvarchar(20) | YES | |
+| EmailAddress | nvarchar(256) | YES | |
+| Photo | varbinary(MAX) | YES | |
+| **CustomFields** | nvarchar(MAX) | YES | JSON column; EF Core OwnsOne→CustomFields with ToJson() |
+| **OtherLanguages** | nvarchar(MAX) | YES | JSON array: `List<string>?` |
+| LastEditedBy | int | NO | |
+| ValidFrom | datetime2 | NO | |
+| ValidTo | datetime2 | NO | |
+
+EF Core model: `Person` has `OwnsOne(p => p.CustomFields, cb => cb.ToJson())`, mapping to a `CustomFields` owned type with `OtherLanguages`, `HireDate`, `Title` properties. `Person.OtherLanguages` is `List<string>?`.
+
+### Purchasing.Suppliers (columns relevant to code)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| SupplierID | int | NO | PK |
+| SupplierName | nvarchar(100) | NO | |
+| SupplierReference | nvarchar(20) | YES | |
+| BankAccountName | nvarchar(50) | YES | |
+| BankAccountBranch | nvarchar(50) | YES | |
+| BankAccountCode | nvarchar(20) | YES | |
+| BankAccountNumber | nvarchar(20) | YES | |
+| BankInternationalCode | nvarchar(20) | YES | |
+| PaymentDays | int | NO | |
+| PhoneNumber | nvarchar(20) | NO | |
+| FaxNumber | nvarchar(20) | NO | |
+| WebsiteURL | nvarchar(256) | NO | |
+
+### Sales.CustomerTransactions (relevant columns)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| CustomerTransactionID | int | NO | PK |
+| CustomerID | int | NO | |
+| TransactionDate | date | NO | |
+| TransactionAmount | decimal(18,2) | NO | |
+| OutstandingBalance | decimal(18,2) | NO | |
+| IsFinalized | bit | YES | |
+
+### Purchasing.PurchaseOrders (relevant columns)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| PurchaseOrderID | int | NO | PK |
+| SupplierID | int | NO | |
+| OrderDate | date | NO | |
+| ExpectedDeliveryDate | date | YES | |
+| SupplierReference | nvarchar(20) | YES | |
+| IsOrderFinalized | bit | NO | |
+
+### Warehouse.StockItems (relevant columns)
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| StockItemID | int | NO | PK |
+| StockItemName | nvarchar(100) | NO | |
+| SupplierID | int | NO | |
+| QuantityPerOuter | int | NO | |
+| LeadTimeDays | int | NO | |
+| IsChillerStock | bit | NO | |
+| UnitPrice | decimal(18,2) | NO | |
+| RecommendedRetailPrice | decimal(18,2) | YES | |
+
+### Warehouse.StockItemStockGroups
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| StockItemStockGroupID | int | NO | PK |
+| StockItemID | int | NO | |
+| StockGroupID | int | NO | |
+
+### EF Core Relationships
+- `Order` has `List<OrderLine> OrderLines` navigation property (one-to-many from Orders to OrderLines via OrderID FK).
+- `Person.CustomFields` is an owned entity (OwnsOne with ToJson()) — stored as a JSON string column.
+- `Person.OtherLanguages` is `List<string>?` mapped as JSON.
+- DbSets registered: Orders, OrderLines, People, Suppliers, CustomerTransactions, PurchaseOrders, StockItems, StockItemStockGroups.
+
+---
+
+## TARGET: MongoDB (database: `uom`)
+
+### Collection: `orderLines` (231,412 documents)
+Top-level fields mapped from `Sales.OrderLines`:
+```
+_id (ObjectId)
+orderLineId (Number)             -- PK from SQL
+orderId (Number)                 -- FK to orders
+stockItemId (Number)
+description (String)
+packageTypeId (Number)
+quantity (Number)
+unitPrice (Decimal128)           -- null for null values
+taxRate (Decimal128)
+pickedQuantity (Number)
+pickingCompletedWhen (Date|null)
+lastEditedBy (Number)
+lastEditedWhen (Date)
+```
+**Embedded `stockItem` (subdocument)** — denormalized from `Warehouse.StockItems` via StockItemID join:
+```
+stockItem:
+  stockItemId, stockItemName, supplierId, colorId, unitPackageId, outerPackageId,
+  brand, size, leadTimeDays, quantityPerOuter, isChillerStock, barcode,
+  taxRate, unitPrice, recommendedRetailPrice, typicalWeightPerUnit,
+  marketingComments, internalComments, photo, customFields, tags,
+  searchDetails, lastEditedBy, validFrom, validTo
+```
+**Embedded `stockItem.stockItemStockGroups` (array)** — denormalized from `Warehouse.StockItemStockGroups`:
+```
+stockItem.stockItemStockGroups[]:
+  stockItemStockGroupId, stockItemId, stockGroupId, lastEditedBy, lastEditedWhen
+```
+
+### Collection: `orders` (73,595 documents)
+Top-level fields mapped from `Sales.Orders`:
+```
+_id (ObjectId)
+orderId (Number)                    -- PK from SQL
+customerId (Number)
+salespersonPersonId (Number)
+pickedByPersonId (Number|null)
+contactPersonId (Number)
+backorderOrderId (Number|null)
+orderDate (Date)
+expectedDeliveryDate (Date)
+customerPurchaseOrderNumber (String)
+isUndersupplyBackordered (Boolean)
+comments (null)
+deliveryInstructions (null)
+internalComments (null)
+pickingCompletedWhen (Date|null)
+lastEditedBy (Number)
+lastEditedWhen (Date)
+```
+**Embedded `customer` (subdocument)** — denormalized from `Sales.Customers`:
+```
+customer:
+  accountOpenedDate, alternateContactPersonId, billToCustomerId, buyingGroupId,
+  creditLimit, customerCategoryId, customerId, customerName,
+  deliveryAddressLine1/2, deliveryCityId, deliveryLocation (Binary),
+  deliveryMethodId, deliveryPostalCode, deliveryRun, faxNumber,
+  isOnCreditHold, isStatementSent, lastEditedBy, paymentDays,
+  phoneNumber, postalAddressLine1/2, postalCityId, postalPostalCode,
+  primaryContactPersonId, runPosition, standardDiscountPercentage,
+  validFrom, validTo, websiteUrl
+```
+**Embedded `customer.customerTransactions` (array)** — denormalized from `Sales.CustomerTransactions`:
+```
+customer.customerTransactions[]:
+  customerTransactionId, customerId, transactionTypeId, invoiceId,
+  paymentMethodId, transactionDate, amountExcludingTax, taxAmount,
+  transactionAmount, outstandingBalance, finalizationDate, isFinalized,
+  lastEditedBy, lastEditedWhen
+```
+
+**IMPORTANT:** `orders` does NOT embed `orderLines`. OrderLines exist as a separate `orderLines` collection linked by `orderId`. In the source EF Core model, `Order.OrderLines` is a navigation property — the relationship is split across two MongoDB collections.
+
+### Collection: `people` (1,111 documents)
+```
+_id (ObjectId)
+personId (Number)                  -- PK from SQL
+fullName (String)
+preferredName (String)
+searchName (String)
+isPermittedToLogon (Boolean)
+logonName (String)
+isExternalLogonProvider (Boolean)
+hashedPassword (null)
+isSystemUser (Boolean)
+isEmployee (Boolean)
+isSalesperson (Boolean)
+userPreferences (null)
+phoneNumber (String)
+faxNumber (String)
+emailAddress (String)
+photo (null)
+customFields (null|String)        -- RAW JSON STRING, not a BSON subdocument!
+otherLanguages (null|String)      -- RAW JSON STRING, not a BSON array!
+lastEditedBy (Number)
+validFrom (Date)
+validTo (Date)
+```
+**CRITICAL:** `customFields` is stored as a raw JSON **string** (e.g., `"{ \"OtherLanguages\": [\"Polish\"], \"HireDate\":\"2008-04-19T00:00:00\", \"Title\":\"Team Member\", ...}"`), NOT as a nested BSON document. Similarly, `otherLanguages` is a JSON **string** (e.g., `"[\"Polish\",\"Chinese\",\"Japanese\"]"`), NOT as a BSON array. This means MongoDB query/filter operators must treat these as string fields or use `$regex` to match within them.
+
+### Collection: `suppliers` (13 documents)
+```
+_id (ObjectId)
+supplierId (Number)                -- PK from SQL
+supplierName (String)
+supplierCategoryId, primaryContactPersonId, alternateContactPersonId,
+deliveryMethodId, deliveryCityId, postalCityId
+supplierReference (String)
+bankAccountName, bankAccountBranch, bankAccountCode, bankAccountNumber, bankInternationalCode
+paymentDays (Number)
+internalComments (null|String)
+phoneNumber, faxNumber, websiteUrl (String)
+deliveryAddressLine1/2, deliveryPostalCode, deliveryLocation (Binary)
+postalAddressLine1/2, postalPostalCode
+lastEditedBy, validFrom, validTo
+```
+**Embedded `purchaseOrders` (array)** — from `Purchasing.PurchaseOrders`:
+```
+purchaseOrders[]:
+  purchaseOrderId, supplierId, orderDate, deliveryMethodId, contactPersonId,
+  expectedDeliveryDate, supplierReference, isOrderFinalized, comments,
+  internalComments, lastEditedBy, lastEditedWhen
+```
+**Embedded `stockItems` (array)** — from `Warehouse.StockItems`:
+```
+stockItems[]:
+  stockItemId, stockItemName, supplierId, colorId, unitPackageId, outerPackageId,
+  brand, size, leadTimeDays, quantityPerOuter, isChillerStock, barcode,
+  taxRate, unitPrice, recommendedRetailPrice, typicalWeightPerUnit,
+  marketingComments, internalComments, photo, customFields, tags,
+  searchDetails, lastEditedBy, validFrom, validTo
+```
+
+---
+
+## KEY TRANSLATION IMPACTS
+
+1. **Order → OrderLines relationship**: In SQL, `Order.OrderLines` is a navigation property (FK join). In MongoDB, these are **separate collections** (`orders` and `orderLines`), linked by `orderId`. There is no embedded array within `orders`. Query10 uses `.Include(o => o.OrderLines)` which in MongoDB means a separate query to `orderLines` or a `$lookup`.
+
+2. **People customFields/otherLanguages**: Stored as raw JSON **strings** in MongoDB, not BSON subdocuments/arrays. Queries 13 and 14 filter on `customFields.Title` and `otherLanguages.Contains("Slovak")` — in MongoDB these require string pattern matching (e.g., `$regex`) since the fields are strings, not structured BSON objects.
+
+3. **Decimal→Decimal128**: SQL `decimal(18,2)` and `decimal(18,3)` map to MongoDB `Decimal128` type. Java Spring Data MongoDB uses `BigDecimal` for these.
+
+4. **datetime2→Date**: SQL `datetime2` maps to MongoDB `Date` (ISODate). Nullable datetimes map to `Date|null`.
+
+5. **bit→Boolean**: SQL `bit` maps to MongoDB `Boolean`.
+
+6. **Entity IDs**: SQL identity columns (e.g., `OrderLineID`, `OrderID`) become numeric `orderLineId`, `orderId` fields in MongoDB documents (camelCase). MongoDB uses `_id` (ObjectId) as its own primary key.
+
+7. **Missing DbSets in MongoDB**: `CustomerTransactions`, `PurchaseOrders`, `StockItems`, and `StockItemStockGroups` do NOT have their own MongoDB collections. They are embedded within `orders.customer.customerTransactions`, `suppliers.purchaseOrders`, `orderLines.stockItem`, and `orderLines.stockItem.stockItemStockGroups` respectively. However, queries in the source code do not directly access these DbSets — they are only relevant through navigation/embedding.
+---
+Source Code:
+<source_schema_code>
+[Table("OrderLines", Schema = "Sales")]
+public class OrderLine
+{
+  [Key]
+  public int OrderLineID { get; set; }
+  [ForeignKey(nameof(Order))]
+  public int OrderID { get; set; }
+  public int StockItemID { get; set; }
+  public required string Description { get; set; }
+  public int Quantity { get; set; }
+  public decimal? UnitPrice { get; set; }
+  public decimal TaxRate { get; set; }
+  public int PickedQuantity { get; set; }
+  public DateTime? PickingCompletedWhen { get; set; }
+  public int LastEditedBy { get; set; }
+  public DateTime LastEditedWhen { get; set; }
+}
+
+[Table("Orders", Schema = "Sales")]
+public class Order
+{
+  [Key]
+  public int OrderID { get; set; }
+  public int CustomerID { get; set; }
+  public int? BackorderOrderID { get; set; }
+  public DateTime OrderDate { get; set; }
+  public DateTime ExpectedDeliveryDate { get; set; }
+  public string? CustomerPurchaseOrderNumber { get; set; }
+  public bool IsUndersupplyBackordered { get; set; }
+  public string? Comments { get; set; }
+  public string? DeliveryInstructions { get; set; }
+  public string? InternalComments { get; set; }
+  public DateTime? PickingCompletedWhen { get; set; }
+  public DateTime LastEditedWhen { get; set; }
+  public List<OrderLine> OrderLines { get; set; } = [];
+}
+
+[Table("People", Schema = "Application")]
+public class Person
+{
+  [Key]
+  public int PersonID { get; set; }
+  public required string FullName { get; set; }
+  public required string PreferredName { get; set; }
+  public string? EmailAddress { get; set; }
+  public CustomFields? CustomFields { get; set; }
+  public List<string>? OtherLanguages { get; set; }
+}
+
+public class CustomFields
+{
+  public List<string>? OtherLanguages { get; set; }
+  public DateTime? HireDate { get; set; }
+  public string? Title { get; set; }
+}
+
+[Table("Suppliers", Schema = "Purchasing")]
+public class Supplier
+{
+  [Key]
+  public int SupplierID { get; set; }
+  public required string SupplierName { get; set; }
+  public string? SupplierReference { get; set; }
+  public int PaymentDays { get; set; }
+  public string? PhoneNumber { get; set; }
+  public string? FaxNumber { get; set; }
+  public string? WebsiteURL { get; set; }
+  public string? BankAccountName { get; set; }
+  public string? BankAccountBranch { get; set; }
+  public string? BankAccountCode { get; set; }
+  public string? BankAccountNumber { get; set; }
+  public string? BankInternationalCode { get; set; }
+}
+
+[Table("CustomerTransactions", Schema = "Sales")]
+public class CustomerTransaction
+{
+  [Key]
+  public int CustomerTransactionID { get; set; }
+  public int CustomerID { get; set; }
+  public DateTime TransactionDate { get; set; }
+  public decimal TransactionAmount { get; set; }
+  public decimal OutstandingBalance { get; set; }
+  public bool IsFinalized { get; set; }
+}
+
+[Table("PurchaseOrders", Schema = "Purchasing")]
+public class PurchaseOrder
+{
+  [Key]
+  public int PurchaseOrderID { get; set; }
+  public int SupplierID { get; set; }
+  public DateTime OrderDate { get; set; }
+  public DateTime ExpectedDeliveryDate { get; set; }
+  public string? SupplierReference { get; set; }
+  public bool IsOrderFinalized { get; set; }
+}
+
+[Table("StockItems", Schema = "Warehouse")]
+public class StockItem
+{
+  [Key]
+  public int StockItemID { get; set; }
+  public required string StockItemName { get; set; }
+  public int SupplierID { get; set; }
+  public int QuantityPerOuter { get; set; }
+  public int LeadTimeDays { get; set; }
+  public bool IsChillerStock { get; set; }
+  public decimal? UnitPrice { get; set; }
+  public decimal RecommendedRetailPrice { get; set; }
+}
+
+[Table("StockItemStockGroups", Schema = "Warehouse")]
+public class StockItemStockGroup
+{
+  [Key]
+  public int StockItemStockGroupID { get; set; }
+  public int StockItemID { get; set; }
+  public int StockGroupID { get; set; }
+}
+
+public class SupplierContactInfo
+{
+  public int SupplierID { get; set; }
+  public string? SupplierName { get; set; }
+  public string? PhoneNumber { get; set; }
+  public string? FaxNumber { get; set; }
+  public string? WebsiteURL { get; set; }
+}
+
+public class SupplierBankAccount
+{
+  public int SupplierID { get; set; }
+  public string? BankAccountName { get; set; }
+  public string? BankAccountBranch { get; set; }
+  public string? BankAccountCode { get; set; }
+  public string? BankAccountNumber { get; set; }
+  public string? BankInternationalCode { get; set; }
+}
+
+public class SupplierAccounts
+{
+  public SupplierContactInfo? ContactInfo { get; set; }
+  public SupplierBankAccount? BankAccount { get; set; }
+}
+
+public class PurchaseOrderInfo
+{
+  public int PurchaseOrderID { get; set; }
+  public string? SupplierName { get; set; }
+  public DateTime OrderDate { get; set; }
+}
+
+public class SandboxDbContext(DbContextOptions<SandboxDbContext> options) : DbContext(options)
+{
+  public DbSet<Order> Orders => Set<Order>();
+  public DbSet<OrderLine> OrderLines => Set<OrderLine>();
+  public DbSet<Person> People => Set<Person>();
+  public DbSet<Supplier> Suppliers => Set<Supplier>();
+  public DbSet<CustomerTransaction> CustomerTransactions => Set<CustomerTransaction>();
+  public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+  public DbSet<StockItem> StockItems => Set<StockItem>();
+  public DbSet<StockItemStockGroup> StockItemStockGroups => Set<StockItemStockGroup>();
+
+  protected override void OnModelCreating(ModelBuilder modelBuilder)
+  {
+    modelBuilder.Entity<Person>().OwnsOne(p => p.CustomFields, cb => { cb.ToJson(); });
+    base.OnModelCreating(modelBuilder);
+  }
+}
+</source_schema_code>
+<source_query_code>
+public static IQueryable<OrderLine> Query1(SandboxDbContext ctx)
+{
+  int orderId = 26866;
+  return ctx.OrderLines.Where(ol => ol.OrderID == orderId);
+}
+
+public static IQueryable<OrderLine> Query2(SandboxDbContext ctx)
+{
+  decimal unitPrice = 25m;
+  return ctx.OrderLines.Where(ol => ol.UnitPrice == unitPrice);
+}
+
+public static IQueryable<OrderLine> Query3(SandboxDbContext ctx)
+{
+  var from = new DateTime(2014, 12, 20);
+  var to = new DateTime(2014, 12, 31);
+  return ctx.OrderLines.Where(ol => ol.PickingCompletedWhen >= from && ol.PickingCompletedWhen <= to);
+}
+
+public static IQueryable<OrderLine> Query4(SandboxDbContext ctx)
+{
+  var orderIds = new[] { 1, 10, 100, 1000, 10000 };
+  return ctx.OrderLines.Where(ol => orderIds.Contains(ol.OrderID));
+}
+
+public static IQueryable<OrderLine> Query5(SandboxDbContext ctx)
+{
+  string text = "C++";
+  return ctx.OrderLines.Where(ol => ol.Description.Contains(text));
+}
+
+public static IQueryable<OrderLine> Query6(SandboxDbContext ctx)
+{
+  int skip = 1000;
+  int take = 50;
+  return ctx.OrderLines.OrderBy(ol => ol.OrderLineID).Skip(skip).Take(take);
+}
+
+public static Dictionary<decimal, int> Query7(SandboxDbContext ctx)
+{
+  return ctx.OrderLines
+    .GroupBy(ol => ol.TaxRate)
+    .Select(g => new { TaxRate = g.Key, Count = g.Count() })
+    .OrderByDescending(x => x.Count)
+    .ToDictionary(x => x.TaxRate, x => x.Count);
+}
+
+public static decimal? Query8(SandboxDbContext ctx)
+{
+  return ctx.OrderLines.Max(ol => ol.UnitPrice);
+}
+
+public static decimal? Query9(SandboxDbContext ctx)
+{
+  return ctx.OrderLines.Sum(ol => ol.Quantity * ol.UnitPrice);
+}
+
+public static Order? Query10(SandboxDbContext ctx)
+{
+  return ctx.Orders.Include(o => o.OrderLines).SingleOrDefault(o => o.OrderID == 530);
+}
+
+public static IQueryable<Order> Query11(SandboxDbContext ctx)
+{
+  return ctx.Orders.OrderBy(o => o.ExpectedDeliveryDate).Take(1000);
+}
+
+public static IQueryable<string?> Query12(SandboxDbContext ctx)
+{
+  return ctx.Orders.Select(o => o.CustomerPurchaseOrderNumber).Distinct();
+}
+
+public static IQueryable<Person> Query13(SandboxDbContext ctx)
+{
+  return ctx.People.Where(p => p.CustomFields!.Title == "Team Member").OrderBy(p => p.PersonID);
+}
+
+public static IQueryable<Person> Query14(SandboxDbContext ctx)
+{
+  return ctx.People.Where(p => p.OtherLanguages!.Contains("Slovak")).OrderBy(p => p.PersonID);
+}
+
+public static List<int> Query15(SandboxDbContext ctx)
+{
+  var first = ctx.Suppliers.Where(s => s.SupplierID < 5).Select(s => s.SupplierID).ToList();
+  var last = ctx.Suppliers.Where(s => s.SupplierID >= 5 && s.SupplierID <= 10).Select(s => s.SupplierID).ToList();
+  return first.Union(last).OrderBy(s => s).ToList();
+}
+</source_query_code>
+
+Translate ONLY the entities, fields, and queries that appear above. Do not invent or carry over any entity or field that is not present in this source code.
+
+`````
+
+## Capture the result
+
+Paste the model's fenced blocks into this folder's `capture.md` (pre-labeled template), note which
+model/platform produced them, then validate through the pipeline's own gauntlet:
+
+    uv run python evaluation/scripts/score_external.py --capture <folder>/capture.md \
+        --pair <source-target> --variant <variant> --approach claude_code --model-label <model>
+
+Same assembler, same sandboxes, same execution-equivalence — apples-to-apples with the automated runs.

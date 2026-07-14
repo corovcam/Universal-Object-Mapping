@@ -1,0 +1,20 @@
+There are no tools available in this chat. Do NOT call the save_* tools; instead, output every
+piece the save tools would have collected, as fenced code blocks labeled EXACTLY like this (one
+schema pair + one source/target pair per query id — required ids: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
+
+```source_schema_body
+<the SOURCE-side entity/mapping classes>
+```
+```target_schema_body
+<the TARGET-side entity/mapping classes>
+```
+```source_query_body id=1
+<Query1's SOURCE-side harness fragment>
+```
+```target_query_body id=1
+<Query1's TARGET-side harness fragment>
+```
+... repeat the source/target pair for every required query id ...
+
+The fragment shapes/signatures are the ones the system prompt already specifies. Use only your own
+knowledge for framework API details (the research tools are unavailable). Do not omit any query id.

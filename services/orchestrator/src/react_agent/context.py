@@ -28,7 +28,7 @@ class Context:
 
     model: Annotated[AvailableModel, {"__template_metadata__": {"kind": "llm"}}] = (
         field(
-            default=AvailableModel(os.environ.get("MODEL", "einfra/kimi-k2.6")),
+            default=AvailableModel(os.environ.get("MODEL", "einfra/kimi-k2.7")),
             metadata={
                 "description": "The name of the language model to use for the agent's main translation agent."
             },
@@ -50,6 +50,37 @@ class Context:
     ollama_host: str = field(
         default=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
         metadata={"description": "Base URL for Ollama."},
+    )
+
+    # --- Evaluation-only knobs (production-safe: all default to no-ops) -------------------------
+    # These exist solely so the offline evaluation harness can vary per-run behaviour WITHOUT
+    # touching the production code path. They are carried on Context (set per `ainvoke`) rather than
+    # on a module global / mutated env var because `langsmith.aevaluate` runs targets as concurrent
+    # async tasks in ONE process — a global would race at max_concurrency >= 2. When left at their
+    # defaults (the production case) the graph behaves byte-for-byte as before.
+    eval_mode: bool = field(
+        default=False,
+        metadata={
+            "description": "Evaluation mode flag. When True, eval-only behaviours (e.g. a per-run "
+            "cache-busting header prepended to every system prompt to defeat provider prompt/KV "
+            "caching) are enabled. Off in production."
+        },
+    )
+
+    translation_model_override: str | None = field(
+        default=None,
+        metadata={
+            "description": "Eval-only: AvailableModel value to force for generate_translation_node "
+            "(model sweep). None keeps the production default (einfra/qwen3.5)."
+        },
+    )
+
+    translation_reasoning_override: bool | None = field(
+        default=None,
+        metadata={
+            "description": "Eval-only: force reasoning on/off for generate_translation_node's model. "
+            "None keeps the node's existing reasoning behaviour."
+        },
     )
 
     max_search_results: int = field(
@@ -158,3 +189,17 @@ class Context:
             # This ensures that even if instantiated empty, the context binds securely to the deployment environment.
             if getattr(self, f.name) == f.default:
                 setattr(self, f.name, os.environ.get(f.name.upper(), f.default))
+
+        # The reflection loop above pulls env vars as raw strings; coerce the eval-only typed knobs
+        # back to their declared types. (Untouched when their env vars are absent → stay at defaults.)
+        if isinstance(self.eval_mode, str):
+            self.eval_mode = self.eval_mode.strip().lower() in ("1", "true", "yes", "on")
+        if isinstance(self.translation_model_override, str) and not self.translation_model_override.strip():
+            self.translation_model_override = None
+        if isinstance(self.translation_reasoning_override, str):
+            val = self.translation_reasoning_override.strip().lower()
+            self.translation_reasoning_override = (
+                True if val in ("1", "true", "yes", "on")
+                else False if val in ("0", "false", "no", "off")
+                else None
+            )

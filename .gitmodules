@@ -1,6 +1,6 @@
 [submodule "external/daytona"]
 	path = external/daytona
-	url = git@github.com:daytonaio/daytona.git
+	url = git@github.com:corovcam/daytona.git
 [submodule "external/langgraphics"]
 	path = external/langgraphics
 	url = git@github.com:corovcam/langgraphics.git
@@ -10,3 +10,6 @@
 [submodule "external/uom-docs"]
 	path = external/uom-docs
 	url = git@github.com:corovcam/uom-docs.git
+[submodule "external/everspring-mcp"]
+	path = external/everspring-mcp
+	url = git@github.com:corovcam/everspring-mcp.git

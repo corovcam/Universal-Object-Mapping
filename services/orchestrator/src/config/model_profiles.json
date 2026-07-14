@@ -1,16 +1,6 @@
 {
-  "einfra/kimi-k2.6": {
-    "name": "kimi-k2.6",
-    "text_inputs": true,
-    "text_outputs": true,
-    "max_input_tokens": 262144,
-    "max_output_tokens": 262144,
-    "tool_calling": true,
-    "tool_choice": true,
-    "structured_output": true
-  },
-  "einfra/qwen3-coder-next": {
-    "name": "qwen3-coder-next",
+  "einfra/qwen3.5-122b": {
+    "name": "qwen3.5-122b",
     "text_inputs": true,
     "text_outputs": true,
     "max_input_tokens": 262144,
@@ -29,19 +19,13 @@
     "image_inputs": true,
     "tool_calling": true
   },
-  "einfra/mini": {
-    "name": "mini",
+  "ollama/qwen3-coder:30b": {
+    "name": "qwen3-coder:30b",
     "text_inputs": true,
     "text_outputs": true,
-    "max_input_tokens": 131072,
-    "max_output_tokens": 131072,
-    "tool_calling": true,
-    "tool_choice": true,
-    "structured_output": true,
-    "reasoning_output": true,
-    "temperature": true
+    "max_input_tokens": 262144,
+    "tool_calling": true
   },
-  "ollama/qwen3-coder:30b": {},
   "einfra/deepseek-v4-pro": {
     "name": "deepseek-v4-pro",
     "text_inputs": true,
@@ -63,20 +47,8 @@
     "structured_output": true,
     "reasoning_output": true
   },
-  "einfra/agentic": {
-    "name": "agentic",
-    "text_inputs": true,
-    "text_outputs": true,
-    "max_input_tokens": 262144,
-    "max_output_tokens": 262144,
-    "tool_calling": true,
-    "tool_choice": true,
-    "structured_output": true,
-    "reasoning_output": true,
-    "temperature": true
-  },
-  "einfra/thinker": {
-    "name": "thinker",
+  "einfra/glm-5.2": {
+    "name": "glm-5.2",
     "text_inputs": true,
     "text_outputs": true,
     "max_input_tokens": 1048576,
@@ -85,5 +57,74 @@
     "tool_choice": true,
     "structured_output": true,
     "reasoning_output": true
+  },
+  "einfra/kimi-k2.7": {
+    "name": "kimi-k2.7",
+    "text_inputs": true,
+    "text_outputs": true,
+    "max_input_tokens": 262144,
+    "max_output_tokens": 262144,
+    "tool_calling": true,
+    "tool_choice": true,
+    "structured_output": true,
+    "reasoning_output": true
+  },
+  "einfra/qwen3.5": {
+    "name": "qwen3.5",
+    "text_inputs": true,
+    "text_outputs": true,
+    "max_input_tokens": 262144,
+    "max_output_tokens": 262144,
+    "tool_calling": true,
+    "tool_choice": true,
+    "structured_output": true
+  },
+  "einfra/gpt-oss-120b": {
+    "name": "gpt-oss-120b",
+    "text_inputs": true,
+    "text_outputs": true,
+    "max_input_tokens": 131072,
+    "max_output_tokens": 131072,
+    "tool_calling": true,
+    "tool_choice": true,
+    "structured_output": true,
+    "reasoning_output": true,
+    "temperature": true
+  },
+  "einfra/mistral-medium-3.5": {
+    "name": "mistral-medium-3.5",
+    "text_inputs": true,
+    "text_outputs": true,
+    "image_inputs": true,
+    "max_input_tokens": 262144,
+    "max_output_tokens": 262144,
+    "tool_calling": true,
+    "tool_choice": true,
+    "structured_output": true,
+    "temperature": true
+  },
+  "einfra/llama-4-scout-17b-16e-instruct": {
+    "name": "llama-4-scout-17b-16e-instruct",
+    "text_inputs": true,
+    "text_outputs": true,
+    "max_input_tokens": 300000,
+    "max_output_tokens": 300000,
+    "tool_calling": true,
+    "tool_choice": true,
+    "structured_output": true,
+    "reasoning_output": true,
+    "temperature": true
+  },
+  "einfra/gemma4": {
+    "name": "gemma4",
+    "text_inputs": true,
+    "text_outputs": true,
+    "image_inputs": true,
+    "max_input_tokens": 262144,
+    "max_output_tokens": 32000,
+    "tool_calling": true,
+    "tool_choice": true,
+    "structured_output": true,
+    "temperature": true
   }
 }

@@ -34,6 +34,7 @@ from react_agent.custom_tools.sandbox_tools import (
 )
 from react_agent.state import State
 from react_agent.utils.utils import (
+    compact_build_log,
     get_framework_config_content,
     translate_localhost_to_host_gateway,
 )
@@ -288,11 +289,11 @@ async def validate_dotnet_code(
 
     if json_part:
         if "===JSON ERROR===" in json_part:
-            return f"```\n{output}\n```\n\n[JSON Results]\n```\n{json_part}\n```"
+            return f"```\n{compact_build_log(output)}\n```\n\n[JSON Results]\n```\n{json_part}\n```"
         try:
             parsed = orjson.loads(json_part)
         except orjson.JSONDecodeError:
-            return f"[Dotnet Validation Failed] Could not parse JSON output.\n```\n{output}\n```\n```\n{json_part}\n```"
+            return f"[Dotnet Validation Failed] Could not parse JSON output.\n```\n{compact_build_log(output)}\n```\n```\n{json_part}\n```"
 
         # Determine side (source or target)
         side = None
@@ -340,11 +341,11 @@ async def validate_dotnet_code(
                 **update_dict,
                 "messages": [
                     ToolMessage(
-                        content=output,
+                        content=compact_build_log(output),
                         tool_call_id=tool_call_id,
                         name=validate_dotnet_code.name,
                     )
                 ],
             }
         )
-    return output
+    return compact_build_log(output)
