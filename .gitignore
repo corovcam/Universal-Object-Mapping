@@ -19,3 +19,4 @@ nginx*.conf
 .design-sync/
 .ds-sync/
 ds-bundle/
+.context/

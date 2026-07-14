@@ -170,3 +170,6 @@ misc/
 bin/
 obj/
 tests/aimock/recorded/
+tests/experiments/
+evaluation/
+out/
