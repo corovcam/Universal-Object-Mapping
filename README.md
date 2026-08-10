@@ -2,6 +2,7 @@
 
 > [!NOTE]
 > Full documentation is available at https://uom-demo.vercel.app/docs, including detailed developer guides, architecture overviews, and deployment instructions.
+> Final thesis, with all research, theoretical background, and evaluation results, is available as [PDF](Universal_Object_Mapping_Assistant__LLM_Assisted_Migration_of_Application_Persistence_Layers.pdf).
 
 **Universal Object Mapping (UOM)** is an advanced research and engineering platform designed to automate the translation, validation, and performance optimization of database schemas and query code across diverse Object-Relational Mapping (ORM), Object-Document Mapping (ODM), and Object-Graph Mapping (OGM) paradigms. 
 
